@@ -5,11 +5,14 @@ from __future__ import annotations
 import platform
 import re
 import shutil
+import socket
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Optional
 
 from tv.app_config import cfg
+
+IS_WINDOWS = platform.system() == "Windows"
 
 
 def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -112,6 +115,37 @@ class NetManager(ABC):
                 for line in r.stdout.splitlines():
                     if "STREAM" in line:
                         return [line.split()[0]]
+
+        # nslookup fallback (available on Windows)
+        if shutil.which("nslookup"):
+            r = _run(["nslookup", hostname])
+            if r.returncode == 0:
+                ips = []
+                in_answer = False
+                for line in r.stdout.splitlines():
+                    if "Name:" in line:
+                        in_answer = True
+                    elif in_answer and "Address:" in line:
+                        addr = line.split("Address:")[-1].strip()
+                        if re.match(r"\d+\.\d+\.\d+\.\d+$", addr):
+                            ips.append(addr)
+                if ips:
+                    return ips
+
+        # socket.getaddrinfo ultimate fallback (pure Python, all platforms)
+        try:
+            infos = socket.getaddrinfo(hostname, None, socket.AF_INET)
+            seen: set[str] = set()
+            ips = []
+            for info in infos:
+                addr = info[4][0]
+                if addr not in seen:
+                    seen.add(addr)
+                    ips.append(addr)
+            if ips:
+                return ips
+        except socket.gaierror:
+            pass
 
         return []
 
@@ -397,6 +431,193 @@ class LinuxNet(NetManager):
 
 
 # ---------------------------------------------------------------------------
+# Windows
+# ---------------------------------------------------------------------------
+
+def _cidr_to_mask(prefix_len: int) -> str:
+    """Convert CIDR prefix length to dotted subnet mask (e.g. 24 -> 255.255.255.0)."""
+    bits = (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF
+    return f"{(bits >> 24) & 0xFF}.{(bits >> 16) & 0xFF}.{(bits >> 8) & 0xFF}.{bits & 0xFF}"
+
+
+class WindowsNet(NetManager):
+    """Windows networking via route.exe, netsh, and PowerShell."""
+
+    def default_gateway(self) -> Optional[str]:
+        r = _run(["route", "PRINT", "0.0.0.0"])
+        if r.returncode == 0:
+            in_routes = False
+            for line in r.stdout.splitlines():
+                stripped = line.strip()
+                if "Active Routes:" in line:
+                    in_routes = True
+                    continue
+                if in_routes and stripped.startswith("0.0.0.0"):
+                    parts = stripped.split()
+                    # Network Destination | Netmask | Gateway | Interface | Metric
+                    if len(parts) >= 3:
+                        gw = parts[2]
+                        if re.match(r"\d+\.\d+\.\d+\.\d+$", gw):
+                            return gw
+        return None
+
+    def interfaces(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        r = _run(["ipconfig"])
+        if r.returncode != 0:
+            return result
+        current: str | None = None
+        for line in r.stdout.splitlines():
+            # Adapter header: "Ethernet adapter Local Area Connection:" or
+            # "PPP adapter VPN Connection:"
+            if "adapter" in line and line.rstrip().endswith(":"):
+                # Extract adapter name after "adapter "
+                idx = line.find("adapter ")
+                if idx >= 0:
+                    current = line[idx + 8:].rstrip(": \t")
+            elif current and current not in result:
+                # "   IPv4 Address. . . . . . . . . . . : 192.168.1.5"
+                if "IPv4 Address" in line and ":" in line:
+                    addr = line.split(":")[-1].strip()
+                    if re.match(r"\d+\.\d+\.\d+\.\d+$", addr):
+                        result[current] = addr
+        return result
+
+    def check_interface(self, name: str) -> bool:
+        r = _run(["netsh", "interface", "show", "interface", f"name={name}"])
+        if r.returncode == 0 and "Connected" in r.stdout:
+            return True
+        # Fallback: check via ipconfig
+        ifaces = self.interfaces()
+        return name in ifaces
+
+    def add_host_route(self, ip: str, gateway: str) -> bool:
+        r = _run(["route", "ADD", ip, "MASK", "255.255.255.255", gateway])
+        return r.returncode == 0
+
+    def add_net_route(self, network: str, gateway: str) -> bool:
+        if "/" not in network:
+            return False
+        net_addr, prefix = network.rsplit("/", 1)
+        try:
+            mask = _cidr_to_mask(int(prefix))
+        except (ValueError, OverflowError):
+            return False
+        r = _run(["route", "ADD", net_addr, "MASK", mask, gateway])
+        return r.returncode == 0
+
+    def add_iface_route(self, target: str, iface: str, host: bool = True) -> bool:
+        if host:
+            prefix = f"{target}/32"
+        else:
+            prefix = target if "/" in target else f"{target}/32"
+        # netsh takes interface name directly (no index lookup needed)
+        r = _run([
+            "netsh", "interface", "ipv4", "add", "route",
+            prefix, f"interface={iface}",
+        ])
+        return r.returncode == 0
+
+    def setup_dns_resolver(
+        self, domains: list[str], nameservers: list[str],
+        interface: str = "",
+    ) -> dict[str, bool]:
+        results: dict[str, bool] = {}
+        ns_list = ",".join(f"'{ns}'" for ns in nameservers)
+        for domain in domains:
+            # NRPT rule with tunnelvault marker comment
+            ps_cmd = (
+                f"Add-DnsClientNrptRule -Namespace '.{domain}' "
+                f"-NameServers {ns_list} -Comment 'tunnelvault'"
+            )
+            r = _run(["powershell", "-Command", ps_cmd])
+            results[domain] = r.returncode == 0
+        return results
+
+    def cleanup_dns_resolver(self, domains: list[str], interface: str = "") -> None:
+        # Remove NRPT rules created by tunnelvault
+        for domain in domains:
+            ps_cmd = (
+                "Get-DnsClientNrptRule | "
+                f"Where-Object {{ $_.Comment -eq 'tunnelvault' -and $_.Namespace -eq '.{domain}' }} | "
+                "Remove-DnsClientNrptRule -Force"
+            )
+            _run(["powershell", "-Command", ps_cmd])
+
+    def cleanup_local_dns_resolvers(self) -> list[str]:
+        """Remove all NRPT rules created by tunnelvault."""
+        r = _run([
+            "powershell", "-Command",
+            "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+            "ForEach-Object { $_.Namespace }",
+        ])
+        if r.returncode != 0 or not r.stdout.strip():
+            return []
+        zones = [z.lstrip(".") for z in r.stdout.strip().splitlines() if z.strip()]
+        if zones:
+            _run([
+                "powershell", "-Command",
+                "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+                "Remove-DnsClientNrptRule -Force",
+            ])
+        return zones
+
+    def disable_ipv6(self) -> bool:
+        r = _run([
+            "powershell", "-Command",
+            "Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | "
+            "Disable-NetAdapterBinding -ComponentID ms_tcpip6 -Confirm:$false",
+        ])
+        return r.returncode == 0
+
+    def restore_ipv6(self) -> bool:
+        r = _run([
+            "powershell", "-Command",
+            "Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | "
+            "Enable-NetAdapterBinding -ComponentID ms_tcpip6 -Confirm:$false",
+        ])
+        return r.returncode == 0
+
+    def delete_host_route(self, ip: str) -> bool:
+        r = _run(["route", "DELETE", ip])
+        return r.returncode == 0
+
+    def delete_net_route(self, network: str) -> bool:
+        net_addr = network.split("/")[0] if "/" in network else network
+        r = _run(["route", "DELETE", net_addr])
+        return r.returncode == 0
+
+    def route_table(self, lines: int | None = None) -> str:
+        if lines is None:
+            lines = cfg.display.route_table_lines
+        r = _run(["route", "PRINT"])
+        if r.returncode == 0:
+            return "\n".join(r.stdout.splitlines()[:lines])
+        return ""
+
+    def iface_info(self, name: str) -> str:
+        r = _run(["netsh", "interface", "ip", "show", "config", f"name={name}"])
+        return r.stdout if r.returncode == 0 else ""
+
+    def ppp_peer(self, name: str) -> str:
+        # Try ipconfig - look for Default Gateway under the named adapter
+        r = _run(["ipconfig"])
+        if r.returncode != 0:
+            return ""
+        in_adapter = False
+        for line in r.stdout.splitlines():
+            if "adapter" in line and name in line and line.rstrip().endswith(":"):
+                in_adapter = True
+            elif in_adapter and "adapter" in line and line.rstrip().endswith(":"):
+                break  # next adapter
+            elif in_adapter and "Default Gateway" in line and ":" in line:
+                gw = line.split(":")[-1].strip()
+                if re.match(r"\d+\.\d+\.\d+\.\d+$", gw):
+                    return gw
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -404,6 +625,8 @@ def create() -> NetManager:
     system = platform.system()
     if system == "Darwin":
         return DarwinNet()
+    if system == "Windows":
+        return WindowsNet()
     if system != "Linux":
         import warnings
         warnings.warn(

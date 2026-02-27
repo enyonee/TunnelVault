@@ -37,14 +37,26 @@ class Timeouts:
     keepalive_reconnect_pause: float = 2.0
 
 
+def _default_temp_dir() -> str:
+    import platform
+    if platform.system() == "Windows":
+        import tempfile
+        return tempfile.gettempdir()
+    return "/tmp"
+
+
 @dataclass
 class Paths:
     log_dir: str = "logs"
-    temp_dir: str = "/tmp"
+    temp_dir: str = ""
     settings_file: str = ".vpn-settings.json"
     defaults_file: str = "defaults.toml"
     main_log: str = "tunnelvault.log"
     resolver_dir: str = "/etc/resolver"
+
+    def __post_init__(self):
+        if not self.temp_dir:
+            self.temp_dir = _default_temp_dir()
 
 
 @dataclass

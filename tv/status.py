@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from typing import Optional
 
 from tv import proc, ui
@@ -10,6 +11,8 @@ from tv.checks import get_external_ip
 from tv.app_config import cfg
 from tv.i18n import t
 from tv.net import NetManager
+
+IS_WINDOWS = platform.system() == "Windows"
 
 
 def _section(title: str) -> None:
@@ -35,22 +38,45 @@ def _show_processes() -> None:
 
 
 def _show_interfaces(net: NetManager) -> None:
-    """Show tunnel interfaces (tun*, utun*, ppp*)."""
+    """Show tunnel interfaces (tun*, utun*, ppp* on Unix; all non-loopback on Windows)."""
     _section(t("status.tunnel_ifaces"))
     ifaces = net.interfaces()
     tunnel_prefixes = ("tun", "utun", "ppp")
     found = False
     for name, ip in sorted(ifaces.items()):
-        if any(name.startswith(p) for p in tunnel_prefixes):
-            found = True
-            print(f"    {ui.GREEN}●{ui.NC} {name}: {ip}")
+        if IS_WINDOWS:
+            # Windows VPN adapters have arbitrary names; show all non-loopback
+            if ip.startswith("127."):
+                continue
+        elif not any(name.startswith(p) for p in tunnel_prefixes):
+            continue
+        found = True
+        print(f"    {ui.GREEN}●{ui.NC} {name}: {ip}")
     if not found:
         print(f"    {ui.DIM}{t('status.no_tunnel_ifaces')}{ui.NC}")
 
 
 def _show_resolvers() -> None:
-    """Show /etc/resolver/ files created by tunnelvault."""
+    """Show DNS resolver configuration created by tunnelvault."""
     _section(t("status.resolver_files"))
+
+    if IS_WINDOWS:
+        # Show NRPT rules created by tunnelvault
+        import subprocess
+        r = subprocess.run(
+            ["powershell", "-Command",
+             "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+             "Format-Table Namespace, NameServers -AutoSize"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            for line in r.stdout.strip().splitlines():
+                if line.strip() and not line.startswith("-"):
+                    print(f"    {ui.GREEN}●{ui.NC} {line.strip()}")
+        else:
+            print(f"    {ui.DIM}{t('status.no_resolver_files')}{ui.NC}")
+        return
+
     resolver_dir = cfg.paths.resolver_dir
     if not os.path.isdir(resolver_dir):
         print(f"    {ui.DIM}{t('status.no_resolver_dir', dir=resolver_dir)}{ui.NC}")

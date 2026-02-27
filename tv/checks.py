@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
+import socket
 import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -12,6 +14,8 @@ from tv import ui
 from tv.app_config import cfg
 from tv.i18n import t
 from tv.logger import Logger
+
+IS_WINDOWS = platform.system() == "Windows"
 
 
 @dataclass
@@ -36,6 +40,13 @@ def _run_check(cmd: list[str], timeout: int | None = None) -> subprocess.Complet
 def _check_port(host: str, port: int, timeout: int | None = None) -> bool:
     if timeout is None:
         timeout = cfg.timeouts.check_port
+    if IS_WINDOWS or not shutil.which("nc"):
+        # Pure Python socket connect (works everywhere)
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except (OSError, socket.timeout):
+            return False
     r = _run_check(["nc", "-z", "-w", str(timeout), host, str(port)], timeout + 2)
     return r.returncode == 0
 
@@ -43,7 +54,11 @@ def _check_port(host: str, port: int, timeout: int | None = None) -> bool:
 def _check_ping(host: str, timeout: int | None = None) -> bool:
     if timeout is None:
         timeout = cfg.timeouts.check_ping
-    if platform.system() == "Darwin":
+    system = platform.system()
+    if system == "Windows":
+        # Windows: -n count, -w timeout in milliseconds
+        args = ["ping", "-n", "1", "-w", str(timeout * 1000), host]
+    elif system == "Darwin":
         # macOS: -W is in milliseconds, -t is total timeout in seconds
         args = ["ping", "-c", "1", "-t", str(timeout), host]
     else:
@@ -60,38 +75,70 @@ def _check_dns(name: str, server: str, timeout: int | None = None) -> bool:
     return r.returncode == 0
 
 
+def _urllib_get(url: str, timeout: int) -> tuple[int, str]:
+    """HTTP GET via urllib (fallback when curl is unavailable). Returns (status_code, body)."""
+    import ssl
+    import urllib.request
+    import urllib.error
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "tunnelvault"})
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, ""
+    except Exception:
+        return 0, ""
+
+
 def _check_http(url: str, timeout: int | None = None) -> bool:
     if timeout is None:
         timeout = cfg.timeouts.check_http
-    r = _run_check(
-        ["curl", "-4", "-sk", "--max-time", str(timeout),
-         "-o", os.devnull, "-w", "%{http_code}", url],
-        timeout + 2,
-    )
-    if r.returncode != 0:
-        return False
-    code = r.stdout.strip()
-    return code != "000" and code.startswith(("2", "3"))
+    if shutil.which("curl"):
+        r = _run_check(
+            ["curl", "-4", "-sk", "--max-time", str(timeout),
+             "-o", os.devnull, "-w", "%{http_code}", url],
+            timeout + 2,
+        )
+        if r.returncode != 0:
+            return False
+        code = r.stdout.strip()
+        return code != "000" and code.startswith(("2", "3"))
+    # Fallback: urllib
+    status, _ = _urllib_get(url, timeout)
+    return 200 <= status < 400
 
 
 def _check_http_any(url: str, timeout: int | None = None) -> bool:
     """Returns True if HTTP response is not a timeout (000)."""
     if timeout is None:
         timeout = cfg.timeouts.check_http
-    r = _run_check(
-        ["curl", "-4", "-sk", "--max-time", str(timeout),
-         "-o", os.devnull, "-w", "%{http_code}", url],
-        timeout + 2,
-    )
-    return r.returncode == 0 and r.stdout.strip() != "000"
+    if shutil.which("curl"):
+        r = _run_check(
+            ["curl", "-4", "-sk", "--max-time", str(timeout),
+             "-o", os.devnull, "-w", "%{http_code}", url],
+            timeout + 2,
+        )
+        return r.returncode == 0 and r.stdout.strip() != "000"
+    # Fallback: urllib
+    status, _ = _urllib_get(url, timeout)
+    return status != 0
 
 
 def get_external_ip(url: str, timeout: int | None = None) -> Optional[str]:
     if timeout is None:
         timeout = cfg.timeouts.check_external_ip
-    r = _run_check(["curl", "-4", "-s", "--max-time", str(timeout), url], timeout + 2)
-    if r.returncode == 0 and r.stdout.strip():
-        return r.stdout.strip()
+    if shutil.which("curl"):
+        r = _run_check(["curl", "-4", "-s", "--max-time", str(timeout), url], timeout + 2)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+        return None
+    # Fallback: urllib
+    status, body = _urllib_get(url, timeout)
+    if status == 200 and body.strip():
+        return body.strip()
     return None
 
 
@@ -137,7 +184,10 @@ def _run_one(
 # --- Command hints ---
 
 def _ping_hint(host: str) -> str:
-    if platform.system() == "Darwin":
+    system = platform.system()
+    if system == "Windows":
+        return f"ping -n 1 -w 3000 {host}"
+    if system == "Darwin":
         return f"ping -c1 -t3 {host}"
     return f"ping -c1 -W3 {host}"
 

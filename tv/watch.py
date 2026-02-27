@@ -11,14 +11,16 @@ import platform
 import socket
 import subprocess
 import sys
-import termios
 import threading
 import time
-import tty
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
+
+if platform.system() != "Windows":
+    import termios
+    import tty
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -55,6 +57,7 @@ class TunnelSnapshot:
 
 _VPN_PREFIXES = ("tun", "utun", "ppp")
 _IS_DARWIN = platform.system() == "Darwin"
+_IS_WINDOWS = platform.system() == "Windows"
 _MAX_CONNECTIONS = 30
 
 _PORT_LABELS = {
@@ -141,6 +144,10 @@ def _fmt_remote(addr: str) -> str:
 
 
 def _is_vpn_iface(name: str) -> bool:
+    if _IS_WINDOWS:
+        # On Windows, VPN adapters have names like "VPN Connection", "PPP adapter"
+        # Rely on config-based matching via _resolve_names(); accept all here.
+        return True
     return any(name.startswith(p) for p in _VPN_PREFIXES)
 
 
@@ -283,6 +290,73 @@ def _linux_connections(local_ips: set[str]) -> list[Connection]:
         state = parts[0]
         local_raw = parts[3]
         remote_raw = parts[4]
+        lip = local_raw.rsplit(":", 1)[0]
+        if lip not in local_ips:
+            continue
+        conns.append(Connection(
+            local=local_raw,
+            remote=remote_raw,
+            state=state[:5],
+        ))
+    return conns
+
+
+# --- Windows data collection ---
+
+def _windows_vpn_ifaces() -> dict[str, str]:
+    """Get interface -> IP via PowerShell Get-NetIPAddress (locale-safe)."""
+    r = _cmd(["powershell", "-Command",
+              "Get-NetIPAddress -AddressFamily IPv4 | "
+              "Select-Object InterfaceAlias, IPAddress | "
+              "Format-Table -HideTableHeaders"])
+    if r.returncode != 0:
+        return {}
+    result = {}
+    for line in r.stdout.splitlines():
+        parts = line.strip().rsplit(None, 1)
+        if len(parts) == 2:
+            name, ip = parts
+            name = name.strip()
+            if name and ip and not ip.startswith("127."):
+                result[name] = ip
+    return result
+
+
+def _windows_iface_bytes() -> dict[str, tuple[int, int]]:
+    """Get (bytes_in, bytes_out) via PowerShell Get-NetAdapterStatistics."""
+    r = _cmd(["powershell", "-Command",
+              "Get-NetAdapterStatistics | "
+              "Select-Object Name, ReceivedBytes, SentBytes | "
+              "Format-Table -HideTableHeaders"])
+    if r.returncode != 0:
+        return {}
+    result = {}
+    for line in r.stdout.splitlines():
+        parts = line.strip().rsplit(None, 2)
+        if len(parts) == 3:
+            name, rx, tx = parts
+            try:
+                result[name.strip()] = (int(rx), int(tx))
+            except ValueError:
+                pass
+    return result
+
+
+def _windows_connections(local_ips: set[str]) -> list[Connection]:
+    """Get TCP connections via netstat -an (locale-safe)."""
+    r = _cmd(["netstat", "-an", "-p", "TCP"])
+    if r.returncode != 0:
+        return []
+    conns = []
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[0] != "TCP":
+            continue
+        state = parts[3] if len(parts) > 3 else ""
+        if state in ("LISTENING", "LISTEN", "CLOSED"):
+            continue
+        local_raw = parts[1]
+        remote_raw = parts[2]
         lip = local_raw.rsplit(":", 1)[0]
         if lip not in local_ips:
             continue
@@ -441,9 +515,18 @@ def run(
         prefix_names = {}
     has_config = bool(exact_names or prefix_names)
 
-    get_ifaces = _darwin_vpn_ifaces if _IS_DARWIN else _linux_vpn_ifaces
-    get_bytes = _darwin_iface_bytes if _IS_DARWIN else _linux_iface_bytes
-    get_conns = _darwin_connections if _IS_DARWIN else _linux_connections
+    if _IS_WINDOWS:
+        get_ifaces = _windows_vpn_ifaces
+        get_bytes = _windows_iface_bytes
+        get_conns = _windows_connections
+    elif _IS_DARWIN:
+        get_ifaces = _darwin_vpn_ifaces
+        get_bytes = _darwin_iface_bytes
+        get_conns = _darwin_connections
+    else:
+        get_ifaces = _linux_vpn_ifaces
+        get_bytes = _linux_iface_bytes
+        get_conns = _linux_connections
 
     console = Console()
     prev_bytes: dict[str, tuple[int, int]] = {}
@@ -453,12 +536,14 @@ def run(
 
     # Suppress mouse scroll escape sequences in alternate screen
     _old_termios = None
-    try:
-        fd = sys.stdin.fileno()
-        _old_termios = termios.tcgetattr(fd)
-        tty.setcbreak(fd)
-    except (ValueError, termios.error, OSError):
-        pass
+    fd = None
+    if not _IS_WINDOWS:
+        try:
+            fd = sys.stdin.fileno()
+            _old_termios = termios.tcgetattr(fd)
+            tty.setcbreak(fd)
+        except (ValueError, termios.error, OSError):
+            pass
 
     try:
         loading = Panel(
@@ -520,7 +605,7 @@ def run(
     finally:
         data_pool.shutdown(wait=False)
         _dns_cache.shutdown()
-        if _old_termios is not None:
+        if _old_termios is not None and fd is not None:
             try:
                 termios.tcsetattr(fd, termios.TCSADRAIN, _old_termios)
             except (termios.error, OSError):

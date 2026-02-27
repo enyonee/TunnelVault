@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import subprocess
 from unittest.mock import patch, MagicMock
 
@@ -194,9 +195,10 @@ class TestResolveHost:
 # =========================================================================
 
 class TestResolveHostInverse:
+    @patch("socket.getaddrinfo", side_effect=socket.gaierror("not found"))
     @patch("shutil.which", return_value=None)
-    def test_no_dns_tools_returns_empty(self, _, darwin_net):
-        """Нет ни dig, ни host, ни getent - пустой список."""
+    def test_no_dns_tools_returns_empty(self, _, __, darwin_net):
+        """Нет ни dig, ни host, ни getent, socket fails - пустой список."""
         ips = darwin_net.resolve_host("test.com")
         assert ips == []
 

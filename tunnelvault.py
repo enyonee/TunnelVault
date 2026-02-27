@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -23,6 +24,19 @@ from tv.vpn.registry import get_plugin
 
 # Ensure all plugins are registered on import
 from tv.vpn import openvpn, fortivpn, singbox  # noqa: F401
+
+IS_WINDOWS = platform.system() == "Windows"
+
+
+def _is_admin() -> bool:
+    """Check if running with elevated privileges (root on Unix, admin on Windows)."""
+    if IS_WINDOWS:
+        try:
+            import ctypes
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0  # type: ignore[attr-defined,union-attr]
+        except (AttributeError, OSError):
+            return False
+    return os.geteuid() == 0
 
 
 _log: Logger | None = None  # module-level for crash handler
@@ -67,11 +81,15 @@ def main() -> None:
     if args.daemon:
         from tv import daemon
 
+        if IS_WINDOWS:
+            ui.fail("Daemon mode is not supported on Windows yet")
+            sys.exit(1)
+
         if args.daemon == "status":
             daemon.run_status()
             return
         # install/uninstall need root
-        if os.geteuid() != 0:
+        if not _is_admin():
             ui.warn(t("main.needs_sudo"))
         if args.daemon == "install":
             daemon.run_install(script_dir, only=args.only)
@@ -81,7 +99,7 @@ def main() -> None:
 
     # --- Commands that need root ---
 
-    if os.geteuid() != 0:
+    if not _is_admin():
         ui.warn(t("main.needs_sudo"))
 
     if args.reset:
@@ -173,7 +191,8 @@ def main() -> None:
         sys.exit(128 + sig)
 
     signal.signal(signal.SIGINT, on_signal)
-    signal.signal(signal.SIGTERM, on_signal)
+    if not IS_WINDOWS:
+        signal.signal(signal.SIGTERM, on_signal)
 
     # --- Start ---
     settings_path = script_dir / cfg.paths.settings_file
@@ -359,8 +378,18 @@ def _run_logs(
         ui.fail(t("main.file_not_found", path=path))
         sys.exit(1)
 
-    print(f"  {ui.DIM}tail -f {path}{ui.NC}\n")
-    os.execlp("tail", "tail", "-f", path)
+    if IS_WINDOWS:
+        print(f"  {ui.DIM}Get-Content -Wait {path}{ui.NC}\n")
+        try:
+            rc = subprocess.call(
+                ["powershell", "-Command", f"Get-Content -Wait '{path}'"]
+            )
+        except KeyboardInterrupt:
+            rc = 0
+        sys.exit(rc)
+    else:
+        print(f"  {ui.DIM}tail -f {path}{ui.NC}\n")
+        os.execlp("tail", "tail", "-f", path)
 
 
 def _log_summary(engine: Engine, check_results: list, ext_ip: str) -> None:
@@ -479,8 +508,12 @@ def _crash_diagnostics(log: Logger | None, exc: BaseException) -> None:
         for tp in available_types():
             vpn_keywords.extend(get_plugin(tp).process_names)
 
+        if IS_WINDOWS:
+            ps_cmd = ["tasklist", "/V"]
+        else:
+            ps_cmd = ["ps", "aux"]
         r = subprocess.run(
-            ["ps", "aux"],
+            ps_cmd,
             capture_output=True,
             text=True,
             timeout=cfg.timeouts.ps_aux,

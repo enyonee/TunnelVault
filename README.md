@@ -2,13 +2,13 @@
 
 <img src="logo.png" alt="TunnelVault" width="600">
 
-**Multi-tunnel VPN orchestrator for macOS & Linux**
+**Multi-tunnel VPN orchestrator for macOS, Linux & Windows**
 
 <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
-<a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
+<a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux_|_Windows-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
 <a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.2-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
-<img src="https://img.shields.io/badge/tests-654_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
+<img src="https://img.shields.io/badge/tests-804_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
 
 <kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>+ your plugin</kbd>
 
@@ -300,13 +300,15 @@ class MyVPNPlugin(TunnelPlugin):
 <details>
 <summary><strong>Cross-platform implementation</strong></summary>
 
-| Function | macOS | Linux |
-|----------|-------|-------|
-| Routing | `route add/delete` | `ip route add/del` |
-| DNS | `/etc/resolver/*` | `resolvectl` |
-| Interfaces | `ifconfig -l` | `ip -br addr` |
-| IPv6 | `networksetup` | `sysctl` |
-| Gateway | `route -n get default` | `ip route show default` |
+| Function | macOS | Linux | Windows |
+|----------|-------|-------|---------|
+| Routing | `route add/delete` | `ip route add/del` | `route ADD/DELETE` |
+| DNS | `/etc/resolver/*` | `resolvectl` | NRPT rules (PowerShell) |
+| Interfaces | `ifconfig -a` | `ip -br addr` | `ipconfig` |
+| IPv6 | `networksetup` | `sysctl` | `Disable-NetAdapterBinding` |
+| Gateway | `route -n get default` | `ip route show default` | `route PRINT` |
+| Processes | `pgrep`/`pkill` | `pgrep`/`pkill` | `wmic`/`taskkill` |
+| Port check | `nc -z` | `nc -z` | `socket.connect` |
 
 </details>
 
@@ -315,11 +317,13 @@ class MyVPNPlugin(TunnelPlugin):
 - [ ] `--check` rerun - re-run health checks with retry/loop until all pass
 - [ ] Plugin-defined checks - each VPN plugin declares default checks in code, no manual TOML needed
 - [ ] Configurable check list - override/extend plugin checks via external file
-- [ ] Windows support - routing, DNS, process management for Windows
+- [x] Windows support - routing, DNS, process management for Windows
+- [ ] Windows VPN plugins - adapt openvpn/sing-box plugins for Windows paths and adapters
+- [ ] Windows daemon - Task Scheduler integration for keepalive mode
 
 ## <img src="https://img.shields.io/badge/📋_Requirements-FF8C00?style=for-the-badge" alt="Requirements">
 
-**Python 3.10+** · **macOS or Linux** · **sudo** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`)
+**Python 3.10+** · **macOS, Linux, or Windows** · **sudo / Run as Administrator** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`)
 
 > [!WARNING]
 > TunnelVault modifies routing tables and DNS configuration. Review your `defaults.toml` before running. Use `--validate` to dry-run.
