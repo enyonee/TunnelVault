@@ -563,7 +563,7 @@ def _generate_cert(host: str, port: str) -> str:
     procs: list[subprocess.Popen] = []
     try:
         s_client = subprocess.Popen(
-            ["openssl", "s_client", "-connect", f"{host}:{port}"],
+            ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

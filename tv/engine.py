@@ -208,6 +208,7 @@ class Engine:
             # Check if already running AND interface is alive
             existing_pid = plugin_cls.discover_pid(tcfg, self.script_dir)
             reuse = False
+            result = VPNResult(ok=False, detail="not started")
             if existing_pid and proc.is_alive(existing_pid):
                 if tcfg.interface and not self.net.check_interface(tcfg.interface):
                     # PID alive but interface gone - stale process, kill and reconnect

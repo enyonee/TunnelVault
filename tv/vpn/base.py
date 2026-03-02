@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from tv import proc
+from tv import proc, ui
 from tv.app_config import cfg
+from tv.i18n import t
 from tv.logger import Logger
 from tv.net import NetManager
 
@@ -119,6 +120,16 @@ class TunnelPlugin(ABC):
         Override in subclasses. Falls back to kill_patterns.
         """
         return cls.kill_patterns
+
+    def _check_config_file(self, i18n_key: str) -> Optional[VPNResult]:
+        """Check config_file exists. Returns VPNResult(ok=False) if missing, None if ok."""
+        config_path = self.script_dir / self.cfg.config_file
+        if not config_path.exists():
+            msg = t(i18n_key, path=config_path)
+            ui.fail(msg)
+            self.log.log("ERROR", f"Config file not found: {config_path}")
+            return VPNResult(ok=False, detail="config not found")
+        return None
 
     @abstractmethod
     def connect(self) -> VPNResult:

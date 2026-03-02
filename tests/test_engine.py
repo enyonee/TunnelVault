@@ -754,7 +754,6 @@ class TestReuseExistingConnections:
              patch("tv.engine.proc.is_alive", return_value=True), \
              patch("tv.vpn.openvpn.OpenVPNPlugin.connect") as mock_ovpn, \
              patch("tv.vpn.singbox.SingBoxPlugin.connect") as mock_sb:
-            engine.net.check_interface.return_value = True
             engine.connect_all()
 
         # connect() never called
@@ -855,7 +854,6 @@ class TestReuseExistingConnections:
         with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=100), \
              patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=200), \
              patch("tv.engine.proc.is_alive", return_value=True):
-            engine.net.check_interface.return_value = True
             engine.connect_all()
 
         assert pre.call_count == 2
@@ -869,7 +867,6 @@ class TestReuseExistingConnections:
              patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None), \
              patch("tv.engine.proc.is_alive", return_value=True), \
              patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)):
-            engine.net.check_interface.return_value = True
             engine.connect_all()
 
         out = capsys.readouterr().out
@@ -906,7 +903,6 @@ class TestQuietMode:
         with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=100), \
              patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=200), \
              patch("tv.engine.proc.is_alive", return_value=True):
-            engine.net.check_interface.return_value = True
             engine.connect_all(quiet=True)
 
         out = capsys.readouterr().out
