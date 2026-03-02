@@ -257,6 +257,19 @@ class TestGenerateCert:
         result = _generate_cert("host", "443")
         assert result == ""
 
+    @patch("subprocess.Popen")
+    def test_returns_empty_when_x509_has_no_output(self, mock_popen):
+        """If x509 produces no DER output (server unreachable), return empty."""
+        s_client = MagicMock()
+        s_client.stdout = MagicMock()
+        s_client.stdin = MagicMock()
+        x509 = MagicMock()
+        x509.communicate.return_value = (b"", b"")  # empty DER
+        x509.stdout = MagicMock()
+        mock_popen.side_effect = [s_client, x509]
+        result = _generate_cert("host", "443")
+        assert result == ""
+
 
 # =========================================================================
 # ConfigParam get/set helpers
@@ -412,6 +425,20 @@ class TestResolveTunnelParams:
             resolve_tunnel_params(tc, FortiVPNPlugin, saved, Path("/tmp"))
         mock_cert.assert_not_called()
         assert tc.auth["trusted_cert"] == "saved_cert_value"
+
+    @patch("tv.config._generate_cert", return_value="real_cert_abc")
+    def test_forti_auto_cert_rejects_sha256_empty(self, mock_cert):
+        """cert_mode=auto with saved sha256('') triggers regeneration."""
+        from tv.config import _SHA256_EMPTY
+        tc = TunnelConfig(
+            name="fortivpn", type="fortivpn",
+            auth={"host": "vpn.com", "port": "443",
+                   "login": "u", "pass": "p", "cert_mode": "auto"},
+        )
+        saved = {"fortivpn": {"trusted_cert": _SHA256_EMPTY}}
+        resolve_tunnel_params(tc, FortiVPNPlugin, saved, Path("/tmp"))
+        mock_cert.assert_called_once()
+        assert tc.auth["trusted_cert"] == "real_cert_abc"
 
     def test_saved_found_by_type_when_name_differs(self):
         """Saved under type key ('fortivpn') found when tunnel name differs ('forti')."""

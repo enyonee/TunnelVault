@@ -181,8 +181,7 @@ def resolve_tunnel_params(
             if setup and param.prompt:
                 ui.param_found(param.label, current, "defaults.toml", param.secret)
                 new_value = ui.wizard_input(t(param.label), current, param.secret)
-                if new_value:
-                    _set_param_value(tcfg, param, new_value)
+                _set_param_value(tcfg, param, new_value)
                 continue
 
             # Auto-applied config_file defaults can be overridden by ENV/saved
@@ -270,9 +269,9 @@ def _handle_forti_cert(
         tcfg.auth["trusted_cert"] = env_val
         return
 
-    # Check saved
+    # Check saved (reject sha256 of empty - broken cert generation)
     saved_val = tunnel_saved.get("trusted_cert", "")
-    if saved_val:
+    if saved_val and saved_val != _SHA256_EMPTY:
         if not quiet:
             ui.param_found(
                 "param.cert_sha256", saved_val, cfg.paths.settings_file, False
@@ -565,6 +564,9 @@ def _resolve_param(
     return ui.wizard_input(t(label), "", secret)
 
 
+_SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
 def _generate_cert(host: str, port: str) -> str:
     """Generate SHA256 cert fingerprint via openssl pipe chain."""
     procs: list[subprocess.Popen] = []
@@ -580,33 +582,42 @@ def _generate_cert(host: str, port: str) -> str:
             ["openssl", "x509", "-outform", "DER"],
             stdin=s_client.stdout,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         procs.append(x509)
         s_client.stdout.close()
-
-        dgst = subprocess.Popen(
-            ["openssl", "dgst", "-sha256"],
-            stdin=x509.stdout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        procs.append(dgst)
-        x509.stdout.close()
 
         # Send empty line to s_client (like "echo |")
         s_client.stdin.write(b"\n")
         s_client.stdin.close()
 
-        out, _ = dgst.communicate(timeout=cfg.timeouts.cert_generation)
+        # Read x509 DER output first - if empty, server didn't return a cert
+        der_out, x509_err = x509.communicate(timeout=cfg.timeouts.cert_generation)
         s_client.wait(timeout=cfg.timeouts.cert_openssl)
-        x509.wait(timeout=cfg.timeouts.cert_openssl)
+
+        if not der_out:
+            return ""
+
+        # Hash the DER cert
+        dgst = subprocess.Popen(
+            ["openssl", "dgst", "-sha256"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(dgst)
+        out, _ = dgst.communicate(input=der_out, timeout=cfg.timeouts.cert_openssl)
 
         if dgst.returncode == 0 and out:
             text = out.decode().strip()
             if "= " in text:
-                return text.split("= ", 1)[1].strip()
-            return text
+                cert = text.split("= ", 1)[1].strip()
+            else:
+                cert = text
+            # Reject sha256 of empty input (broken pipe produced no cert data)
+            if cert == _SHA256_EMPTY:
+                return ""
+            return cert
     except (subprocess.TimeoutExpired, OSError):
         pass
     finally:

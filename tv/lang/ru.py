@@ -176,6 +176,7 @@ STRINGS: dict[str, str] = {
     "vpn.ovpn.tunnelblick_active": "Tunnelblick OpenVPN активен (PID={pid}), пропускаю свой OpenVPN",
     "vpn.ovpn.connected": "OpenVPN подключен ({iface})",
     "vpn.ovpn.using_tunnelblick": "OpenVPN подключен (Tunnelblick)",
+    "vpn.ovpn.config_not_found": "Файл конфига не найден: {path}",
 
     # --- vpn/fortivpn.py ---
     "vpn.forti.not_connected": "FortiVPN не поднялся за {timeout}с",
@@ -193,6 +194,7 @@ STRINGS: dict[str, str] = {
     "vpn.sb.exited": "Процесс завершился с кодом: {rc}",
     "vpn.sb.log_hint": "Лог: {path}",
     "vpn.sb.connected": "sing-box подключен ({iface})",
+    "vpn.sb.config_not_found": "Файл конфига не найден: {path}",
 
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN конфиг",
