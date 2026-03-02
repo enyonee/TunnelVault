@@ -259,8 +259,6 @@ def _handle_forti_cert(
     if tcfg.auth.get("trusted_cert"):
         return
 
-    cert_label = t("config.cert_sha256")
-
     # Check ENV
     env_val = os.environ.get("VPN_TRUSTED_CERT", "")
     if env_val:

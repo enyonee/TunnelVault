@@ -205,17 +205,34 @@ class Engine:
                 "INFO", f"=== [{i}/{total}] {plugin.display_name} ({tcfg.name}) ==="
             )
 
-            # Check if already running
+            # Check if already running AND interface is alive
             existing_pid = plugin_cls.discover_pid(tcfg, self.script_dir)
+            reuse = False
             if existing_pid and proc.is_alive(existing_pid):
-                plugin._pid = existing_pid
-                detail = f"already running (PID={existing_pid})"
-                ui.ok(f"{plugin.display_name} {detail}")
-                self.log.log(
-                    "INFO", f"{plugin.display_name} {detail}, skipping connect"
-                )
-                result = VPNResult(ok=True, pid=existing_pid, detail=detail)
-            else:
+                if tcfg.interface and not self.net.check_interface(tcfg.interface):
+                    # PID alive but interface gone - stale process, kill and reconnect
+                    self.log.log(
+                        "WARN",
+                        f"{plugin.display_name} PID={existing_pid} alive but "
+                        f"interface {tcfg.interface} gone, reconnecting",
+                    )
+                    ui.warn(f"{plugin.display_name}: PID={existing_pid} alive, interface {tcfg.interface} gone")
+                    try:
+                        plugin._pid = existing_pid
+                        plugin.disconnect()
+                    except Exception as e:
+                        self.log.log("WARN", f"stale disconnect: {e}")
+                else:
+                    reuse = True
+                    plugin._pid = existing_pid
+                    detail = f"already running (PID={existing_pid})"
+                    ui.ok(f"{plugin.display_name} {detail}")
+                    self.log.log(
+                        "INFO", f"{plugin.display_name} {detail}, skipping connect"
+                    )
+                    result = VPNResult(ok=True, pid=existing_pid, detail=detail)
+
+            if not reuse:
                 result = plugin.connect()
 
             self.results.append(result)
