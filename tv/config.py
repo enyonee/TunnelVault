@@ -158,12 +158,14 @@ def resolve_tunnel_params(
     script_dir: Path,
     *,
     quiet: bool = False,
+    setup: bool = False,
 ) -> None:
     """Resolve missing params for a tunnel using plugin's config_schema().
 
     Mutates tcfg.auth / tcfg.config_file / tcfg.extra in place.
     Priority: TOML value -> ENV -> saved -> wizard input.
     In quiet mode: no prints, no wizard. Raises SetupRequiredError if required param missing.
+    When *setup=True*: show wizard with current values as defaults, letting user override.
     """
     schema = plugin_cls.config_schema()
     if not schema:
@@ -175,6 +177,14 @@ def resolve_tunnel_params(
         # Current value from TOML (or auto-applied default)
         current = _get_param_value(tcfg, param)
         if current:
+            # In setup mode, let user override TOML values via wizard
+            if setup and param.prompt:
+                ui.param_found(param.label, current, "defaults.toml", param.secret)
+                new_value = ui.wizard_input(t(param.label), current, param.secret)
+                if new_value:
+                    _set_param_value(tcfg, param, new_value)
+                continue
+
             # Auto-applied config_file defaults can be overridden by ENV/saved
             if param.target == "config_file" and tcfg._auto_config_file:
                 env_val = os.environ.get(param.env_var, "") if param.env_var else ""
@@ -228,6 +238,7 @@ def resolve_tunnel_params(
             default=param.default,
             secret=param.secret,
             quiet=quiet,
+            setup=setup,
         )
         _set_param_value(tcfg, param, value)
 
@@ -299,8 +310,12 @@ def resolve_tunnel_routes(
     saved: dict,
     *,
     quiet: bool = False,
+    setup: bool = False,
 ) -> None:
-    """Resolve routes for a tunnel: TOML targets -> parse, or wizard."""
+    """Resolve routes for a tunnel: TOML targets -> parse, or wizard.
+
+    When *setup=True*: show wizard with current targets as defaults.
+    """
     # Advanced mode: TOML already has explicit routes - skip wizard
     has_advanced = bool(tcfg.routes.get("networks") or tcfg.routes.get("hosts"))
     if has_advanced and not quiet:
@@ -315,31 +330,36 @@ def resolve_tunnel_routes(
 
     # Get targets: TOML -> saved -> wizard
     targets = tcfg.routes.get("targets", [])
+    source = "defaults.toml"
     resolved = bool(targets) or has_advanced
 
     if not resolved:
         tunnel_saved = _tunnel_saved(saved, tcfg)
         if "targets" in tunnel_saved:
             targets = tunnel_saved["targets"]
-            if not quiet:
-                if targets:
-                    ui.param_found(
-                        "Targets", ", ".join(targets), cfg.paths.settings_file, False
-                    )
-                else:
-                    ui.param_found(
-                        t("config.routes_label", name=tcfg.name),
-                        t("config.routes_native"),
-                        cfg.paths.settings_file,
-                        False,
-                    )
+            source = cfg.paths.settings_file
             resolved = True
 
-    if not resolved:
+    # In setup mode, show wizard with current targets as defaults
+    if setup and not has_advanced:
+        if targets:
+            ui.param_found("Targets", ", ".join(targets), source, False)
+        targets = ui.wizard_targets(tcfg.name, default=targets)
+    elif not resolved:
         if quiet:
             targets = []  # Native routing in quiet mode
         else:
             targets = ui.wizard_targets(tcfg.name)
+    elif not quiet:
+        if targets:
+            ui.param_found("Targets", ", ".join(targets), source, False)
+        elif source == cfg.paths.settings_file:
+            ui.param_found(
+                t("config.routes_label", name=tcfg.name),
+                t("config.routes_native"),
+                source,
+                False,
+            )
 
     # Always store targets for saving ([] = native routing, remembered)
     tcfg.routes["targets"] = targets
@@ -506,8 +526,12 @@ def _resolve_param(
     default: str = "",
     secret: bool = False,
     quiet: bool = False,
+    setup: bool = False,
 ) -> str:
-    """Resolve single param with priority chain: ENV -> saved -> wizard."""
+    """Resolve single param with priority chain: ENV -> saved -> wizard.
+
+    When *setup=True*: saved value shown as wizard default instead of accepted silently.
+    """
     # 1. ENV
     env_val = os.environ.get(env_name, "") if env_name else ""
     if env_val:
@@ -517,6 +541,10 @@ def _resolve_param(
 
     # 2. Saved (.vpn-settings.json)
     if saved:
+        if setup:
+            # Show wizard with saved value as default
+            ui.param_found(label, saved, cfg.paths.settings_file, secret)
+            return ui.wizard_input(t(label), saved, secret)
         if not quiet:
             ui.param_found(label, saved, cfg.paths.settings_file, secret)
         return saved

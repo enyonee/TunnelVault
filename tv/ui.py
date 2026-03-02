@@ -94,7 +94,7 @@ def wizard_input(label: str, default: str = "", secret: bool = False) -> str:
     return value or default
 
 
-def wizard_targets(tunnel_name: str) -> list[str]:
+def wizard_targets(tunnel_name: str, default: list[str] | None = None) -> list[str]:
     """Wizard prompt for tunnel targets with validation and retry."""
     from tv.routing import validate_target
 
@@ -107,8 +107,10 @@ def wizard_targets(tunnel_name: str) -> list[str]:
     print(f"  {DIM}  {t('ui.routes_fmt_wildcard')}{NC}")
     print(f"  {DIM}  {t('ui.routes_fmt_host')}{NC}")
 
+    default_str = ", ".join(default) if default else ""
+
     while True:
-        raw = wizard_input("Targets")
+        raw = wizard_input("Targets", default=default_str)
         items = [t_.strip() for t_ in raw.split(",") if t_.strip()]
         if not items:
             return []

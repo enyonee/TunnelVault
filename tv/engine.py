@@ -137,6 +137,7 @@ class Engine:
                         saved,
                         self.script_dir,
                         quiet=quiet,
+                        setup=setup,
                     )
                 except config.SetupRequiredError:
                     if not quiet or _retry:
@@ -147,7 +148,7 @@ class Engine:
                     print()
 
             # Resolve routes (targets -> networks/hosts/dns)
-            config.resolve_tunnel_routes(tcfg, saved, quiet=quiet)
+            config.resolve_tunnel_routes(tcfg, saved, quiet=quiet, setup=setup)
 
         # Validate config_file uniqueness after resolution
         defaults_mod.validate_config_files(self.tunnels)

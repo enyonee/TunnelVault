@@ -81,6 +81,7 @@ STRINGS: dict[str, str] = {
     "defaults.no_tunnels": "{file}: missing [tunnels.*] section",
     "defaults.format_hint": 'Format: [tunnels.<name>] with type = "openvpn" | "fortivpn" | "singbox"',
     "defaults.loaded": "Defaults: loaded",
+    "defaults.created_from_example": "Created {file} from example template",
     "defaults.iface_conflict": "Tunnels '{a}' and '{b}' use same interface '{iface}'",
     "defaults.log_conflict": "Tunnels '{a}' and '{b}' use same log '{log}'",
     "defaults.config_conflict": "Tunnels '{a}' and '{b}' (type={type}) use same config_file '{cf}'. Specify different config_file in [tunnels.*]",

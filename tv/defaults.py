@@ -22,17 +22,29 @@ from tv.i18n import t
 from tv.vpn.base import TunnelConfig
 
 
-def load(script_dir: Path) -> dict:
+def load(script_dir: Path, *, setup: bool = False) -> dict:
     """Load defaults.toml with [tunnels.*] format.
 
     Requires at least one [tunnels.<name>] section.
+    When *setup=True* and file is missing, copies from defaults.toml.example.
     """
     defaults_file = cfg.paths.defaults_file
     path = script_dir / defaults_file
     if not path.exists():
-        print(f"  {ui.RED}❌ {t('defaults.not_found', file=defaults_file)}{ui.NC}")
-        print(f"  {ui.DIM}{t('defaults.expected_at', path=path)}{ui.NC}")
-        sys.exit(1)
+        if setup:
+            example = script_dir / f"{defaults_file}.example"
+            if example.exists():
+                import shutil
+                shutil.copy2(str(example), str(path))
+                print(f"  {ui.GREEN}📋{ui.NC} {t('defaults.created_from_example', file=defaults_file)}")
+            else:
+                print(f"  {ui.RED}❌ {t('defaults.not_found', file=defaults_file)}{ui.NC}")
+                print(f"  {ui.DIM}{t('defaults.expected_at', path=path)}{ui.NC}")
+                sys.exit(1)
+        else:
+            print(f"  {ui.RED}❌ {t('defaults.not_found', file=defaults_file)}{ui.NC}")
+            print(f"  {ui.DIM}{t('defaults.expected_at', path=path)}{ui.NC}")
+            sys.exit(1)
 
     try:
         with open(path, "rb") as f:

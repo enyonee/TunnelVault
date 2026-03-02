@@ -81,6 +81,7 @@ STRINGS: dict[str, str] = {
     "defaults.no_tunnels": "{file}: отсутствует секция [tunnels.*]",
     "defaults.format_hint": 'Формат: [tunnels.<имя>] с полем type = "openvpn" | "fortivpn" | "singbox"',
     "defaults.loaded": "Defaults: загружены",
+    "defaults.created_from_example": "Создан {file} из шаблона",
     "defaults.iface_conflict": "Туннели '{a}' и '{b}' используют один интерфейс '{iface}'",
     "defaults.log_conflict": "Туннели '{a}' и '{b}' используют один лог '{log}'",
     "defaults.config_conflict": "Туннели '{a}' и '{b}' (type={type}) используют один config_file '{cf}'. Укажите разные config_file в [tunnels.*]",

@@ -220,10 +220,13 @@ class TestPrepare:
         (tmp_dir / ".vpn-settings.json").write_text(json.dumps(settings))
 
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
-        with patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz:
+        with patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz, \
+             patch("tv.ui.wizard_input", return_value="") as mock_input:
             e.prepare(setup=True)
 
+        # setup=True triggers wizard for both params and routes
         mock_wiz.assert_called_once()
+        assert mock_input.call_count >= 1
 
     def test_prepare_no_settings_triggers_wizard(self, tmp_dir, mock_net, logger):
         """No settings file + setup=False: wizard runs (first-time use)."""
