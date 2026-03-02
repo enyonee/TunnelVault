@@ -69,6 +69,8 @@ STRINGS: dict[str, str] = {
     "config.cert_generated": "Generated: {cert}...",
     "config.cert_connect_failed": "Could not connect to {host}:{port}",
     "config.cert_not_generated": "Certificate not generated for {host}:{port}. Run with --setup.",
+    "config.cert_unreachable": "{host}:{port} unreachable - skipping cert generation",
+    "config.cert_hint": "Set later: ${env} or \"{file}\" -> fortivpn.trusted_cert",
     "config.param_not_set": "Parameter '{label}' not set. Run with --setup.",
     "config.routes_label": "Routes ({name})",
     "config.routes_native": "native routing",

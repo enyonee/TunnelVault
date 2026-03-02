@@ -293,15 +293,8 @@ def _handle_forti_cert(
             print(f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=cert[:24])}")
         tcfg.auth["trusted_cert"] = cert
     else:
-        if quiet:
-            raise SetupRequiredError(
-                t("config.cert_not_generated", host=host, port=port)
-            )
-        print(
-            f"  {ui.RED}❌{ui.NC} {t('config.cert_connect_failed', host=host, port=port)}"
-        )
-        ui.param_missing("param.cert_sha256")
-        tcfg.auth["trusted_cert"] = ui.wizard_input(cert_label, "", False)
+        ui.warn(t("config.cert_unreachable", host=host, port=port))
+        ui.info(f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.settings_file)}{ui.NC}")
 
 
 def resolve_tunnel_routes(
