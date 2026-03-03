@@ -5,7 +5,9 @@ from __future__ import annotations
 import atexit
 import os
 import platform
+import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from tv import proc, ui
@@ -16,6 +18,43 @@ from tv.net import NetManager
 from tv.proc import IS_WINDOWS
 from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
 from tv.vpn.registry import register
+
+
+@dataclass
+class FortiDNSInfo:
+    """DNS info parsed from openfortivpn log."""
+
+    nameservers: list[str]
+    suffixes: list[str]
+
+
+_RE_FORTI_DNS = re.compile(r"Got addresses:.*?ns \[([^\]]*)\].*?ns_suffix \[([^\]]*)\]")
+
+
+def parse_forti_dns(log_content: str) -> FortiDNSInfo | None:
+    """Extract nameservers and domain suffixes from openfortivpn log output."""
+    m = _RE_FORTI_DNS.search(log_content)
+    if not m:
+        return None
+    ns_raw, suffix_raw = m.group(1).strip(), m.group(2).strip()
+    nameservers = [s.strip() for s in ns_raw.split(",") if s.strip()] if ns_raw else []
+    suffixes = (
+        [s.strip() for s in suffix_raw.split(";") if s.strip()] if suffix_raw else []
+    )
+    return FortiDNSInfo(nameservers=nameservers, suffixes=suffixes)
+
+
+def _read_log_tail(log_path: Path, max_bytes: int = 4096) -> str:
+    """Read the tail of a log file (last max_bytes). Returns empty string on error."""
+    try:
+        size = log_path.stat().st_size
+        with open(log_path, "r", errors="replace") as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+            return f.read()
+    except OSError:
+        return ""
+
 
 def _safe_unlink(path: str) -> None:
     """Remove file if it exists. Silently ignore errors (atexit safety net)."""
@@ -76,14 +115,55 @@ class FortiVPNPlugin(TunnelPlugin):
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:
         return [
-            ConfigParam("host", "param.host", required=True, env_var="VPN_FORTI_HOST", target="auth"),
-            ConfigParam("port", "param.port", default=cfg.defaults.fortivpn_port, env_var="VPN_FORTI_PORT", target="auth"),
-            ConfigParam("login", "param.login", required=True, env_var="VPN_FORTI_LOGIN", target="auth"),
-            ConfigParam("pass", "param.password", required=True, secret=True, env_var="VPN_FORTI_PASS", target="auth"),
-            ConfigParam("cert_mode", "param.cert_mode", default=cfg.defaults.fortivpn_cert_mode, env_var="VPN_CERT_MODE", target="auth"),
-            ConfigParam("trusted_cert", "param.cert_sha256", env_var="VPN_TRUSTED_CERT", target="auth"),
-            ConfigParam("fallback_gateway", "param.fallback_gw", env_var="VPN_FORTI_FALLBACK_GW",
-                         target="extra", prompt=False),
+            ConfigParam(
+                "host",
+                "param.host",
+                required=True,
+                env_var="VPN_FORTI_HOST",
+                target="auth",
+            ),
+            ConfigParam(
+                "port",
+                "param.port",
+                default=cfg.defaults.fortivpn_port,
+                env_var="VPN_FORTI_PORT",
+                target="auth",
+            ),
+            ConfigParam(
+                "login",
+                "param.login",
+                required=True,
+                env_var="VPN_FORTI_LOGIN",
+                target="auth",
+            ),
+            ConfigParam(
+                "pass",
+                "param.password",
+                required=True,
+                secret=True,
+                env_var="VPN_FORTI_PASS",
+                target="auth",
+            ),
+            ConfigParam(
+                "cert_mode",
+                "param.cert_mode",
+                default=cfg.defaults.fortivpn_cert_mode,
+                env_var="VPN_CERT_MODE",
+                target="auth",
+            ),
+            ConfigParam(
+                "trusted_cert",
+                "param.cert_sha256",
+                env_var="VPN_TRUSTED_CERT",
+                target="auth",
+            ),
+            ConfigParam(
+                "fallback_gateway",
+                "param.fallback_gw",
+                env_var="VPN_FORTI_FALLBACK_GW",
+                target="extra",
+                prompt=False,
+            ),
         ]
 
     @property
@@ -93,6 +173,63 @@ class FortiVPNPlugin(TunnelPlugin):
     @property
     def display_name(self) -> str:
         return "FortiVPN"
+
+    def _apply_discovered_dns(self, log_path: Path) -> None:
+        """Parse FortiVPN log for DNS info and merge into self.cfg.dns.
+
+        Config-first: manual nameservers take priority, discovery is fallback.
+        Domains are always merged (config + discovered, deduplicated).
+        """
+        content = _read_log_tail(log_path)
+        info = parse_forti_dns(content)
+        if not info:
+            self.log.log("DEBUG", "DNS auto-discovery: no 'Got addresses' in log")
+            return
+
+        self.log.log(
+            "INFO",
+            f"DNS auto-discovery: ns={info.nameservers}, suffixes={info.suffixes}",
+        )
+
+        # Nameservers: fill only if user didn't set manually
+        if not self.cfg.dns.get("nameservers") and info.nameservers:
+            self.cfg.dns["nameservers"] = info.nameservers
+            self.log.log("INFO", f"DNS nameservers from discovery: {info.nameservers}")
+
+        # Domains: merge config + discovered, deduplicate, preserve order
+        existing = self.cfg.dns.get("domains", [])
+        merged = list(existing)
+        for suffix in info.suffixes:
+            if suffix not in merged:
+                merged.append(suffix)
+        if merged != existing:
+            self.cfg.dns["domains"] = merged
+            self.log.log("INFO", f"DNS domains after merge: {merged}")
+
+    def _add_dns_routes(self, ppp_iface: str) -> None:
+        """Add host routes to each DNS nameserver through PPP interface.
+
+        Prevents OpenVPN catch-all routes from intercepting DNS traffic.
+        """
+        self._dns_routes: list[str] = []
+        nameservers = self.cfg.dns.get("nameservers", [])
+        if not nameservers:
+            return
+
+        for ns in nameservers:
+            ok = self.net.add_iface_route(ns, ppp_iface, host=True)
+            self.log.log(
+                "INFO" if ok else "WARN",
+                f"DNS route {ns} -> {ppp_iface} {'OK' if ok else 'FAIL'}",
+            )
+            if ok:
+                self._dns_routes.append(ns)
+
+    def _cleanup_dns_routes(self) -> None:
+        """Remove DNS server routes added by _add_dns_routes."""
+        for ns in getattr(self, "_dns_routes", []):
+            self.net.delete_host_route(ns)
+        self._dns_routes = []
 
     def connect(self) -> VPNResult:
         if IS_WINDOWS:
@@ -137,12 +274,10 @@ class FortiVPNPlugin(TunnelPlugin):
         atexit.register(_safe_unlink, conf_path)
 
         has_custom_routes = bool(
-            self.cfg.routes.get("hosts")
-            or self.cfg.routes.get("networks")
+            self.cfg.routes.get("hosts") or self.cfg.routes.get("networks")
         )
         has_custom_dns = bool(
-            self.cfg.dns.get("nameservers")
-            and self.cfg.dns.get("domains")
+            self.cfg.dns.get("nameservers") and self.cfg.dns.get("domains")
         )
         managed = has_custom_routes or has_custom_dns
 
@@ -177,7 +312,10 @@ class FortiVPNPlugin(TunnelPlugin):
             return False
 
         if not proc.wait_for(
-            f"FortiVPN ({self.cfg.name} ppp)", _check_new_ppp, cfg.timeouts.fortivpn_ppp, self.log
+            f"FortiVPN ({self.cfg.name} ppp)",
+            _check_new_ppp,
+            cfg.timeouts.fortivpn_ppp,
+            self.log,
         ):
             _show_error(forti_proc, log_path, self.log, label="ppp interface")
             return VPNResult(ok=False, pid=forti_pid)
@@ -189,7 +327,9 @@ class FortiVPNPlugin(TunnelPlugin):
         # --- Connected ---
         ui.ok(t("vpn.forti.connected", iface=ppp_iface))
         self.log.log("INFO", f"FortiVPN connected ({ppp_iface})")
-        self.log.log_lines("INFO", f"ifconfig {ppp_iface}:\n{self.net.iface_info(ppp_iface)}")
+        self.log.log_lines(
+            "INFO", f"ifconfig {ppp_iface}:\n{self.net.iface_info(ppp_iface)}"
+        )
 
         # Native mode: openfortivpn handles routes/DNS, just log PPP gateway
         if not managed:
@@ -197,10 +337,17 @@ class FortiVPNPlugin(TunnelPlugin):
             if ppp_gw:
                 print(f"  ↳ peer: {ui.YELLOW}{ppp_gw}{ui.NC}")
                 self.log.log("INFO", f"PPP_GW={ppp_gw}")
-            self.log.log("INFO", f"Routes after FortiVPN (native):\n{self.net.route_table()}")
+            self.log.log(
+                "INFO", f"Routes after FortiVPN (native):\n{self.net.route_table()}"
+            )
             return VPNResult(ok=True, pid=forti_pid)
 
-        # Managed mode: custom routes via PPP gateway
+        # Managed mode: DNS auto-discovery (before routes)
+        self._apply_discovered_dns(log_path)
+        dns_servers = self.cfg.dns.get("nameservers", [])
+        dns_domains = self.cfg.dns.get("domains", [])
+
+        # PPP gateway for custom routes
         ppp_gw = _detect_ppp_gateway(self.net, interface=ppp_iface)
         if not ppp_gw:
             if fallback_gw:
@@ -217,6 +364,9 @@ class FortiVPNPlugin(TunnelPlugin):
 
         # Routes via PPP gateway (networks + hosts from config/targets)
         self.add_routes(gateway=ppp_gw)
+
+        # DNS server routes (prevent OpenVPN catch-all from intercepting)
+        self._add_dns_routes(ppp_iface)
 
         # Background ping to warm up
         if dns_servers:
@@ -251,13 +401,16 @@ class FortiVPNPlugin(TunnelPlugin):
         proc.kill_pattern(f"openfortivpn -c {conf_path}", sudo=True)
 
     def disconnect(self) -> None:
-        """Kill FortiVPN + clean up temp config."""
+        """Kill FortiVPN + clean up DNS routes + temp config."""
         if not self._kill_by_pid():
             self._kill_by_pattern()
+        self._cleanup_dns_routes()
         try:
             os.unlink(self._effective_conf_path())
         except OSError:
             pass
 
     def _effective_conf_path(self) -> str:
-        return getattr(self, "_conf_path", f"{cfg.paths.temp_dir}/forti_{self.cfg.name}.conf")
+        return getattr(
+            self, "_conf_path", f"{cfg.paths.temp_dir}/forti_{self.cfg.name}.conf"
+        )
