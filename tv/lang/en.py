@@ -69,6 +69,8 @@ STRINGS: dict[str, str] = {
     "config.cert_generated": "Generated: {cert}...",
     "config.cert_connect_failed": "Could not connect to {host}:{port}",
     "config.cert_not_generated": "Certificate not generated for {host}:{port}. Run with --setup.",
+    "config.cert_unreachable": "{host}:{port} unreachable - skipping cert generation",
+    "config.cert_hint": "Set later: ${env} or \"{file}\" -> fortivpn.trusted_cert",
     "config.param_not_set": "Parameter '{label}' not set. Run with --setup.",
     "config.routes_label": "Routes ({name})",
     "config.routes_native": "native routing",
@@ -81,6 +83,7 @@ STRINGS: dict[str, str] = {
     "defaults.no_tunnels": "{file}: missing [tunnels.*] section",
     "defaults.format_hint": 'Format: [tunnels.<name>] with type = "openvpn" | "fortivpn" | "singbox"',
     "defaults.loaded": "Defaults: loaded",
+    "defaults.created_from_example": "Created {file} from example template",
     "defaults.iface_conflict": "Tunnels '{a}' and '{b}' use same interface '{iface}'",
     "defaults.log_conflict": "Tunnels '{a}' and '{b}' use same log '{log}'",
     "defaults.config_conflict": "Tunnels '{a}' and '{b}' (type={type}) use same config_file '{cf}'. Specify different config_file in [tunnels.*]",
@@ -175,6 +178,7 @@ STRINGS: dict[str, str] = {
     "vpn.ovpn.tunnelblick_active": "Tunnelblick OpenVPN active (PID={pid}), skipping own OpenVPN",
     "vpn.ovpn.connected": "OpenVPN connected ({iface})",
     "vpn.ovpn.using_tunnelblick": "OpenVPN connected (Tunnelblick)",
+    "vpn.ovpn.config_not_found": "Config file not found: {path}",
 
     # --- vpn/fortivpn.py ---
     "vpn.forti.not_connected": "FortiVPN did not start within {timeout}s",
@@ -192,6 +196,7 @@ STRINGS: dict[str, str] = {
     "vpn.sb.exited": "Process exited with code: {rc}",
     "vpn.sb.log_hint": "Log: {path}",
     "vpn.sb.connected": "sing-box connected ({iface})",
+    "vpn.sb.config_not_found": "Config file not found: {path}",
 
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN config",

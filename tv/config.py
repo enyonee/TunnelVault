@@ -158,12 +158,14 @@ def resolve_tunnel_params(
     script_dir: Path,
     *,
     quiet: bool = False,
+    setup: bool = False,
 ) -> None:
     """Resolve missing params for a tunnel using plugin's config_schema().
 
     Mutates tcfg.auth / tcfg.config_file / tcfg.extra in place.
     Priority: TOML value -> ENV -> saved -> wizard input.
     In quiet mode: no prints, no wizard. Raises SetupRequiredError if required param missing.
+    When *setup=True*: show wizard with current values as defaults, letting user override.
     """
     schema = plugin_cls.config_schema()
     if not schema:
@@ -175,6 +177,13 @@ def resolve_tunnel_params(
         # Current value from TOML (or auto-applied default)
         current = _get_param_value(tcfg, param)
         if current:
+            # In setup mode, let user override TOML values via wizard
+            if setup and param.prompt:
+                ui.param_found(param.label, current, "defaults.toml", param.secret)
+                new_value = ui.wizard_input(t(param.label), current, param.secret)
+                _set_param_value(tcfg, param, new_value)
+                continue
+
             # Auto-applied config_file defaults can be overridden by ENV/saved
             if param.target == "config_file" and tcfg._auto_config_file:
                 env_val = os.environ.get(param.env_var, "") if param.env_var else ""
@@ -228,6 +237,7 @@ def resolve_tunnel_params(
             default=param.default,
             secret=param.secret,
             quiet=quiet,
+            setup=setup,
         )
         _set_param_value(tcfg, param, value)
 
@@ -249,8 +259,6 @@ def _handle_forti_cert(
     if tcfg.auth.get("trusted_cert"):
         return
 
-    cert_label = t("config.cert_sha256")
-
     # Check ENV
     env_val = os.environ.get("VPN_TRUSTED_CERT", "")
     if env_val:
@@ -259,9 +267,9 @@ def _handle_forti_cert(
         tcfg.auth["trusted_cert"] = env_val
         return
 
-    # Check saved
+    # Check saved (reject sha256 of empty - broken cert generation)
     saved_val = tunnel_saved.get("trusted_cert", "")
-    if saved_val:
+    if saved_val and saved_val != _SHA256_EMPTY:
         if not quiet:
             ui.param_found(
                 "param.cert_sha256", saved_val, cfg.paths.settings_file, False
@@ -283,15 +291,8 @@ def _handle_forti_cert(
             print(f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=cert[:24])}")
         tcfg.auth["trusted_cert"] = cert
     else:
-        if quiet:
-            raise SetupRequiredError(
-                t("config.cert_not_generated", host=host, port=port)
-            )
-        print(
-            f"  {ui.RED}❌{ui.NC} {t('config.cert_connect_failed', host=host, port=port)}"
-        )
-        ui.param_missing("param.cert_sha256")
-        tcfg.auth["trusted_cert"] = ui.wizard_input(cert_label, "", False)
+        ui.warn(t("config.cert_unreachable", host=host, port=port))
+        ui.info(f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.settings_file)}{ui.NC}")
 
 
 def resolve_tunnel_routes(
@@ -299,8 +300,12 @@ def resolve_tunnel_routes(
     saved: dict,
     *,
     quiet: bool = False,
+    setup: bool = False,
 ) -> None:
-    """Resolve routes for a tunnel: TOML targets -> parse, or wizard."""
+    """Resolve routes for a tunnel: TOML targets -> parse, or wizard.
+
+    When *setup=True*: show wizard with current targets as defaults.
+    """
     # Advanced mode: TOML already has explicit routes - skip wizard
     has_advanced = bool(tcfg.routes.get("networks") or tcfg.routes.get("hosts"))
     if has_advanced and not quiet:
@@ -315,31 +320,36 @@ def resolve_tunnel_routes(
 
     # Get targets: TOML -> saved -> wizard
     targets = tcfg.routes.get("targets", [])
+    source = "defaults.toml"
     resolved = bool(targets) or has_advanced
 
     if not resolved:
         tunnel_saved = _tunnel_saved(saved, tcfg)
         if "targets" in tunnel_saved:
             targets = tunnel_saved["targets"]
-            if not quiet:
-                if targets:
-                    ui.param_found(
-                        "Targets", ", ".join(targets), cfg.paths.settings_file, False
-                    )
-                else:
-                    ui.param_found(
-                        t("config.routes_label", name=tcfg.name),
-                        t("config.routes_native"),
-                        cfg.paths.settings_file,
-                        False,
-                    )
+            source = cfg.paths.settings_file
             resolved = True
 
-    if not resolved:
+    # In setup mode, show wizard with current targets as defaults
+    if setup and not has_advanced:
+        if targets:
+            ui.param_found("Targets", ", ".join(targets), source, False)
+        targets = ui.wizard_targets(tcfg.name, default=targets)
+    elif not resolved:
         if quiet:
             targets = []  # Native routing in quiet mode
         else:
             targets = ui.wizard_targets(tcfg.name)
+    elif not quiet:
+        if targets:
+            ui.param_found("Targets", ", ".join(targets), source, False)
+        elif source == cfg.paths.settings_file:
+            ui.param_found(
+                t("config.routes_label", name=tcfg.name),
+                t("config.routes_native"),
+                source,
+                False,
+            )
 
     # Always store targets for saving ([] = native routing, remembered)
     tcfg.routes["targets"] = targets
@@ -506,8 +516,12 @@ def _resolve_param(
     default: str = "",
     secret: bool = False,
     quiet: bool = False,
+    setup: bool = False,
 ) -> str:
-    """Resolve single param with priority chain: ENV -> saved -> wizard."""
+    """Resolve single param with priority chain: ENV -> saved -> wizard.
+
+    When *setup=True*: saved value shown as wizard default instead of accepted silently.
+    """
     # 1. ENV
     env_val = os.environ.get(env_name, "") if env_name else ""
     if env_val:
@@ -517,6 +531,10 @@ def _resolve_param(
 
     # 2. Saved (.vpn-settings.json)
     if saved:
+        if setup:
+            # Show wizard with saved value as default
+            ui.param_found(label, saved, cfg.paths.settings_file, secret)
+            return ui.wizard_input(t(label), saved, secret)
         if not quiet:
             ui.param_found(label, saved, cfg.paths.settings_file, secret)
         return saved
@@ -537,12 +555,15 @@ def _resolve_param(
     return ui.wizard_input(t(label), "", secret)
 
 
+_SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
 def _generate_cert(host: str, port: str) -> str:
     """Generate SHA256 cert fingerprint via openssl pipe chain."""
     procs: list[subprocess.Popen] = []
     try:
         s_client = subprocess.Popen(
-            ["openssl", "s_client", "-connect", f"{host}:{port}"],
+            ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -552,33 +573,42 @@ def _generate_cert(host: str, port: str) -> str:
             ["openssl", "x509", "-outform", "DER"],
             stdin=s_client.stdout,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         procs.append(x509)
         s_client.stdout.close()
-
-        dgst = subprocess.Popen(
-            ["openssl", "dgst", "-sha256"],
-            stdin=x509.stdout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        procs.append(dgst)
-        x509.stdout.close()
 
         # Send empty line to s_client (like "echo |")
         s_client.stdin.write(b"\n")
         s_client.stdin.close()
 
-        out, _ = dgst.communicate(timeout=cfg.timeouts.cert_generation)
+        # Read x509 DER output first - if empty, server didn't return a cert
+        der_out, x509_err = x509.communicate(timeout=cfg.timeouts.cert_generation)
         s_client.wait(timeout=cfg.timeouts.cert_openssl)
-        x509.wait(timeout=cfg.timeouts.cert_openssl)
+
+        if not der_out:
+            return ""
+
+        # Hash the DER cert
+        dgst = subprocess.Popen(
+            ["openssl", "dgst", "-sha256"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(dgst)
+        out, _ = dgst.communicate(input=der_out, timeout=cfg.timeouts.cert_openssl)
 
         if dgst.returncode == 0 and out:
             text = out.decode().strip()
             if "= " in text:
-                return text.split("= ", 1)[1].strip()
-            return text
+                cert = text.split("= ", 1)[1].strip()
+            else:
+                cert = text
+            # Reject sha256 of empty input (broken pipe produced no cert data)
+            if cert == _SHA256_EMPTY:
+                return ""
+            return cert
     except (subprocess.TimeoutExpired, OSError):
         pass
     finally:

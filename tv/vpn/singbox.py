@@ -52,6 +52,9 @@ class SingBoxPlugin(TunnelPlugin):
 
         self.log.log("INFO", f"Config: {config_path}")
 
+        if err := self._check_config_file("vpn.sb.config_not_found"):
+            return err
+
         # Launch in background
         self.log.log("INFO", f"Launch: sudo sing-box run -c {config_path}")
         sb_proc = proc.run_background(

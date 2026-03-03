@@ -12,6 +12,9 @@ dependencies = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-n auto"
+markers = [
+    "network: tests that require network access (real openssl, DNS)",
+]
 
 [dependency-groups]
 dev = [

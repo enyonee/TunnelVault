@@ -314,3 +314,16 @@ class TestDisconnect:
 
         patterns = [c[0][0] for c in mock_proc.kill_pattern.call_args_list]
         assert any(str(plugin.cfg.log) in p for p in patterns if "log" in p)
+
+
+# =========================================================================
+# Config validation
+# =========================================================================
+
+class TestConfigValidation:
+    def test_connect_config_not_found(self, plugin):
+        """connect() fails immediately if config file does not exist."""
+        plugin.cfg.config_file = "nonexistent.ovpn"
+        r = plugin.connect()
+        assert r.ok is False
+        assert r.detail == "config not found"

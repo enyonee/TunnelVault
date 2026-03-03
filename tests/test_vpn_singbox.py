@@ -241,8 +241,16 @@ class TestResolvedDefaults:
     def test_connect_uses_resolved_config(self, plugin):
         """connect() takes config_file from cfg directly (no fallback)."""
         plugin.cfg.config_file = "my-singbox.json"
+        (plugin.script_dir / "my-singbox.json").write_text("{}")
         with _singbox_connect_ok(plugin) as mock_proc:
             plugin.connect()
 
         bg_call = mock_proc.run_background.call_args[0][0]
         assert any("my-singbox.json" in str(arg) for arg in bg_call)
+
+    def test_connect_config_not_found(self, plugin):
+        """connect() fails immediately if config file does not exist."""
+        plugin.cfg.config_file = "nonexistent.json"
+        r = plugin.connect()
+        assert r.ok is False
+        assert r.detail == "config not found"

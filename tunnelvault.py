@@ -105,7 +105,7 @@ def main() -> None:
 
     # --- Commands that need defaults.toml ---
 
-    defs = defaults_mod.load(script_dir)
+    defs = defaults_mod.load(script_dir, setup=args.setup)
 
     # Initialize i18n from config (after defaults.toml loaded [app].locale)
     from tv import i18n

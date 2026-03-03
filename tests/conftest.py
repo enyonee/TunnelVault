@@ -53,7 +53,7 @@ def mock_net() -> MagicMock:
     net = MagicMock(spec=NetManager)
     net.default_gateway.return_value = "192.168.1.1"
     net.interfaces.return_value = {"en0": "192.168.1.7", "lo0": "127.0.0.1"}
-    net.check_interface.return_value = False
+    net.check_interface.return_value = True
     net.add_host_route.return_value = True
     net.add_net_route.return_value = True
     net.add_iface_route.return_value = True

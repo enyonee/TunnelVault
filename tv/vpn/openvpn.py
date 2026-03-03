@@ -77,6 +77,9 @@ class OpenVPNPlugin(TunnelPlugin):
 
         self.log.log("INFO", f"Config: {config_path}")
 
+        if err := self._check_config_file("vpn.ovpn.config_not_found"):
+            return err
+
         # --- Tunnelblick detection (macOS only) ---
         if not IS_WINDOWS and proc.find_pids("Tunnelblick"):
             tb_ovpn = proc.find_pids("Tunnelblick.*openvpn")

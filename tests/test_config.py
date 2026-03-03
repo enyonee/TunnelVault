@@ -257,6 +257,19 @@ class TestGenerateCert:
         result = _generate_cert("host", "443")
         assert result == ""
 
+    @patch("subprocess.Popen")
+    def test_returns_empty_when_x509_has_no_output(self, mock_popen):
+        """If x509 produces no DER output (server unreachable), return empty."""
+        s_client = MagicMock()
+        s_client.stdout = MagicMock()
+        s_client.stdin = MagicMock()
+        x509 = MagicMock()
+        x509.communicate.return_value = (b"", b"")  # empty DER
+        x509.stdout = MagicMock()
+        mock_popen.side_effect = [s_client, x509]
+        result = _generate_cert("host", "443")
+        assert result == ""
+
 
 # =========================================================================
 # ConfigParam get/set helpers
@@ -412,6 +425,20 @@ class TestResolveTunnelParams:
             resolve_tunnel_params(tc, FortiVPNPlugin, saved, Path("/tmp"))
         mock_cert.assert_not_called()
         assert tc.auth["trusted_cert"] == "saved_cert_value"
+
+    @patch("tv.config._generate_cert", return_value="real_cert_abc")
+    def test_forti_auto_cert_rejects_sha256_empty(self, mock_cert):
+        """cert_mode=auto with saved sha256('') triggers regeneration."""
+        from tv.config import _SHA256_EMPTY
+        tc = TunnelConfig(
+            name="fortivpn", type="fortivpn",
+            auth={"host": "vpn.com", "port": "443",
+                   "login": "u", "pass": "p", "cert_mode": "auto"},
+        )
+        saved = {"fortivpn": {"trusted_cert": _SHA256_EMPTY}}
+        resolve_tunnel_params(tc, FortiVPNPlugin, saved, Path("/tmp"))
+        mock_cert.assert_called_once()
+        assert tc.auth["trusted_cert"] == "real_cert_abc"
 
     def test_saved_found_by_type_when_name_differs(self):
         """Saved under type key ('fortivpn') found when tunnel name differs ('forti')."""
@@ -737,6 +764,111 @@ class TestLoadSettingsQuiet:
         assert result == {}
         out = capsys.readouterr().out
         assert "не найдены" not in out
+
+
+# =========================================================================
+# Setup mode (--setup): wizard shown with current values as defaults
+# =========================================================================
+
+class TestResolveParamSetup:
+    @patch("tv.ui.wizard_input", return_value="new_value")
+    def test_setup_shows_wizard_for_saved(self, mock_wizard):
+        """setup=True: saved value shown as default in wizard."""
+        result = _resolve_param("test", saved="old_value", setup=True)
+        assert result == "new_value"
+        mock_wizard.assert_called_once()
+
+    @patch("tv.ui.wizard_input", return_value="")
+    def test_setup_keeps_saved_on_empty_input(self, mock_wizard):
+        """setup=True: empty wizard input -> returns empty (wizard handles default)."""
+        _resolve_param("test", saved="old_value", setup=True)
+        mock_wizard.assert_called_once()
+
+    def test_setup_env_still_wins(self):
+        """setup=True: ENV value accepted without wizard."""
+        with patch.dict(os.environ, {"VPN_TEST": "from_env"}):
+            result = _resolve_param("test", env_name="VPN_TEST", saved="saved", setup=True)
+        assert result == "from_env"
+
+
+class TestResolveTunnelParamsSetup:
+    @patch("tv.ui.wizard_input", return_value="")
+    def test_setup_shows_wizard_for_toml_values(self, mock_wizard):
+        """setup=True: TOML values shown in wizard with current as default."""
+        tc = TunnelConfig(
+            name="openvpn", type="openvpn",
+            config_file="my.ovpn",
+        )
+        resolve_tunnel_params(tc, OpenVPNPlugin, {}, Path("/tmp"), setup=True)
+        # wizard_input called for the config_file param
+        mock_wizard.assert_called()
+
+    @patch("tv.ui.wizard_input", return_value="new.ovpn")
+    def test_setup_overrides_toml_value(self, mock_wizard):
+        """setup=True: user types new value -> overrides TOML."""
+        tc = TunnelConfig(
+            name="openvpn", type="openvpn",
+            config_file="old.ovpn",
+        )
+        resolve_tunnel_params(tc, OpenVPNPlugin, {}, Path("/tmp"), setup=True)
+        assert tc.config_file == "new.ovpn"
+
+    @patch("tv.ui.wizard_input", return_value="new_user")
+    def test_setup_shows_wizard_for_saved_params(self, mock_wizard):
+        """setup=True: saved values shown in wizard instead of silently accepted."""
+        tc = TunnelConfig(name="fortivpn", type="fortivpn")
+        saved = {
+            "fortivpn": {
+                "host": "vpn.com", "port": "443",
+                "login": "old_user", "pass": "secret",
+                "cert_mode": "manual", "trusted_cert": "abc123",
+            },
+        }
+        resolve_tunnel_params(tc, FortiVPNPlugin, saved, Path("/tmp"), setup=True)
+        # wizard_input called for each promptable param
+        assert mock_wizard.call_count >= 1
+
+
+class TestResolveTunnelRoutesSetup:
+    @patch("tv.ui.wizard_targets", return_value=["172.16.0.0/12"])
+    def test_setup_shows_wizard_for_toml_targets(self, mock_wizard):
+        """setup=True: wizard called even when targets in TOML."""
+        tc = TunnelConfig(
+            name="forti", type="fortivpn",
+            routes={"targets": ["10.0.0.0/8"]},
+        )
+        resolve_tunnel_routes(tc, {}, setup=True)
+        mock_wizard.assert_called_once_with("forti", default=["10.0.0.0/8"])
+        assert "172.16.0.0/12" in tc.routes["networks"]
+
+    @patch("tv.ui.wizard_targets", return_value=[])
+    def test_setup_keeps_empty_on_enter(self, mock_wizard):
+        """setup=True: empty wizard input -> native routing."""
+        tc = TunnelConfig(
+            name="forti", type="fortivpn",
+            routes={"targets": ["10.0.0.0/8"]},
+        )
+        resolve_tunnel_routes(tc, {}, setup=True)
+        assert tc.routes["targets"] == []
+
+    def test_setup_skips_wizard_for_advanced_routes(self):
+        """setup=True: advanced mode (explicit networks) not overridden by wizard."""
+        tc = TunnelConfig(
+            name="forti", type="fortivpn",
+            routes={"networks": ["10.0.0.0/8"]},
+        )
+        with patch("tv.ui.wizard_targets") as mock_wiz:
+            resolve_tunnel_routes(tc, {}, setup=True)
+        mock_wiz.assert_not_called()
+
+    @patch("tv.ui.wizard_targets", return_value=["192.168.0.0/16"])
+    def test_setup_shows_wizard_for_saved_targets(self, mock_wizard):
+        """setup=True: saved targets shown as default in wizard."""
+        tc = TunnelConfig(name="forti", type="fortivpn")
+        saved = {"forti": {"targets": ["10.0.0.0/8"]}}
+        resolve_tunnel_routes(tc, saved, setup=True)
+        mock_wizard.assert_called_once_with("forti", default=["10.0.0.0/8"])
+        assert "192.168.0.0/16" in tc.routes["networks"]
 
 
 # =========================================================================

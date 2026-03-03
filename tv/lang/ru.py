@@ -69,6 +69,8 @@ STRINGS: dict[str, str] = {
     "config.cert_generated": "Сгенерирован: {cert}...",
     "config.cert_connect_failed": "Не удалось подключиться к {host}:{port}",
     "config.cert_not_generated": "Сертификат не сгенерирован для {host}:{port}. Запустите с --setup.",
+    "config.cert_unreachable": "{host}:{port} недоступен - пропускаю генерацию сертификата",
+    "config.cert_hint": "Прописать позже: ${env} или \"{file}\" -> fortivpn.trusted_cert",
     "config.param_not_set": "Параметр '{label}' не задан. Запустите с --setup для настройки.",
     "config.routes_label": "Маршруты ({name})",
     "config.routes_native": "нативный роутинг",
@@ -81,6 +83,7 @@ STRINGS: dict[str, str] = {
     "defaults.no_tunnels": "{file}: отсутствует секция [tunnels.*]",
     "defaults.format_hint": 'Формат: [tunnels.<имя>] с полем type = "openvpn" | "fortivpn" | "singbox"',
     "defaults.loaded": "Defaults: загружены",
+    "defaults.created_from_example": "Создан {file} из шаблона",
     "defaults.iface_conflict": "Туннели '{a}' и '{b}' используют один интерфейс '{iface}'",
     "defaults.log_conflict": "Туннели '{a}' и '{b}' используют один лог '{log}'",
     "defaults.config_conflict": "Туннели '{a}' и '{b}' (type={type}) используют один config_file '{cf}'. Укажите разные config_file в [tunnels.*]",
@@ -175,6 +178,7 @@ STRINGS: dict[str, str] = {
     "vpn.ovpn.tunnelblick_active": "Tunnelblick OpenVPN активен (PID={pid}), пропускаю свой OpenVPN",
     "vpn.ovpn.connected": "OpenVPN подключен ({iface})",
     "vpn.ovpn.using_tunnelblick": "OpenVPN подключен (Tunnelblick)",
+    "vpn.ovpn.config_not_found": "Файл конфига не найден: {path}",
 
     # --- vpn/fortivpn.py ---
     "vpn.forti.not_connected": "FortiVPN не поднялся за {timeout}с",
@@ -192,6 +196,7 @@ STRINGS: dict[str, str] = {
     "vpn.sb.exited": "Процесс завершился с кодом: {rc}",
     "vpn.sb.log_hint": "Лог: {path}",
     "vpn.sb.connected": "sing-box подключен ({iface})",
+    "vpn.sb.config_not_found": "Файл конфига не найден: {path}",
 
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN конфиг",
