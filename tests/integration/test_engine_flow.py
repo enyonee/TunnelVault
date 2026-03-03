@@ -14,7 +14,7 @@ import pytest
 from tv.engine import Engine
 from tv.logger import Logger
 from tv.net import NetManager
-from tv.vpn.base import VPNResult
+from tv.vpn.base import TunnelConfig, VPNResult
 
 
 @pytest.fixture
