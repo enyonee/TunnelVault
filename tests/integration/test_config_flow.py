@@ -5,11 +5,8 @@ Real file I/O, real TOML parsing. No network required.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from tv import defaults as defaults_mod
 from tv.config import (
@@ -23,7 +20,6 @@ from tv.config import (
 from tv.vpn.base import TunnelConfig
 from tv.vpn.fortivpn import FortiVPNPlugin
 from tv.vpn.openvpn import OpenVPNPlugin
-from tv.vpn.singbox import SingBoxPlugin
 
 
 # =========================================================================
