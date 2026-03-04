@@ -7,10 +7,10 @@
 <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
 <a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux_|_Windows-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
-<a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.2-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
+<a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.2.1-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
 <img src="https://img.shields.io/badge/tests-804_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
 
-<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>+ your plugin</kbd>
+<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>+ your plugin</kbd>
 
 <a href="#-quick-start">Quick Start</a> · <a href="#-how-it-works">How It Works</a> · <a href="#-configuration">Configuration</a> · <a href="#-cli">CLI</a> · <a href="#-plugin-system">Plugins</a>
 
@@ -298,6 +298,16 @@ class MyVPNPlugin(TunnelPlugin):
 | **sing-box** | `sing-box` | `utun99` | JSON config, custom interface |
 
 <details>
+<summary><strong>sing-box: multiple outbounds with auto-failover</strong></summary>
+
+Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) outbound to auto-select the fastest working server from multiple outbounds.
+
+> [!IMPORTANT]
+> Add **all** outbound server IPs to `[global.vpn_server_routes].hosts` in `defaults.toml` - otherwise tunnel traffic loops through itself.
+
+</details>
+
+<details>
 <summary><strong>Cross-platform implementation</strong></summary>
 
 | Function | macOS | Linux | Windows |
@@ -314,6 +324,7 @@ class MyVPNPlugin(TunnelPlugin):
 
 ## <img src="https://img.shields.io/badge/🗺_Roadmap-2FBFBF?style=for-the-badge" alt="Roadmap">
 
+- [ ] WireGuard plugin - client mode via `wg-quick` (in progress)
 - [ ] `--check` rerun - re-run health checks with retry/loop until all pass
 - [ ] Plugin-defined checks - each VPN plugin declares default checks in code, no manual TOML needed
 - [ ] Configurable check list - override/extend plugin checks via external file
