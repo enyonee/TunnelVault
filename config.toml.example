@@ -3,7 +3,7 @@
 # Скопируй в config.toml и редактируй:  cp config.toml.example config.toml
 #
 # Каждый туннель описан в отдельной секции [tunnels.<name>]
-# Обязательное поле: type (openvpn | fortivpn | singbox)
+# Обязательное поле: type (openvpn | fortivpn | singbox | wireguard)
 # Опциональные: order, enabled, config_file, log, interface, auth, routes, dns, checks
 
 # Host routes к VPN-серверам через default GW (до старта туннелей)
@@ -76,3 +76,15 @@ networks = ["172.18.0.0/16"]
 ports = [{ host = "203.0.113.30", port = 443 }]
 ping = [{ host = "172.18.0.1", label = "singbox gw" }]
 http = ["https://service.example.com"]
+
+# [tunnels.wireguard]
+# type = "wireguard"
+# order = 4
+# config_file = "wg0.conf"
+# interface = "utun97"          # optional, auto-detect if empty
+#
+# [tunnels.wireguard.routes]
+# networks = ["10.0.0.0/8"]    # Table = off in .conf if tunnelvault manages routes
+#
+# [tunnels.wireguard.checks]
+# ping = [{ host = "10.0.0.1", label = "wg-gw" }]

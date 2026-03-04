@@ -20,6 +20,7 @@ class Timeouts:
     openvpn_init: int = 30
     fortivpn_ppp: int = 20
     singbox_iface: int = 15
+    wireguard_iface: int = 10
     fortivpn_gw_poll: float = 0.5
     fortivpn_gw_attempts: int = 10
     check_subprocess: int = 15
@@ -71,6 +72,7 @@ class Defaults:
     openvpn_config: str = "client.ovpn"
     singbox_config: str = "singbox.json"
     singbox_interface: str = "utun99"
+    wireguard_config: str = "wg0.conf"
     network_service: str = "Wi-Fi"
 
 

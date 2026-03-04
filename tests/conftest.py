@@ -35,6 +35,7 @@ def _assume_binaries_installed(monkeypatch):
 import tv.vpn.openvpn as _ovpn  # noqa: F401,E402
 import tv.vpn.fortivpn as _forti  # noqa: F401,E402
 import tv.vpn.singbox as _sb  # noqa: F401,E402
+import tv.vpn.wireguard as _wg  # noqa: F401,E402
 
 
 @pytest.fixture
@@ -42,6 +43,7 @@ def tmp_dir(tmp_path: Path) -> Path:
     """Temp directory with required config files."""
     (tmp_path / "client.ovpn").write_text("[openvpn config]")
     (tmp_path / "singbox.json").write_text('{"log":{"level":"info"}}')
+    (tmp_path / "wg0.conf").write_text("[Interface]\nPrivateKey=test\nAddress=10.0.0.2/24")
     return tmp_path
 
 
