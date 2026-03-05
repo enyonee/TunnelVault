@@ -26,10 +26,11 @@ def _wg_connect_ok(plugin, *, interface="utun97"):
 
 
 @contextlib.contextmanager
-def _wg_connect_fail_setup(plugin):
+def _wg_connect_fail_setup(plugin, stderr=""):
     """Set up failing wg-quick: run() returns non-zero exit code."""
     mock_result = MagicMock()
     mock_result.returncode = 1
+    mock_result.stderr = stderr
     with patch("tv.vpn.wireguard.proc") as mock_proc:
         mock_proc.run.return_value = mock_result
         yield mock_proc
@@ -194,6 +195,22 @@ class TestConnectFailure:
     def test_shows_config_hint(self, plugin, capsys):
         """On wg-quick failure, shows config path hint."""
         with _wg_connect_fail_setup(plugin):
+            plugin.connect()
+
+        out = capsys.readouterr().out
+        assert "wg0.conf" in out
+
+    def test_shows_stderr_on_failure(self, plugin, capsys):
+        """On wg-quick failure, shows last line of stderr."""
+        with _wg_connect_fail_setup(plugin, stderr="Line 1\nUnable to access interface"):
+            plugin.connect()
+
+        out = capsys.readouterr().out
+        assert "Unable to access interface" in out
+
+    def test_no_stderr_still_works(self, plugin, capsys):
+        """On wg-quick failure with empty stderr, still shows hint."""
+        with _wg_connect_fail_setup(plugin, stderr=""):
             plugin.connect()
 
         out = capsys.readouterr().out

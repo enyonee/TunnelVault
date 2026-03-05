@@ -71,7 +71,13 @@ class WireGuardPlugin(TunnelPlugin):
         if result.returncode != 0:
             ui.fail(t("vpn.wg.setup_failed", rc=result.returncode))
             self.log.log("ERROR", f"wg-quick up failed (exit code {result.returncode})")
-            ui.error_tree([("", t("vpn.wg.log_hint", path=config_path))])
+            details: list[tuple[str, str]] = []
+            stderr = (result.stderr or "").strip()
+            if stderr:
+                details.append(("", stderr.splitlines()[-1]))
+                self.log.log("ERROR", f"wg-quick stderr: {stderr}")
+            details.append(("", t("vpn.wg.log_hint", path=config_path)))
+            ui.error_tree(details)
             return VPNResult(ok=False)
 
         # Detect interface
