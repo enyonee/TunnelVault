@@ -345,7 +345,14 @@ class Engine:
             self._fire("post_disconnect", tunnel=tcfg, plugin=plugin)
 
         self._stop_dns_proxy()
+
+        # Глобальные маршруты (vpn_server_routes, bypass) - без этого
+        # disconnect нужно вызывать дважды: daemon убивается, но routes остаются
+        disconnect.cleanup_global_routes(
+            self.net, self.log, self.defs, skip_dns_suffix=True,
+        )
         self.net.restore_ipv6()
+
         self._clean_watch_state()
 
     def _clean_watch_state(self) -> None:

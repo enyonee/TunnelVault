@@ -39,12 +39,20 @@ def get_bypass_routes(defs: dict) -> dict:
     return defs.get("global", {}).get("bypass", {})
 
 
-def _cleanup_routes_and_ipv6(
+def cleanup_global_routes(
     net: NetManager,
     log: Optional[Logger],
     defs: dict,
+    *,
+    skip_dns_suffix: bool = False,
 ) -> None:
-    """Shared cleanup: VPN server routes + bypass routes + IPv6 restore."""
+    """Delete global VPN server routes, bypass routes, and DNS resolver files.
+
+    Called from engine.disconnect_all() and emergency disconnect.
+    Does NOT restore IPv6 - caller handles that separately.
+
+    skip_dns_suffix: skip domain_suffix resolver cleanup (engine._stop_dns_proxy handles it).
+    """
     routes_cfg = get_vpn_server_routes(defs)
     static_hosts = routes_cfg.get("hosts", [])
     resolve_hosts = routes_cfg.get("resolve", [])
@@ -78,26 +86,37 @@ def _cleanup_routes_and_ipv6(
             _safe(lambda n=network: net.delete_net_route(n), f"del bypass net {network}", log)
 
     # Cleanup domain_suffix resolver files and upstream DNS route
-    domain_suffix = bypass_cfg.get("domain_suffix", [])
-    upstream_dns = bypass_cfg.get("upstream_dns", "8.8.8.8")
-    if domain_suffix:
-        zones = [s.lstrip(".").rstrip(".") for s in domain_suffix if s.lstrip(".").rstrip(".")]
-        if zones:
-            print(f"🧹 {t('disc.deleting_dns_bypass')}")
-            _safe(lambda: net.cleanup_dns_resolver(zones), "del suffix resolvers", log)
-        _safe(
-            lambda: net.delete_host_route(upstream_dns),
-            f"del upstream DNS route {upstream_dns}", log,
-        )
+    # (skip when engine._stop_dns_proxy already handled this)
+    if not skip_dns_suffix:
+        domain_suffix = bypass_cfg.get("domain_suffix", [])
+        upstream_dns = bypass_cfg.get("upstream_dns", "8.8.8.8")
+        if domain_suffix:
+            zones = [s.lstrip(".").rstrip(".") for s in domain_suffix if s.lstrip(".").rstrip(".")]
+            if zones:
+                print(f"🧹 {t('disc.deleting_dns_bypass')}")
+                _safe(lambda: net.cleanup_dns_resolver(zones), "del suffix resolvers", log)
+            _safe(
+                lambda: net.delete_host_route(upstream_dns),
+                f"del upstream DNS route {upstream_dns}", log,
+            )
 
-    # Safety net: scan /etc/resolver/ for leftover tunnelvault files
-    def _scan_resolvers():
-        cleaned = net.cleanup_local_dns_resolvers()
-        if cleaned:
-            print(f"🧹 {t('disc.extra_resolvers', files=', '.join(cleaned))}")
-            if log:
-                log.log("INFO", f"Cleaned leftover resolvers: {cleaned}")
-    _safe(_scan_resolvers, "scan local resolvers", log)
+        # Safety net: scan /etc/resolver/ for leftover tunnelvault files
+        def _scan_resolvers():
+            cleaned = net.cleanup_local_dns_resolvers()
+            if cleaned:
+                print(f"🧹 {t('disc.extra_resolvers', files=', '.join(cleaned))}")
+                if log:
+                    log.log("INFO", f"Cleaned leftover resolvers: {cleaned}")
+        _safe(_scan_resolvers, "scan local resolvers", log)
+
+
+def _cleanup_routes_and_ipv6(
+    net: NetManager,
+    log: Optional[Logger],
+    defs: dict,
+) -> None:
+    """Shared cleanup: global routes + IPv6 restore."""
+    cleanup_global_routes(net, log, defs)
 
     print(f"🌐 {t('disc.restore_ipv6')}")
     _safe(lambda: net.restore_ipv6(), "restore IPv6", log)
