@@ -104,11 +104,11 @@ def main() -> None:
         disconnect.run(defs={}, script_dir=script_dir)
         return
 
-    # --- Commands that need defaults.toml ---
+    # --- Commands that need config.toml ---
 
     defs = defaults_mod.load(script_dir, setup=args.setup)
 
-    # Initialize i18n from config (after defaults.toml loaded [app].locale)
+    # Initialize i18n from config (after config.toml loaded [app].locale)
     from tv import i18n
 
     if cfg.locale:
@@ -351,7 +351,7 @@ def _try_load_tunnel_names(
     script_dir: Path,
     only: str | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Best-effort: load tunnel name mappings from defaults.toml + watch state.
+    """Best-effort: load tunnel name mappings from config.toml + watch state.
 
     Returns:
         (exact_map, prefix_map):
@@ -384,7 +384,7 @@ def _try_load_tunnel_names(
 
         exact: dict[str, str] = load_watch_state(script_dir)
 
-        # Priority 2: configured interface from defaults.toml
+        # Priority 2: configured interface from config.toml
         prefix: dict[str, str] = {}
         for t_ in tunnels:
             if t_.interface and t_.interface not in exact:

@@ -144,13 +144,13 @@ fi
 
 # ── Config ────────────────────────────────────────────────────
 echo
-if [ ! -f defaults.toml ] && [ -f defaults.toml.example ]; then
-    cp defaults.toml.example defaults.toml
-    ok "defaults.toml copied from example (edit it with your settings)"
-elif [ -f defaults.toml ]; then
-    ok "defaults.toml"
+if [ ! -f config.toml ] && [ -f config.toml.example ]; then
+    cp config.toml.example config.toml
+    ok "config.toml copied from example (edit it with your settings)"
+elif [ -f config.toml ]; then
+    ok "config.toml"
 else
-    warn "defaults.toml.example not found"
+    warn "config.toml.example not found"
 fi
 
 chmod +x tvpn 2>/dev/null || true

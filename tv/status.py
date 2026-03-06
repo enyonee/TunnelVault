@@ -1,4 +1,4 @@
-"""Status: show current VPN state without defaults.toml or Engine."""
+"""Status: show current VPN state without config.toml or Engine."""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ def _show_external_ip() -> None:
 
 
 def run(net: Optional[NetManager] = None) -> None:
-    """Show current VPN state. Does not require defaults.toml."""
+    """Show current VPN state. Does not require config.toml."""
     if net is None:
         from tv.net import create
 

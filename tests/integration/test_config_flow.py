@@ -23,14 +23,14 @@ from tv.vpn.openvpn import OpenVPNPlugin
 
 
 # =========================================================================
-# defaults.toml: load with --setup
+# config.toml: load with --setup
 # =========================================================================
 
 
 class TestDefaultsSetupFlow:
     def test_setup_creates_defaults_from_example(self, tmp_path):
-        """--setup with no defaults.toml copies from example, parses result."""
-        example = tmp_path / "defaults.toml.example"
+        """--setup with no config.toml copies from example, parses result."""
+        example = tmp_path / "config.toml.example"
         example.write_text(
             "[tunnels.openvpn]\n"
             'type = "openvpn"\n'
@@ -47,7 +47,7 @@ class TestDefaultsSetupFlow:
         data = defaults_mod.load(tmp_path, setup=True)
 
         # File was created
-        created = tmp_path / "defaults.toml"
+        created = tmp_path / "config.toml"
         assert created.exists()
         assert created.read_text() == example.read_text()
 
@@ -57,8 +57,8 @@ class TestDefaultsSetupFlow:
         assert data["tunnels"]["singbox"]["interface"] == "utun99"
 
     def test_setup_loads_existing_file_unchanged(self, tmp_path):
-        """--setup with existing defaults.toml loads it, doesn't overwrite."""
-        toml = tmp_path / "defaults.toml"
+        """--setup with existing config.toml loads it, doesn't overwrite."""
+        toml = tmp_path / "config.toml"
         content = '[tunnels.forti]\ntype = "fortivpn"\norder = 1\n'
         toml.write_text(content)
 

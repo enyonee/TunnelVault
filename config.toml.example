@@ -1,6 +1,6 @@
-# defaults.toml — все настройки tunnelvault
-# Приоритет: defaults.toml -> ENV -> .vpn-settings.json -> wizard
-# Скопируй в defaults.toml и редактируй:  cp defaults.toml.example defaults.toml
+# config.toml — все настройки tunnelvault
+# Приоритет: config.toml -> ENV -> .vpn-settings.json -> wizard
+# Скопируй в config.toml и редактируй:  cp config.toml.example config.toml
 #
 # Каждый туннель описан в отдельной секции [tunnels.<name>]
 # Обязательное поле: type (openvpn | fortivpn | singbox)

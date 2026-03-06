@@ -1,4 +1,4 @@
-"""Validate defaults.toml configuration without connecting."""
+"""Validate config.toml configuration without connecting."""
 
 from __future__ import annotations
 

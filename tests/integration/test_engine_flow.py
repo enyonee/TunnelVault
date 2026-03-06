@@ -42,9 +42,9 @@ def mock_net() -> MagicMock:
 
 @pytest.fixture
 def project_dir(tmp_path) -> Path:
-    """Realistic project dir with defaults.toml, config files, and settings."""
-    # defaults.toml
-    (tmp_path / "defaults.toml").write_text(
+    """Realistic project dir with config.toml, config files, and settings."""
+    # config.toml
+    (tmp_path / "config.toml").write_text(
         "[tunnels.openvpn]\n"
         'type = "openvpn"\n'
         "order = 1\n"
@@ -101,7 +101,7 @@ def engine(project_dir, defs, mock_net) -> Engine:
 
 class TestFullPrepareConnect:
     def test_prepare_populates_tunnels_from_real_toml(self, engine):
-        """prepare() loads tunnels from real defaults.toml file."""
+        """prepare() loads tunnels from real config.toml file."""
         engine.prepare()
 
         assert len(engine.tunnels) == 2
@@ -163,7 +163,7 @@ class TestFullPrepareConnect:
         assert all(r.ok for r in engine.results)
 
     def test_connect_produces_ordered_results(self, engine):
-        """Results match tunnel order from defaults.toml."""
+        """Results match tunnel order from config.toml."""
         engine.prepare()
 
         with (

@@ -45,7 +45,7 @@ class TestDefaults:
                 ),
             ),
             ("paths", "settings_file", ".vpn-settings.json"),
-            ("paths", "defaults_file", "defaults.toml"),
+            ("paths", "defaults_file", "config.toml"),
             ("paths", "main_log", "tunnelvault.log"),
             pytest.param(
                 "paths",

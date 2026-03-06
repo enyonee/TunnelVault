@@ -10,14 +10,14 @@ from tv.vpn.base import TunnelConfig
 
 
 # =========================================================================
-# Positive: loading defaults.toml
+# Positive: loading config.toml
 # =========================================================================
 
 
 class TestLoadDefaults:
     def test_loads_valid_toml(self, tmp_path):
-        """Loads valid defaults.toml with [tunnels.*] section."""
-        toml = tmp_path / "defaults.toml"
+        """Loads valid config.toml with [tunnels.*] section."""
+        toml = tmp_path / "config.toml"
         toml.write_text(
             "[tunnels.openvpn]\n"
             'type = "openvpn"\n'
@@ -30,7 +30,7 @@ class TestLoadDefaults:
 
     def test_loads_with_global_section(self, tmp_path):
         """Loads tunnels + global section."""
-        toml = tmp_path / "defaults.toml"
+        toml = tmp_path / "config.toml"
         toml.write_text(
             "[tunnels.openvpn]\n"
             'type = "openvpn"\n'
@@ -45,7 +45,7 @@ class TestLoadDefaults:
 
     def test_preserves_arrays_of_tables(self, tmp_path):
         """Inline table arrays are parsed."""
-        toml = tmp_path / "defaults.toml"
+        toml = tmp_path / "config.toml"
         toml.write_text(
             "[tunnels.vpn1]\n"
             'type = "fortivpn"\n'
@@ -65,27 +65,27 @@ class TestLoadDefaults:
 
 class TestLoadDefaultsInverse:
     def test_missing_file_exits(self, tmp_path):
-        """No defaults.toml -> sys.exit(1)."""
+        """No config.toml -> sys.exit(1)."""
         with pytest.raises(SystemExit):
             load(tmp_path)
 
     def test_invalid_toml_exits(self, tmp_path):
         """Invalid TOML -> sys.exit(1)."""
-        toml = tmp_path / "defaults.toml"
+        toml = tmp_path / "config.toml"
         toml.write_text("this is not [valid toml !!!!")
         with pytest.raises(SystemExit):
             load(tmp_path)
 
     def test_missing_tunnels_section_exits(self, tmp_path):
         """No [tunnels] section -> sys.exit(1)."""
-        toml = tmp_path / "defaults.toml"
+        toml = tmp_path / "config.toml"
         toml.write_text('[global]\nsome_key = "value"\n')
         with pytest.raises(SystemExit):
             load(tmp_path)
 
     def test_empty_toml_exits(self, tmp_path):
         """Empty file -> no tunnels section -> sys.exit(1)."""
-        toml = tmp_path / "defaults.toml"
+        toml = tmp_path / "config.toml"
         toml.write_text("")
         with pytest.raises(SystemExit):
             load(tmp_path)
@@ -98,30 +98,30 @@ class TestLoadDefaultsInverse:
 
 class TestLoadSetup:
     def test_setup_copies_example_when_missing(self, tmp_path):
-        """setup=True + no defaults.toml + example exists -> copies example."""
-        example = tmp_path / "defaults.toml.example"
+        """setup=True + no config.toml + example exists -> copies example."""
+        example = tmp_path / "config.toml.example"
         example.write_text(
             '[tunnels.openvpn]\ntype = "openvpn"\nconfig_file = "client.ovpn"\n'
         )
         data = load(tmp_path, setup=True)
-        assert (tmp_path / "defaults.toml").exists()
+        assert (tmp_path / "config.toml").exists()
         assert data["tunnels"]["openvpn"]["type"] == "openvpn"
 
     def test_setup_exits_when_no_example(self, tmp_path):
-        """setup=True + no defaults.toml + no example -> sys.exit(1)."""
+        """setup=True + no config.toml + no example -> sys.exit(1)."""
         with pytest.raises(SystemExit):
             load(tmp_path, setup=True)
 
     def test_setup_loads_existing_file(self, tmp_path):
-        """setup=True + defaults.toml exists -> loads normally."""
-        toml = tmp_path / "defaults.toml"
+        """setup=True + config.toml exists -> loads normally."""
+        toml = tmp_path / "config.toml"
         toml.write_text('[tunnels.openvpn]\ntype = "openvpn"\n')
         data = load(tmp_path, setup=True)
         assert data["tunnels"]["openvpn"]["type"] == "openvpn"
 
     def test_no_setup_still_exits_on_missing(self, tmp_path):
-        """setup=False + no defaults.toml -> sys.exit(1) (unchanged behavior)."""
-        (tmp_path / "defaults.toml.example").write_text('[tunnels.x]\ntype="openvpn"\n')
+        """setup=False + no config.toml -> sys.exit(1) (unchanged behavior)."""
+        (tmp_path / "config.toml.example").write_text('[tunnels.x]\ntype="openvpn"\n')
         with pytest.raises(SystemExit):
             load(tmp_path, setup=False)
 

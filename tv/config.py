@@ -179,7 +179,7 @@ def resolve_tunnel_params(
         if current:
             # In setup mode, let user override TOML values via wizard
             if setup and param.prompt:
-                ui.param_found(param.label, current, "defaults.toml", param.secret)
+                ui.param_found(param.label, current, "config.toml", param.secret)
                 new_value = ui.wizard_input(t(param.label), current, param.secret)
                 _set_param_value(tcfg, param, new_value)
                 continue
@@ -211,7 +211,7 @@ def resolve_tunnel_params(
                     )
                 continue
             if not quiet:
-                ui.param_found(param.label, current, "defaults.toml", param.secret)
+                ui.param_found(param.label, current, "config.toml", param.secret)
             continue
 
         # FortiVPN trusted_cert with cert_mode=auto: skip wizard, handled below
@@ -316,13 +316,13 @@ def resolve_tunnel_routes(
         ui.param_found(
             t("config.routes_label", name=tcfg.name),
             t("config.routes_count", nets=len(nets), hosts=len(hosts)),
-            "defaults.toml",
+            "config.toml",
             False,
         )
 
     # Get targets: TOML -> saved -> wizard
     targets = tcfg.routes.get("targets", [])
-    source = "defaults.toml"
+    source = "config.toml"
     resolved = bool(targets) or has_advanced
 
     if not resolved:
@@ -547,7 +547,7 @@ def _resolve_param(
             return default
         raise SetupRequiredError(t("config.param_not_set", label=t(label)))
 
-    # 4. Default from defaults.toml (show as placeholder in wizard)
+    # 4. Default from config.toml (show as placeholder in wizard)
     if default and not secret:
         ui.param_missing(label)
         return ui.wizard_input(t(label), default, secret)
