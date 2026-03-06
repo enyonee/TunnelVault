@@ -103,6 +103,16 @@ class TunnelPlugin(ABC):
         return []
 
     @classmethod
+    def post_resolve_params(
+        cls,
+        tcfg: TunnelConfig,
+        saved: dict,
+        *,
+        quiet: bool = False,
+    ) -> None:
+        """Hook called after config params resolved. Override for post-processing."""
+
+    @classmethod
     def discover_pid(cls, tcfg: TunnelConfig, script_dir: Path) -> Optional[int]:
         """Best-effort PID discovery without engine context.
 

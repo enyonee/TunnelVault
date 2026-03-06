@@ -1,11 +1,9 @@
-"""Config: CLI args, ENV, settings file, plugin-driven param resolution."""
+"""Config: ENV, settings file, plugin-driven param resolution."""
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,37 +19,6 @@ from tv.vpn.base import ConfigParam
 
 class SetupRequiredError(Exception):
     """Raised when interactive setup is needed but quiet mode is active."""
-
-
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description=t("cli.desc"),
-    )
-    p.add_argument("--disconnect", action="store_true", help=t("cli.disconnect"))
-    p.add_argument("--clear", action="store_true", help=t("cli.clear"))
-    p.add_argument("--setup", action="store_true", help=t("cli.setup"))
-    p.add_argument("--debug", action="store_true", help=t("cli.debug"))
-    p.add_argument(
-        "--log-level",
-        choices=["DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
-        default=None,
-        help=t("cli.log_level"),
-    )
-    p.add_argument("--status", action="store_true", help=t("cli.status"))
-    p.add_argument("--check", action="store_true", help=t("cli.check"))
-    p.add_argument("--reset", action="store_true", help=t("cli.reset"))
-    p.add_argument("--validate", action="store_true", help=t("cli.validate"))
-    p.add_argument("--only", type=str, default=None, help=t("cli.only"))
-    p.add_argument("--logs", nargs="?", const="", default=None, help=t("cli.logs"))
-    p.add_argument("--watch", action="store_true", help=t("cli.watch"))
-    p.add_argument("--all", action="store_true", help=t("cli.all"))
-    run_mode = p.add_mutually_exclusive_group()
-    run_mode.add_argument("--no-daemon", action="store_true", help=t("cli.no_daemon"))
-    run_mode.add_argument("--foreground", action="store_true", help=t("cli.foreground"))
-    autostart = p.add_mutually_exclusive_group()
-    autostart.add_argument("--enable", action="store_true", help=t("cli.enable"))
-    autostart.add_argument("--disable", action="store_true", help=t("cli.disable"))
-    return p.parse_args()
 
 
 # --- Settings file (JSON) ---
@@ -241,60 +208,8 @@ def resolve_tunnel_params(
         )
         _set_param_value(tcfg, param, value)
 
-    # FortiVPN cert_mode=auto: generate cert after all params resolved
-    if tcfg.type == "fortivpn":
-        _handle_forti_cert(tcfg, tunnel_saved, quiet=quiet)
-
-
-def _handle_forti_cert(
-    tcfg: TunnelConfig,
-    tunnel_saved: dict,
-    *,
-    quiet: bool = False,
-) -> None:
-    """Handle FortiVPN trusted_cert: auto-generate or resolve from ENV/saved."""
-    cert_mode = tcfg.auth.get("cert_mode", "")
-    if cert_mode != "auto":
-        return
-    if tcfg.auth.get("trusted_cert"):
-        return
-
-    # Check ENV
-    env_val = os.environ.get("VPN_TRUSTED_CERT", "")
-    if env_val:
-        if not quiet:
-            ui.param_found("param.cert_sha256", env_val, "$VPN_TRUSTED_CERT", False)
-        tcfg.auth["trusted_cert"] = env_val
-        return
-
-    # Check saved (reject sha256 of empty - broken cert generation)
-    saved_val = tunnel_saved.get("trusted_cert", "")
-    if saved_val and saved_val != _SHA256_EMPTY:
-        if not quiet:
-            ui.param_found(
-                "param.cert_sha256", saved_val, cfg.paths.settings_file, False
-            )
-        tcfg.auth["trusted_cert"] = saved_val
-        return
-
-    # Auto-generate
-    host = tcfg.auth.get("host", "")
-    port = tcfg.auth.get("port", cfg.defaults.fortivpn_port)
-    if not host:
-        return
-
-    if not quiet:
-        print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
-    cert = _generate_cert(host, port)
-    if cert:
-        if not quiet:
-            print(f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=cert[:24])}")
-        tcfg.auth["trusted_cert"] = cert
-    else:
-        ui.warn(t("config.cert_unreachable", host=host, port=port))
-        ui.info(
-            f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.settings_file)}{ui.NC}"
-        )
+    # Plugin-specific post-processing (e.g. FortiVPN cert auto-generation)
+    plugin_cls.post_resolve_params(tcfg, tunnel_saved, quiet=quiet)
 
 
 def resolve_tunnel_routes(
@@ -555,73 +470,3 @@ def _resolve_param(
     # 5. Wizard without default
     ui.param_missing(label)
     return ui.wizard_input(t(label), "", secret)
-
-
-_SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-
-def _generate_cert(host: str, port: str) -> str:
-    """Generate SHA256 cert fingerprint via openssl pipe chain."""
-    procs: list[subprocess.Popen] = []
-    try:
-        s_client = subprocess.Popen(
-            ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        procs.append(s_client)
-        x509 = subprocess.Popen(
-            ["openssl", "x509", "-outform", "DER"],
-            stdin=s_client.stdout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        procs.append(x509)
-        s_client.stdout.close()
-
-        # Send empty line to s_client (like "echo |")
-        s_client.stdin.write(b"\n")
-        s_client.stdin.close()
-
-        # Read x509 DER output first - if empty, server didn't return a cert
-        der_out, x509_err = x509.communicate(timeout=cfg.timeouts.cert_generation)
-        s_client.wait(timeout=cfg.timeouts.cert_openssl)
-
-        if not der_out:
-            return ""
-
-        # Hash the DER cert
-        dgst = subprocess.Popen(
-            ["openssl", "dgst", "-sha256"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        procs.append(dgst)
-        out, _ = dgst.communicate(input=der_out, timeout=cfg.timeouts.cert_openssl)
-
-        if dgst.returncode == 0 and out:
-            text = out.decode().strip()
-            if "= " in text:
-                cert = text.split("= ", 1)[1].strip()
-            else:
-                cert = text
-            # Reject sha256 of empty input (broken pipe produced no cert data)
-            if cert == _SHA256_EMPTY:
-                return ""
-            return cert
-    except (subprocess.TimeoutExpired, OSError):
-        pass
-    finally:
-        for p in procs:
-            try:
-                p.kill()
-            except OSError:
-                pass
-        for p in procs:
-            try:
-                p.wait(timeout=2)
-            except Exception:
-                pass
-    return ""

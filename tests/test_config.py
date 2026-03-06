@@ -22,11 +22,11 @@ from tv.config import (
     prepare_log_files,
     _resolve_param,
     _migrate_bash_settings,
-    _generate_cert,
     _get_param_value,
     _set_param_value,
     _tunnel_saved,
 )
+from tv.vpn.fortivpn import generate_cert as _generate_cert, _SHA256_EMPTY
 
 SETTINGS_FILENAME = cfg.paths.settings_file
 from tv.vpn.base import TunnelConfig, ConfigParam, TunnelPlugin, VPNResult  # noqa: E402
@@ -426,7 +426,7 @@ class TestResolveTunnelParams:
         resolve_tunnel_params(tc, NoSchemaPlugin, {}, Path("/tmp"))
         assert tc.auth == {}
 
-    @patch("tv.config._generate_cert", return_value="generated_cert_abc")
+    @patch("tv.vpn.fortivpn.generate_cert", return_value="generated_cert_abc")
     def test_forti_auto_cert_generated(self, mock_cert):
         """cert_mode=auto triggers cert generation."""
         tc = TunnelConfig(
@@ -458,7 +458,7 @@ class TestResolveTunnelParams:
                 "trusted_cert": "manual_cert",
             },
         )
-        with patch("tv.config._generate_cert") as mock_cert:
+        with patch("tv.vpn.fortivpn.generate_cert") as mock_cert:
             resolve_tunnel_params(tc, FortiVPNPlugin, {}, Path("/tmp"))
         mock_cert.assert_not_called()
         assert tc.auth["trusted_cert"] == "manual_cert"
@@ -478,7 +478,7 @@ class TestResolveTunnelParams:
         )
         with (
             patch.dict(os.environ, {"VPN_TRUSTED_CERT": "env_cert_value"}),
-            patch("tv.config._generate_cert") as mock_cert,
+            patch("tv.vpn.fortivpn.generate_cert") as mock_cert,
         ):
             resolve_tunnel_params(tc, FortiVPNPlugin, {}, Path("/tmp"))
         mock_cert.assert_not_called()
@@ -498,16 +498,14 @@ class TestResolveTunnelParams:
             },
         )
         saved = {"fortivpn": {"trusted_cert": "saved_cert_value"}}
-        with patch("tv.config._generate_cert") as mock_cert:
+        with patch("tv.vpn.fortivpn.generate_cert") as mock_cert:
             resolve_tunnel_params(tc, FortiVPNPlugin, saved, Path("/tmp"))
         mock_cert.assert_not_called()
         assert tc.auth["trusted_cert"] == "saved_cert_value"
 
-    @patch("tv.config._generate_cert", return_value="real_cert_abc")
+    @patch("tv.vpn.fortivpn.generate_cert", return_value="real_cert_abc")
     def test_forti_auto_cert_rejects_sha256_empty(self, mock_cert):
         """cert_mode=auto with saved sha256('') triggers regeneration."""
-        from tv.config import _SHA256_EMPTY
-
         tc = TunnelConfig(
             name="fortivpn",
             type="fortivpn",

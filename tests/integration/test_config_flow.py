@@ -12,11 +12,10 @@ from tv import defaults as defaults_mod
 from tv.config import (
     resolve_tunnel_params,
     resolve_tunnel_routes,
-    _handle_forti_cert,
-    _SHA256_EMPTY,
     save_tunnel_settings,
     load_settings,
 )
+from tv.vpn.fortivpn import _SHA256_EMPTY
 from tv.vpn.base import TunnelConfig
 from tv.vpn.fortivpn import FortiVPNPlugin
 from tv.vpn.openvpn import OpenVPNPlugin
@@ -123,8 +122,8 @@ class TestFortiCertUnreachable:
             auth={"host": "vpn.example.com", "port": "443", "cert_mode": "auto"},
         )
 
-        with patch("tv.config._generate_cert", return_value=""):
-            _handle_forti_cert(tc, {}, quiet=False)
+        with patch("tv.vpn.fortivpn.generate_cert", return_value=""):
+            FortiVPNPlugin.post_resolve_params(tc, {}, quiet=False)
 
         out = capsys.readouterr().out
         assert "vpn.example.com:443" in out
@@ -141,10 +140,8 @@ class TestFortiCertUnreachable:
         )
         saved = {"trusted_cert": _SHA256_EMPTY}
 
-        with patch(
-            "tv.config._generate_cert", return_value="real_cert_abc123"
-        ) as mock_gen:
-            _handle_forti_cert(tc, saved, quiet=False)
+        with patch("tv.vpn.fortivpn.generate_cert", return_value="real_cert_abc123") as mock_gen:
+            FortiVPNPlugin.post_resolve_params(tc, saved, quiet=False)
 
         mock_gen.assert_called_once()
         assert tc.auth["trusted_cert"] == "real_cert_abc123"
@@ -158,8 +155,8 @@ class TestFortiCertUnreachable:
         )
         saved = {"trusted_cert": "aabbcc112233"}
 
-        with patch("tv.config._generate_cert") as mock_gen:
-            _handle_forti_cert(tc, saved, quiet=True)
+        with patch("tv.vpn.fortivpn.generate_cert") as mock_gen:
+            FortiVPNPlugin.post_resolve_params(tc, saved, quiet=True)
 
         mock_gen.assert_not_called()
         assert tc.auth["trusted_cert"] == "aabbcc112233"

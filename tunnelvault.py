@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 
 from tv import config, ui, disconnect, checks, proc
+from tv.cli import parse_args
 from tv.config import SetupRequiredError
 from tv import defaults as defaults_mod
 from tv.app_config import cfg
@@ -45,7 +46,7 @@ _log: Logger | None = None  # module-level for crash handler
 
 def main() -> None:
     global _log
-    args = config.parse_args()
+    args = parse_args()
     script_dir = Path(__file__).parent.resolve()
 
     # Mutual exclusion check

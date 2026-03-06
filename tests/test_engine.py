@@ -298,7 +298,7 @@ class TestPrepare:
                 "secret",  # pass (wizard)
                 "auto",  # cert_mode (wizard)
             ]
-            with patch("tv.config._handle_forti_cert"):
+            with patch("tv.vpn.fortivpn.FortiVPNPlugin.post_resolve_params"):
                 e.prepare(setup=False)
 
         # Should have tunnels populated (auto-setup succeeded)
