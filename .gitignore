@@ -1,10 +1,6 @@
 # Real config with credentials (use config.toml.example as template)
 config.toml
 
-# Legacy settings (migrated to config.toml)
-.vpn-settings.json
-.vpn-settings
-
 # VPN configs (contain keys/certs)
 *.ovpn
 !k8s/test-vpn/pki/client.ovpn
