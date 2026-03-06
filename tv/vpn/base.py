@@ -106,7 +106,6 @@ class TunnelPlugin(ABC):
     def post_resolve_params(
         cls,
         tcfg: TunnelConfig,
-        saved: dict,
         *,
         quiet: bool = False,
     ) -> None:

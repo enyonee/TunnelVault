@@ -55,11 +55,6 @@ STRINGS: dict[str, str] = {
     "main.no_pidfile": "No running daemon found (PID file missing)",
     "main.stale_pidfile": "Stale PID file (process {pid} not running), cleaning up",
     # --- config.py ---
-    "config.settings_loaded": "Settings: loaded",
-    "config.settings_error": "Settings: read error",
-    "config.settings_migrated": "Settings: migrated from .vpn-settings",
-    "config.settings_not_found": "Settings: not found",
-    "config.settings_will_create": "(will create {file})",
     "config.settings_saved": "Settings saved",
     "config.source_auto": "auto",
     "config.cert_sha256": "SHA256 certificate",

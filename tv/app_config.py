@@ -51,7 +51,6 @@ def _default_temp_dir() -> str:
 class Paths:
     log_dir: str = "logs"
     temp_dir: str = ""
-    settings_file: str = ".vpn-settings.json"
     defaults_file: str = "config.toml"
     main_log: str = "tunnelvault.log"
     pid_file: str = "tunnelvault.pid"

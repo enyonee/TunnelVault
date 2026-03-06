@@ -248,11 +248,7 @@ def main() -> None:
         signal.signal(signal.SIGTERM, on_signal)
 
     # --- Start ---
-    settings_path = script_dir / cfg.paths.settings_file
-    quiet = not args.setup and settings_path.exists()
-
-    if not quiet:
-        ui.logo()
+    ui.logo()
 
     engine.log.log("INFO", "=" * 40)
     engine.log.log("INFO", f"tunnelvault started (PID={os.getpid()})")
@@ -281,12 +277,12 @@ def main() -> None:
             ui.fail(str(e))
         sys.exit(1)
 
-    engine.setup(clear=args.clear, quiet=quiet)
-    engine.connect_all(quiet=quiet)
-    check_results, ext_ip = engine.check_all(quiet=quiet)
+    engine.setup(clear=args.clear, quiet=engine.quiet)
+    engine.connect_all(quiet=engine.quiet)
+    check_results, ext_ip = engine.check_all(quiet=engine.quiet)
 
     # --- Summary ---
-    if not quiet:
+    if not engine.quiet:
         _log_summary(engine, check_results, ext_ip)
     else:
         # Minimal logging only

@@ -1,5 +1,5 @@
 # config.toml — все настройки tunnelvault
-# Приоритет: config.toml -> ENV -> .vpn-settings.json -> wizard
+# Приоритет: config.toml -> ENV -> wizard (результаты wizard сохраняются обратно в config.toml)
 # Скопируй в config.toml и редактируй:  cp config.toml.example config.toml
 #
 # Каждый туннель описан в отдельной секции [tunnels.<name>]

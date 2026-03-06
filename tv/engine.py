@@ -65,6 +65,7 @@ class Engine:
         self.plugins: list[TunnelPlugin] = []
         self.results: list[VPNResult] = []
         self.skipped_binaries: dict[str, str] = {}  # {tunnel_name: binary}
+        self.quiet: bool = False  # set by prepare()
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
         self._dns_proxy: Optional[BypassDNSProxy] = None
         self._dns_proxy_zones: list[str] = []
@@ -116,12 +117,8 @@ class Engine:
 
         config.resolve_log_paths(self.tunnels, self.script_dir)
 
-        settings_path = self.script_dir / cfg.paths.settings_file
-        quiet = not setup and settings_path.exists()
-
-        saved = config.load_settings(self.script_dir, quiet=quiet)
-        if not quiet:
-            print()
+        quiet = not setup and config.all_required_set(self.tunnels)
+        self.quiet = quiet
 
         for tcfg in self.tunnels:
             plugin_cls = get_plugin(tcfg.type)
@@ -134,21 +131,19 @@ class Engine:
                     config.resolve_tunnel_params(
                         tcfg,
                         plugin_cls,
-                        saved,
                         self.script_dir,
                         quiet=quiet,
                         setup=setup,
                     )
                 except config.SetupRequiredError:
-                    if not quiet or _retry:
+                    if _retry:
                         raise
-                    ui.warn(t("engine.settings_incomplete"))
                     return self.prepare(setup=True, _retry=True)
                 if not quiet:
                     print()
 
             # Resolve routes (targets -> networks/hosts/dns)
-            config.resolve_tunnel_routes(tcfg, saved, quiet=quiet, setup=setup)
+            config.resolve_tunnel_routes(tcfg, quiet=quiet, setup=setup)
 
         # Validate config_file uniqueness after resolution
         defaults_mod.validate_config_files(self.tunnels)

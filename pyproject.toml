@@ -6,6 +6,7 @@ dependencies = [
     "dnslib>=0.9",
     "rich>=13.0",
     "tomli>=2.0; python_version < '3.11'",
+    "tomlkit>=0.13",
 ]
 
 [tool.pytest.ini_options]

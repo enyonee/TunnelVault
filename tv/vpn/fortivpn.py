@@ -182,7 +182,6 @@ class FortiVPNPlugin(TunnelPlugin):
     def post_resolve_params(
         cls,
         tcfg: TunnelConfig,
-        saved: dict,
         *,
         quiet: bool = False,
     ) -> None:
@@ -198,15 +197,6 @@ class FortiVPNPlugin(TunnelPlugin):
             if not quiet:
                 ui.param_found("param.cert_sha256", env_val, "$VPN_TRUSTED_CERT", False)
             tcfg.auth["trusted_cert"] = env_val
-            return
-
-        saved_val = saved.get("trusted_cert", "")
-        if saved_val and saved_val != _SHA256_EMPTY:
-            if not quiet:
-                ui.param_found(
-                    "param.cert_sha256", saved_val, cfg.paths.settings_file, False
-                )
-            tcfg.auth["trusted_cert"] = saved_val
             return
 
         host = tcfg.auth.get("host", "")
@@ -226,7 +216,7 @@ class FortiVPNPlugin(TunnelPlugin):
         else:
             ui.warn(t("config.cert_unreachable", host=host, port=port))
             ui.info(
-                f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.settings_file)}{ui.NC}"
+                f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.defaults_file)}{ui.NC}"
             )
 
     @classmethod

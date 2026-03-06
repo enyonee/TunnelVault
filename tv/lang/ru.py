@@ -55,11 +55,6 @@ STRINGS: dict[str, str] = {
     "main.no_pidfile": "Запущенный демон не найден (PID-файл отсутствует)",
     "main.stale_pidfile": "Устаревший PID-файл (процесс {pid} не запущен), очистка",
     # --- config.py ---
-    "config.settings_loaded": "Настройки: загружены",
-    "config.settings_error": "Настройки: ошибка чтения",
-    "config.settings_migrated": "Настройки: мигрированы из .vpn-settings",
-    "config.settings_not_found": "Настройки: не найдены",
-    "config.settings_will_create": "(будет создан {file})",
     "config.settings_saved": "Настройки сохранены",
     "config.source_auto": "авто",
     "config.cert_sha256": "SHA256 сертификата",

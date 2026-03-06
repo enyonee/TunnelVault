@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,6 +9,27 @@ import pytest
 from tv.engine import Engine
 from tv.vpn.base import TunnelConfig, TunnelPlugin, VPNResult
 from tv.checks import CheckResult
+
+
+def _write_toml_for_defs(tmp_dir, defs):
+    """Write config.toml from defs dict so save_tunnel_settings can write back."""
+    import tomlkit
+
+    doc = tomlkit.document()
+    t_section = tomlkit.table(is_super_table=True)
+    for name, tdata in defs.get("tunnels", {}).items():
+        t_table = tomlkit.table()
+        for k, v in tdata.items():
+            if isinstance(v, dict):
+                sub = tomlkit.table()
+                for sk, sv in v.items():
+                    sub[sk] = sv
+                t_table[k] = sub
+            else:
+                t_table[k] = v
+        t_section[name] = t_table
+    doc["tunnels"] = t_section
+    (tmp_dir / "config.toml").write_text(tomlkit.dumps(doc))
 
 
 # =========================================================================
@@ -20,7 +40,7 @@ from tv.checks import CheckResult
 @pytest.fixture
 def v3_defs(tmp_dir):
     """Minimal v3 defs with two tunnels for Engine tests."""
-    return {
+    defs = {
         "tunnels": {
             "openvpn": {
                 "type": "openvpn",
@@ -43,6 +63,8 @@ def v3_defs(tmp_dir):
             },
         },
     }
+    _write_toml_for_defs(tmp_dir, defs)
+    return defs
 
 
 @pytest.fixture
@@ -143,8 +165,8 @@ class TestPrepare:
 
     def test_saves_settings(self, engine, tmp_dir):
         engine.prepare()
-        settings_file = tmp_dir / ".vpn-settings.json"
-        assert settings_file.exists()
+        config_file = tmp_dir / "config.toml"
+        assert config_file.exists()
 
     def test_prepare_is_idempotent(self, engine):
         engine.prepare()
@@ -173,6 +195,7 @@ class TestPrepare:
                 },
             },
         }
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         e.prepare()
         nets_first = list(e.tunnels[0].routes.get("networks", []))
@@ -184,60 +207,58 @@ class TestPrepare:
         assert "networks" not in defs["tunnels"]["forti"]["routes"]
 
     def test_prepare_calls_wizard_when_no_routes(self, tmp_dir, mock_net, logger):
-        """Wizard is called when tunnel has no routes and no targets."""
+        """Wizard is called for routes when quiet=False (missing required params)."""
         defs = {
             "tunnels": {
-                "openvpn": {
-                    "type": "openvpn",
-                    "order": 1,
-                    "config_file": "client.ovpn",
+                "forti": {
+                    "type": "fortivpn", "order": 1,
+                    # No auth = all_required_set=False -> quiet=False -> wizard
                 },
             },
         }
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
-        with patch("tv.ui.wizard_targets", return_value=["10.0.0.0/8"]) as mock_wiz:
+        with patch("tv.ui.wizard_targets", return_value=["10.0.0.0/8"]) as mock_wiz, \
+             patch("tv.ui.wizard_input", side_effect=["vpn.com", "443", "user", "pass", "manual", "cert"]), \
+             patch("tv.vpn.fortivpn.FortiVPNPlugin.post_resolve_params"):
             e.prepare()
-        mock_wiz.assert_called_once_with("openvpn")
+        mock_wiz.assert_called_once_with("forti")
         assert "10.0.0.0/8" in e.tunnels[0].routes["networks"]
 
-    def test_prepare_quiet_with_settings(self, tmp_dir, mock_net, logger, capsys):
-        """Settings file exists + setup=False: quiet mode, no wizard, profiles shown."""
+    def test_prepare_quiet_with_all_params(self, tmp_dir, mock_net, logger, capsys):
+        """All required params set in TOML: quiet mode, no wizard, profiles shown."""
         defs = {
             "tunnels": {
                 "openvpn": {
-                    "type": "openvpn",
-                    "order": 1,
+                    "type": "openvpn", "order": 1,
                     "config_file": "client.ovpn",
+                    "routes": {"targets": []},
                 },
             },
         }
-        settings = {"openvpn": {"config_file": "client.ovpn", "targets": []}}
-        (tmp_dir / ".vpn-settings.json").write_text(json.dumps(settings))
-
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         with patch("tv.ui.wizard_targets") as mock_wiz:
             e.prepare(setup=False)
 
         mock_wiz.assert_not_called()
         assert len(e.tunnels) == 1
+        assert e.quiet is True
         out = capsys.readouterr().out
         assert "Profiles:" in out
         assert "openvpn" in out
 
     def test_prepare_setup_forces_wizard(self, tmp_dir, mock_net, logger):
-        """--setup flag: wizard runs even with settings file."""
+        """--setup flag: wizard runs even with all params."""
         defs = {
             "tunnels": {
                 "openvpn": {
-                    "type": "openvpn",
-                    "order": 1,
+                    "type": "openvpn", "order": 1,
                     "config_file": "client.ovpn",
                 },
             },
         }
-        settings = {"openvpn": {"config_file": "client.ovpn"}}
-        (tmp_dir / ".vpn-settings.json").write_text(json.dumps(settings))
-
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         with (
             patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz,
@@ -249,25 +270,26 @@ class TestPrepare:
         mock_wiz.assert_called_once()
         assert mock_input.call_count >= 1
 
-    def test_prepare_no_settings_triggers_wizard(self, tmp_dir, mock_net, logger):
-        """No settings file + setup=False: wizard runs (first-time use)."""
+    def test_prepare_no_params_triggers_wizard(self, tmp_dir, mock_net, logger):
+        """Missing required params + setup=False: wizard runs (first-time use)."""
         defs = {
             "tunnels": {
-                "openvpn": {
-                    "type": "openvpn",
-                    "order": 1,
-                    "config_file": "client.ovpn",
+                "forti": {
+                    "type": "fortivpn", "order": 1,
+                    # No auth - host/login/pass missing -> not quiet -> wizard fires
                 },
             },
         }
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
-        with patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz:
+        with patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz, \
+             patch("tv.config._resolve_param", return_value="dummy"):
             e.prepare(setup=False)
 
         mock_wiz.assert_called_once()
 
     def test_prepare_auto_setup_on_missing_param(self, tmp_dir, mock_net, logger):
-        """Settings file exists but missing required param -> auto-enter setup."""
+        """Missing required param -> auto-enter setup via SetupRequiredError."""
         defs = {
             "tunnels": {
                 "forti": {
@@ -277,17 +299,13 @@ class TestPrepare:
                 },
             },
         }
-        # Create settings file (triggers quiet mode) but with incomplete data
-        (tmp_dir / ".vpn-settings.json").write_text(json.dumps({"forti": {}}))
-
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         # Should auto-switch to wizard mode (setup=True) instead of crashing
         with (
             patch("tv.config._resolve_param") as mock_resolve,
             patch("tv.ui.wizard_targets", return_value=[]),
         ):
-            # First call (quiet): raises SetupRequiredError
-            # Second call (wizard): returns values
             from tv.config import SetupRequiredError
 
             mock_resolve.side_effect = [
@@ -314,8 +332,7 @@ class TestPrepare:
                 },
             },
         }
-        (tmp_dir / ".vpn-settings.json").write_text(json.dumps({"forti": {}}))
-
+        _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         from tv.config import SetupRequiredError
 
