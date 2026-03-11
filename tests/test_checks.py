@@ -23,11 +23,18 @@ from tv.checks import (
 
 
 class TestCheckPort:
+    @patch("socket.create_connection")
     @patch("subprocess.run")
-    def test_open_port(self, mock_run):
+    def test_open_port(self, mock_run, mock_sock):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        mock_sock.return_value.__enter__ = lambda s: s
+        mock_sock.return_value.__exit__ = lambda s, *a: None
         assert _check_port("127.0.0.1", 80) is True
 
+    @pytest.mark.skipif(
+        __import__("platform").system() == "Windows",
+        reason="nc not available on Windows",
+    )
     @patch("subprocess.run")
     def test_uses_nc(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
@@ -85,8 +92,9 @@ class TestGetExternalIp:
 
 
 class TestCheckPortInverse:
+    @patch("socket.create_connection", side_effect=OSError("refused"))
     @patch("subprocess.run")
-    def test_closed_port(self, mock_run):
+    def test_closed_port(self, mock_run, mock_sock):
         mock_run.return_value = subprocess.CompletedProcess([], 1, "", "")
         assert _check_port("127.0.0.1", 99999) is False
 
