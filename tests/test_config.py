@@ -157,6 +157,10 @@ class TestLoadSettingsInverse:
         result = load_settings(tmp_dir)
         assert result == {}
 
+    @pytest.mark.skipif(
+        __import__("platform").system() == "Windows",
+        reason="chmod 0o000 doesn't make files unreadable on Windows",
+    )
     def test_unreadable_json_falls_through_to_bash(self, tmp_dir: Path):
         """JSON exists but unreadable + bash file -> uses bash file."""
         json_path = tmp_dir / SETTINGS_FILENAME
