@@ -186,14 +186,19 @@ class IPCServer:
         return proto.make_response(True, data={"tunnels": tunnels})
 
     def _cmd_reconnect(self, request: dict) -> dict:
-        # TODO: per-tunnel reconnect по request.get("name")
+        name = request.get("name")
         lock = self._reconnect_lock
 
         if lock and not lock.acquire(timeout=30):
             return proto.make_error("reconnect in progress, try later")
 
         try:
-            # TODO: per-tunnel reconnect по name
+            if name:
+                ok = self._engine.reconnect_one(name, quiet=True)
+                if not ok:
+                    return proto.make_error(f"tunnel not found: {name}")
+                return proto.make_response(True, data={"reconnected": [name]})
+
             self._engine.reconnect_all(quiet=True)
             names = [tc.name for tc, r in zip(
                 self._engine.tunnels, self._engine.results
@@ -206,14 +211,19 @@ class IPCServer:
                 lock.release()
 
     def _cmd_disconnect(self, request: dict) -> dict:
-        # TODO: per-tunnel disconnect по request.get("name")
+        name = request.get("name")
         lock = self._reconnect_lock
 
         if lock and not lock.acquire(timeout=30):
             return proto.make_error("operation in progress, try later")
 
         try:
-            # TODO: per-tunnel disconnect по name
+            if name:
+                ok = self._engine.disconnect_one(name)
+                if not ok:
+                    return proto.make_error(f"tunnel not found: {name}")
+                return proto.make_response(True, data={"disconnected": name})
+
             self._engine.disconnect_all()
             return proto.make_response(True, data={"disconnected": "all"})
         except Exception as e:

@@ -53,6 +53,75 @@ class TestProtocol:
 
 
 # =========================================================================
+# Engine per-tunnel operations
+# =========================================================================
+
+
+class TestEnginePerTunnel:
+    def test_disconnect_one(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        plugin = MagicMock(spec=TunnelPlugin)
+        plugin._pid = 100
+        tcfg = TunnelConfig(name="vpn1", type="openvpn")
+
+        engine.plugins = [plugin]
+        engine.tunnels = [tcfg]
+        engine.results = [VPNResult(ok=True, pid=100)]
+
+        result = engine.disconnect_one("vpn1")
+
+        assert result is True
+        plugin.disconnect.assert_called_once()
+        plugin.delete_routes.assert_called_once()
+        plugin.cleanup_dns.assert_called_once()
+        assert engine.results[0].ok is False
+
+    def test_disconnect_one_not_found(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        engine.plugins = []
+        engine.tunnels = []
+        engine.results = []
+
+        assert engine.disconnect_one("nope") is False
+
+    def test_reconnect_one(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        plugin = MagicMock(spec=TunnelPlugin)
+        plugin._pid = 100
+        tcfg = TunnelConfig(name="vpn1", type="openvpn")
+
+        engine.plugins = [plugin]
+        engine.tunnels = [tcfg]
+        engine.results = [VPNResult(ok=True, pid=100)]
+
+        from unittest.mock import patch
+
+        mock_new_plugin = MagicMock(spec=TunnelPlugin)
+        mock_new_plugin.connect.return_value = VPNResult(ok=True, pid=200)
+
+        with (
+            patch("tv.engine.get_plugin") as mock_get,
+            patch("tv.engine.time.sleep"),
+        ):
+            mock_get.return_value.return_value = mock_new_plugin
+            result = engine.reconnect_one("vpn1")
+
+        assert result is True
+        plugin.disconnect.assert_called_once()
+        mock_new_plugin.connect.assert_called_once()
+        assert engine.results[0].ok is True
+        assert engine.plugins[0] is mock_new_plugin
+
+    def test_reconnect_one_not_found(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        engine.plugins = []
+        engine.tunnels = []
+        engine.results = []
+
+        assert engine.reconnect_one("nope") is False
+
+
+# =========================================================================
 # Server + Client integration
 # =========================================================================
 
@@ -167,6 +236,48 @@ class TestIPCIntegration:
             resp = client.send("disconnect")
 
         assert resp["ok"] is True
+
+    def test_reconnect_one_tunnel(self, ipc_setup):
+        engine, client, *_ = ipc_setup
+
+        from unittest.mock import patch
+        with patch.object(engine, "reconnect_one", return_value=True) as mock_recon:
+            resp = client.send("reconnect", name="vpn1")
+
+        assert resp["ok"] is True
+        assert resp["data"]["reconnected"] == ["vpn1"]
+        mock_recon.assert_called_once_with("vpn1", quiet=True)
+
+    def test_reconnect_unknown_tunnel(self, ipc_setup):
+        engine, client, *_ = ipc_setup
+
+        from unittest.mock import patch
+        with patch.object(engine, "reconnect_one", return_value=False):
+            resp = client.send("reconnect", name="nonexistent")
+
+        assert resp["ok"] is False
+        assert "not found" in resp["error"]
+
+    def test_disconnect_one_tunnel(self, ipc_setup):
+        engine, client, *_ = ipc_setup
+
+        from unittest.mock import patch
+        with patch.object(engine, "disconnect_one", return_value=True) as mock_disc:
+            resp = client.send("disconnect", name="vpn1")
+
+        assert resp["ok"] is True
+        assert resp["data"]["disconnected"] == "vpn1"
+        mock_disc.assert_called_once_with("vpn1")
+
+    def test_disconnect_unknown_tunnel(self, ipc_setup):
+        engine, client, *_ = ipc_setup
+
+        from unittest.mock import patch
+        with patch.object(engine, "disconnect_one", return_value=False):
+            resp = client.send("disconnect", name="nope")
+
+        assert resp["ok"] is False
+        assert "not found" in resp["error"]
 
     def test_try_ipc_returns_none_when_no_daemon(self, tmp_dir):
         resp = try_ipc(tmp_dir / "nope.sock", "status")

@@ -314,6 +314,66 @@ class Engine:
         self.log.log("WARN", f"Network not ready after {timeout}s")
         return False
 
+    def _find_tunnel(self, name: str) -> tuple[int, TunnelConfig, "TunnelPlugin", VPNResult] | None:
+        """Find tunnel by name. Returns (index, config, plugin, result) or None."""
+        for i, (tcfg, plugin, result) in enumerate(
+            zip(self.tunnels, self.plugins, self.results)
+        ):
+            if tcfg.name == name:
+                return i, tcfg, plugin, result
+        return None
+
+    def disconnect_one(self, name: str) -> bool:
+        """Disconnect a single tunnel by name. Returns True if found."""
+        found = self._find_tunnel(name)
+        if not found:
+            return False
+        idx, tcfg, plugin, result = found
+        self._fire("pre_disconnect", tunnel=tcfg, plugin=plugin)
+        try:
+            plugin.disconnect()
+        except Exception as e:
+            self.log.log("WARN", f"disconnect {tcfg.name}: {e}")
+        try:
+            plugin.delete_routes()
+        except Exception as e:
+            self.log.log("WARN", f"delete_routes {tcfg.name}: {e}")
+        try:
+            plugin.cleanup_dns()
+        except Exception as e:
+            self.log.log("WARN", f"cleanup_dns {tcfg.name}: {e}")
+        self._fire("post_disconnect", tunnel=tcfg, plugin=plugin)
+        self.results[idx] = VPNResult(ok=False, detail="disconnected")
+        self._save_watch_state()
+        self.log.log("INFO", f"Disconnected tunnel: {name}")
+        return True
+
+    def reconnect_one(self, name: str, *, quiet: bool = True) -> bool:
+        """Reconnect a single tunnel by name. Returns True if found."""
+        found = self._find_tunnel(name)
+        if not found:
+            return False
+        idx, tcfg, plugin, _result = found
+
+        # Disconnect
+        try:
+            plugin.disconnect()
+        except Exception as e:
+            self.log.log("WARN", f"disconnect {tcfg.name}: {e}")
+
+        time.sleep(cfg.timeouts.keepalive_reconnect_pause)
+
+        # Reconnect
+        plugin_cls = get_plugin(tcfg.type)
+        new_plugin = plugin_cls(tcfg, self.net, self.log, self.script_dir)
+        result = new_plugin.connect()
+
+        self.plugins[idx] = new_plugin
+        self.results[idx] = result
+        self._save_watch_state()
+        self.log.log("INFO", f"Reconnected tunnel: {name} ok={result.ok}")
+        return True
+
     def reconnect_all(
         self, *, quiet: bool = True
     ) -> tuple[list[checks.CheckResult], str]:

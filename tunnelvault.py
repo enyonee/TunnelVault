@@ -183,6 +183,14 @@ def main() -> None:
         return
 
     if args.check:
+        from tv.ipc_client import try_ipc
+        from tv.ipc_protocol import socket_path as ipc_socket_path
+
+        resp = try_ipc(ipc_socket_path(script_dir), "check")
+        if resp and resp.get("ok"):
+            _print_ipc_check(resp["data"])
+            return
+
         tunnels = defaults_mod.parse_tunnels(defs)
         config.resolve_log_paths(tunnels, script_dir)
         try:
@@ -385,6 +393,25 @@ def _print_ipc_status(data: dict) -> None:
             print(f"  {status_str} {ui.BOLD}{name}{ui.NC} [{vtype}]{extra}")
         else:
             print(f"  {ui.RED}✗{ui.NC} {ui.BOLD}{name}{ui.NC} [{vtype}] {detail}")
+
+
+def _print_ipc_check(data: dict) -> None:
+    """Format and print check response from IPC daemon."""
+    tunnels = data.get("tunnels", [])
+    if not tunnels:
+        print(f"  {ui.DIM}No tunnels{ui.NC}")
+        return
+
+    for t_info in tunnels:
+        name = t_info.get("name", "?")
+        alive = t_info.get("alive", False)
+        t_pid = t_info.get("pid")
+
+        if alive:
+            pid_str = f" (PID={t_pid})" if t_pid else ""
+            print(f"  {ui.GREEN}✓{ui.NC} {name}{pid_str} alive")
+        else:
+            print(f"  {ui.RED}✗{ui.NC} {name} dead")
 
 
 # VPN type -> interface prefixes for dynamic matching.
