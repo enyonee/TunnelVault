@@ -1,4 +1,7 @@
-"""IPC server: unix socket listener, dispatches commands to Engine."""
+"""IPC server: socket listener, dispatches commands to Engine.
+
+Uses AF_UNIX on macOS/Linux, TCP localhost on Windows.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +19,7 @@ from tv.logger import Logger
 
 
 class IPCServer:
-    """Unix socket server that exposes Engine state via JSON-line protocol.
+    """Socket server that exposes Engine state via JSON-line protocol.
 
     Runs in a daemon thread alongside the keepalive loop.
     Read-only commands (status, check) don't need a lock.
@@ -37,9 +40,17 @@ class IPCServer:
         self._stop = threading.Event()
         self._sock: Optional[socket.socket] = None
         self._started = time.monotonic()
+        self._use_unix = proto.use_unix_socket()
+        self._tcp_port: int = 0
 
     def serve_forever(self) -> None:
-        """Bind unix socket and accept connections until shutdown()."""
+        """Bind socket and accept connections until shutdown()."""
+        if self._use_unix:
+            self._serve_unix()
+        else:
+            self._serve_tcp()
+
+    def _serve_unix(self) -> None:
         self._cleanup_stale_socket()
 
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -48,7 +59,6 @@ class IPCServer:
 
         try:
             self._sock.bind(str(self._socket_path))
-            # Доступ для обычного юзера (status без sudo)
             os.chmod(str(self._socket_path), 0o666)
             self._sock.listen(5)
             self._log.log("INFO", f"IPC server listening on {self._socket_path}")
@@ -56,6 +66,30 @@ class IPCServer:
             self._log.log("ERROR", f"IPC server bind failed: {e}")
             return
 
+        self._accept_loop()
+        self._cleanup()
+
+    def _serve_tcp(self) -> None:
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.setblocking(False)
+
+        try:
+            self._sock.bind((proto.TCP_HOST, 0))
+            self._sock.listen(5)
+            self._tcp_port = self._sock.getsockname()[1]
+            self._write_port_file()
+            self._log.log(
+                "INFO", f"IPC server listening on {proto.TCP_HOST}:{self._tcp_port}"
+            )
+        except OSError as e:
+            self._log.log("ERROR", f"IPC server TCP bind failed: {e}")
+            return
+
+        self._accept_loop()
+        self._cleanup()
+
+    def _accept_loop(self) -> None:
         while not self._stop.is_set():
             try:
                 ready, _, _ = select.select([self._sock], [], [], 1.0)
@@ -77,11 +111,17 @@ class IPCServer:
             finally:
                 conn.close()
 
-        self._cleanup()
-
     def shutdown(self) -> None:
         """Signal the server to stop."""
         self._stop.set()
+
+    def _write_port_file(self) -> None:
+        """Write TCP port to file so client can discover it (Windows)."""
+        port_path = self._socket_path.parent / proto.TCP_PORT_FILE
+        try:
+            port_path.write_text(str(self._tcp_port))
+        except OSError:
+            pass
 
     def _cleanup_stale_socket(self) -> None:
         """Remove leftover socket file from previous crash."""
@@ -98,11 +138,20 @@ class IPCServer:
                 self._sock.close()
             except OSError:
                 pass
-        if self._socket_path.exists():
+        # Unix socket file
+        if self._use_unix and self._socket_path.exists():
             try:
                 self._socket_path.unlink()
             except OSError:
                 pass
+        # TCP port file
+        if not self._use_unix:
+            port_path = self._socket_path.parent / proto.TCP_PORT_FILE
+            if port_path.exists():
+                try:
+                    port_path.unlink()
+                except OSError:
+                    pass
 
     def _handle_client(self, conn: socket.socket) -> None:
         conn.settimeout(proto.SERVER_CLIENT_TIMEOUT)

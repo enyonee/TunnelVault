@@ -322,3 +322,69 @@ class TestIPCIntegration:
             resp = client.send("reconnect")
 
         assert resp["ok"] is True
+
+
+# =========================================================================
+# TCP fallback (Windows mode)
+# =========================================================================
+
+
+@pytest.fixture
+def tcp_ipc_setup(tmp_dir, mock_net, logger):
+    """Start IPC server in TCP mode (simulating Windows), yield client, cleanup."""
+    engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+
+    plugin = MagicMock(spec=TunnelPlugin)
+    plugin._pid = 100
+    tcfg = TunnelConfig(name="vpn1", type="openvpn", interface="utun3")
+
+    engine.plugins = [plugin]
+    engine.tunnels = [tcfg]
+    engine.results = [VPNResult(ok=True, pid=100, detail="connected")]
+
+    logs_dir = tmp_dir / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    sock_path = logs_dir / "tunnelvault.sock"
+    lock = threading.Lock()
+
+    from unittest.mock import patch
+
+    # Force TCP mode
+    with patch("tv.ipc_protocol.use_unix_socket", return_value=False):
+        server, thread = start_server_thread(engine, sock_path, logger, lock)
+        time.sleep(0.5)
+
+        client = IPCClient(sock_path)
+        client._use_unix = False
+        yield engine, client, server, lock
+
+    server.shutdown()
+    thread.join(timeout=3)
+
+
+class TestIPCTcpFallback:
+    def test_status_via_tcp(self, tcp_ipc_setup):
+        _, client, *_ = tcp_ipc_setup
+        resp = client.send("status")
+
+        assert resp["ok"] is True
+        assert len(resp["data"]["tunnels"]) == 1
+
+    def test_check_via_tcp(self, tcp_ipc_setup):
+        _, client, *_ = tcp_ipc_setup
+
+        from unittest.mock import patch
+        with patch("tv.engine.proc.is_alive", return_value=True):
+            resp = client.send("check")
+
+        assert resp["ok"] is True
+
+    def test_tcp_port_file_created(self, tcp_ipc_setup):
+        _, _, server, _ = tcp_ipc_setup
+        assert server._tcp_port > 0
+
+    def test_tcp_client_detects_no_daemon(self, tmp_dir):
+        """Client returns False when no port file exists."""
+        client = IPCClient(tmp_dir / "logs" / "tunnelvault.sock")
+        client._use_unix = False
+        assert client.is_daemon_running() is False

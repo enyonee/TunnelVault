@@ -1,4 +1,7 @@
-"""IPC client: connect to daemon socket, send commands, get responses."""
+"""IPC client: connect to daemon, send commands, get responses.
+
+Uses AF_UNIX on macOS/Linux, TCP localhost on Windows.
+"""
 
 from __future__ import annotations
 
@@ -10,15 +13,21 @@ from tv import ipc_protocol as proto
 
 
 class IPCClient:
-    """Client for communicating with tunnelvault daemon via unix socket."""
+    """Client for communicating with tunnelvault daemon."""
 
     def __init__(self, socket_path: Path):
         self._socket_path = socket_path
+        self._use_unix = proto.use_unix_socket()
 
     def is_daemon_running(self) -> bool:
-        """Check if daemon is listening on socket."""
-        if not self._socket_path.exists():
-            return False
+        """Check if daemon is listening."""
+        if self._use_unix:
+            if not self._socket_path.exists():
+                return False
+        else:
+            if not self._tcp_port():
+                return False
+
         try:
             with self._connect():
                 return True
@@ -45,10 +54,29 @@ class IPCClient:
             return proto.decode(data)
 
     def _connect(self) -> socket.socket:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if self._use_unix:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(proto.CLIENT_TIMEOUT)
+            sock.connect(str(self._socket_path))
+            return sock
+
+        port = self._tcp_port()
+        if not port:
+            raise ConnectionError("no port file found")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(proto.CLIENT_TIMEOUT)
-        sock.connect(str(self._socket_path))
+        sock.connect((proto.TCP_HOST, port))
         return sock
+
+    def _tcp_port(self) -> int | None:
+        """Read TCP port from port file (Windows fallback)."""
+        port_path = self._socket_path.parent / proto.TCP_PORT_FILE
+        if not port_path.exists():
+            return None
+        try:
+            return int(port_path.read_text().strip())
+        except (ValueError, OSError):
+            return None
 
 
 def try_ipc(socket_path: Path, cmd: str, **kwargs: Any) -> Optional[dict]:
