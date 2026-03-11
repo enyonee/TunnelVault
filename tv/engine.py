@@ -355,11 +355,21 @@ class Engine:
             return False
         idx, tcfg, plugin, _result = found
 
-        # Disconnect
+        # Disconnect с cleanup routes/DNS (как в disconnect_all)
+        self._fire("pre_disconnect", tunnel=tcfg, plugin=plugin)
         try:
             plugin.disconnect()
         except Exception as e:
             self.log.log("WARN", f"disconnect {tcfg.name}: {e}")
+        try:
+            plugin.delete_routes()
+        except Exception as e:
+            self.log.log("WARN", f"delete_routes {tcfg.name}: {e}")
+        try:
+            plugin.cleanup_dns()
+        except Exception as e:
+            self.log.log("WARN", f"cleanup_dns {tcfg.name}: {e}")
+        self._fire("post_disconnect", tunnel=tcfg, plugin=plugin)
 
         time.sleep(cfg.timeouts.keepalive_reconnect_pause)
 

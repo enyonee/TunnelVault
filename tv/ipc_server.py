@@ -59,7 +59,7 @@ class IPCServer:
 
         try:
             self._sock.bind(str(self._socket_path))
-            os.chmod(str(self._socket_path), 0o666)
+            os.chmod(str(self._socket_path), 0o600)
             self._sock.listen(5)
             self._log.log("INFO", f"IPC server listening on {self._socket_path}")
         except OSError as e:
@@ -199,10 +199,13 @@ class IPCServer:
 
     def _cmd_status(self, _request: dict) -> dict:
         engine = self._engine
+        # Snapshot - keepalive thread может мутировать списки
+        snap_tunnels = engine.tunnels[:]
+        snap_plugins = engine.plugins[:]
+        snap_results = engine.results[:]
+
         tunnels = []
-        for tcfg, plugin, result in zip(
-            engine.tunnels, engine.plugins, engine.results
-        ):
+        for tcfg, plugin, result in zip(snap_tunnels, snap_plugins, snap_results):
             tunnels.append({
                 "name": tcfg.name,
                 "type": tcfg.type,
@@ -221,10 +224,13 @@ class IPCServer:
     def _cmd_check(self, _request: dict) -> dict:
         engine = self._engine
         dead = engine.check_alive()
+        # Snapshot
+        snap_tunnels = engine.tunnels[:]
+        snap_plugins = engine.plugins[:]
+        snap_results = engine.results[:]
+
         tunnels = []
-        for tcfg, plugin, result in zip(
-            engine.tunnels, engine.plugins, engine.results
-        ):
+        for tcfg, plugin, result in zip(snap_tunnels, snap_plugins, snap_results):
             is_dead = any(tc.name == tcfg.name for tc, _ in dead)
             tunnels.append({
                 "name": tcfg.name,
@@ -237,9 +243,12 @@ class IPCServer:
     def _cmd_reconnect(self, request: dict) -> dict:
         name = request.get("name")
         lock = self._reconnect_lock
+        acquired = False
 
-        if lock and not lock.acquire(timeout=30):
-            return proto.make_error("reconnect in progress, try later")
+        if lock:
+            acquired = lock.acquire(timeout=30)
+            if not acquired:
+                return proto.make_error("reconnect in progress, try later")
 
         try:
             if name:
@@ -256,15 +265,18 @@ class IPCServer:
         except Exception as e:
             return proto.make_error(f"reconnect failed: {e}")
         finally:
-            if lock and lock.locked():
+            if acquired:
                 lock.release()
 
     def _cmd_disconnect(self, request: dict) -> dict:
         name = request.get("name")
         lock = self._reconnect_lock
+        acquired = False
 
-        if lock and not lock.acquire(timeout=30):
-            return proto.make_error("operation in progress, try later")
+        if lock:
+            acquired = lock.acquire(timeout=30)
+            if not acquired:
+                return proto.make_error("operation in progress, try later")
 
         try:
             if name:
@@ -278,7 +290,7 @@ class IPCServer:
         except Exception as e:
             return proto.make_error(f"disconnect failed: {e}")
         finally:
-            if lock and lock.locked():
+            if acquired:
                 lock.release()
 
 
