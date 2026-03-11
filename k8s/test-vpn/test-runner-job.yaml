@@ -14,7 +14,7 @@ spec:
         - name: test-runner
           image: ghcr.io/enyonee/tunnelvault-test:latest
           securityContext:
-            # NET_ADMIN для TUN/VPN. privileged не нужен - mknod в command
+            # NET_ADMIN для TUN/VPN, MKNOD для создания /dev/net/tun
             capabilities:
               add: [NET_ADMIN, MKNOD]
           env:
@@ -38,7 +38,7 @@ spec:
             - sh
             - -c
             - |
-              # TUN device (NET_ADMIN достаточно для mknod)
+              # TUN device (MKNOD cap для mknod, NET_ADMIN для VPN)
               mkdir -p /dev/net
               [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
               chmod 600 /dev/net/tun
