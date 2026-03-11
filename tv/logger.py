@@ -122,7 +122,8 @@ class Logger:
             user = os.getlogin()
         except OSError:
             user = os.environ.get("USER", "?")
-        self.log("ENV", f"whoami: {user}, EUID={os.geteuid()}")
+        euid = getattr(os, "geteuid", lambda: "N/A")()
+        self.log("ENV", f"whoami: {user}, EUID={euid}")
         self.log("ENV", f"SCRIPT_DIR={script_dir}")
         self.log("ENV", f"PATH={os.environ.get('PATH', '')}")
 
