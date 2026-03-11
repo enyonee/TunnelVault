@@ -5,6 +5,7 @@ on:
     tags: [v*]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -12,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
-      - run: uv sync --extra dev
+      - run: uv sync --group dev
       - name: Ruff check
         run: uv run ruff check .
       - name: Ruff format check
@@ -30,7 +31,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v4
 
-      - run: uv sync --extra dev
+      - run: uv sync --group dev
 
       - name: Run tests
         run: uv run pytest tests/ -x -q -n auto -m "not network" --ignore=tests/integration/k8s
