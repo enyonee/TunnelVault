@@ -1078,14 +1078,15 @@ class TestResolveLogPaths:
 
 class TestPrepareLogFiles:
     def test_creates_empty_readable_files(self, tmp_dir):
-        """Pre-creates log files with 0644 permissions."""
+        """Pre-creates log files."""
         log_path = tmp_dir / "logs" / "test.log"
         tunnels = [TunnelConfig(name="t", log=str(log_path))]
         prepare_log_files(tunnels)
         assert log_path.exists()
         assert log_path.read_bytes() == b""
-        mode = log_path.stat().st_mode & 0o777
-        assert mode == 0o644
+        if __import__("platform").system() != "Windows":
+            mode = log_path.stat().st_mode & 0o777
+            assert mode == 0o644
 
     def test_creates_parent_dir(self, tmp_dir):
         """Creates parent directory if it doesn't exist."""
