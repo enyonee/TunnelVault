@@ -1061,11 +1061,12 @@ class TestResolveLogPaths:
     def test_absolute_paths_unchanged(self, tmp_dir):
         """Absolute log paths are not modified."""
         cfg.paths.log_dir = "logs"
+        abs_log = str(tmp_dir / "my.log")
         tunnels = [
-            TunnelConfig(name="t1", type="openvpn", log="/var/log/my.log"),
+            TunnelConfig(name="t1", type="openvpn", log=abs_log),
         ]
         resolve_log_paths(tunnels, tmp_dir)
-        assert tunnels[0].log == "/var/log/my.log"
+        assert tunnels[0].log == abs_log
 
     def test_empty_log_skipped(self, tmp_dir):
         """Tunnels without log field are skipped."""
