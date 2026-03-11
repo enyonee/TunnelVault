@@ -1,0 +1,99 @@
+# sing-box server (SOCKS5 + HTTP proxy for tunnelvault testing)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: singbox-server-config
+  namespace: test-vpn
+data:
+  config.json: |
+    {
+      "log": {"level": "info"},
+      "inbounds": [
+        {
+          "type": "socks",
+          "tag": "socks-in",
+          "listen": "::",
+          "listen_port": 1080
+        },
+        {
+          "type": "http",
+          "tag": "http-in",
+          "listen": "::",
+          "listen_port": 8080
+        },
+        {
+          "type": "shadowsocks",
+          "tag": "ss-in",
+          "listen": "::",
+          "listen_port": 8388,
+          "method": "aes-256-gcm",
+          "password": "test-password-12345"
+        }
+      ],
+      "outbounds": [
+        {
+          "type": "direct",
+          "tag": "direct"
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: singbox-server
+  namespace: test-vpn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: singbox-server
+  template:
+    metadata:
+      labels:
+        app: singbox-server
+    spec:
+      containers:
+      - name: singbox
+        image: ghcr.io/sagernet/sing-box:latest
+        args: ["run", "-c", "/etc/sing-box/config.json"]
+        ports:
+        - containerPort: 1080
+          protocol: TCP
+        - containerPort: 8080
+          protocol: TCP
+        - containerPort: 8388
+          protocol: TCP
+        volumeMounts:
+        - name: config
+          mountPath: /etc/sing-box
+        resources:
+          requests:
+            memory: 32Mi
+            cpu: 50m
+          limits:
+            memory: 128Mi
+            cpu: 200m
+      volumes:
+      - name: config
+        configMap:
+          name: singbox-server-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: singbox-server
+  namespace: test-vpn
+spec:
+  selector:
+    app: singbox-server
+  ports:
+  - name: socks
+    port: 1080
+    targetPort: 1080
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: shadowsocks
+    port: 8388
+    targetPort: 8388
