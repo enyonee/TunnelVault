@@ -14,6 +14,7 @@ from tv.vpn.base import TunnelConfig
 # Fixtures
 # =========================================================================
 
+
 @pytest.fixture
 def v3_defs():
     """V3 format defs for disconnect tests."""
@@ -44,8 +45,11 @@ def global_defs():
 # Positive: emergency disconnect (run)
 # =========================================================================
 
+
 class TestDisconnect:
-    def test_uses_emergency_patterns_with_script_dir(self, mock_net, logger, v3_defs, tmp_path):
+    def test_uses_emergency_patterns_with_script_dir(
+        self, mock_net, logger, v3_defs, tmp_path
+    ):
         """Uses targeted emergency_patterns when script_dir is provided."""
         with patch("tv.disconnect.proc") as mock_proc:
             run(net=mock_net, log=logger, defs=v3_defs, script_dir=tmp_path)
@@ -128,14 +132,17 @@ class TestDisconnect:
 # Negative / inverse: edge cases
 # =========================================================================
 
+
 class TestDisconnectInverse:
     def test_without_net_creates_default(self, logger, v3_defs):
         """Without net= -> creates NetManager via create()."""
         mock_net_instance = MagicMock()
         mock_net_instance.resolve_host.return_value = []
 
-        with patch("tv.disconnect.proc"), \
-             patch("tv.net.create", return_value=mock_net_instance):
+        with (
+            patch("tv.disconnect.proc"),
+            patch("tv.net.create", return_value=mock_net_instance),
+        ):
             run(net=None, log=logger, defs=v3_defs)
 
     def test_without_logger_no_crash(self, mock_net, capsys, v3_defs):
@@ -179,12 +186,18 @@ class TestDisconnectInverse:
 
         with patch("tv.disconnect.proc") as mock_proc:
             mock_proc.killall.side_effect = lambda *a, **kw: call_order.append("kill")
-            mock_proc.kill_pattern.side_effect = lambda *a, **kw: call_order.append("kill")
-            mock_net.delete_host_route.side_effect = lambda *a, **kw: call_order.append("route")
+            mock_proc.kill_pattern.side_effect = lambda *a, **kw: call_order.append(
+                "kill"
+            )
+            mock_net.delete_host_route.side_effect = lambda *a, **kw: call_order.append(
+                "route"
+            )
 
             run(net=mock_net, log=logger, defs=v3_defs)
 
-        first_route = call_order.index("route") if "route" in call_order else len(call_order)
+        first_route = (
+            call_order.index("route") if "route" in call_order else len(call_order)
+        )
         kills_before = [x for x in call_order[:first_route] if x == "kill"]
         assert len(kills_before) > 0
 
@@ -192,6 +205,7 @@ class TestDisconnectInverse:
 # =========================================================================
 # Plugin-driven disconnect (run_plugins)
 # =========================================================================
+
 
 class TestRunPlugins:
     def test_disconnects_in_reverse_order(self, mock_net, logger, capsys):
@@ -201,10 +215,16 @@ class TestRunPlugins:
             TunnelConfig(name="first", type="openvpn"),
             TunnelConfig(name="second", type="singbox"),
         ]
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.disconnect",
-                    side_effect=lambda: order.append("first")), \
-             patch("tv.vpn.singbox.SingBoxPlugin.disconnect",
-                    side_effect=lambda: order.append("second")):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.disconnect",
+                side_effect=lambda: order.append("first"),
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.disconnect",
+                side_effect=lambda: order.append("second"),
+            ),
+        ):
             run_plugins(tunnels, net=mock_net, log=logger, defs={})
 
         assert order == ["second", "first"]
@@ -240,9 +260,13 @@ class TestRunPlugins:
             TunnelConfig(name="first", type="openvpn"),
             TunnelConfig(name="second", type="singbox"),
         ]
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.disconnect"), \
-             patch("tv.vpn.singbox.SingBoxPlugin.disconnect",
-                    side_effect=RuntimeError("boom")):
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.disconnect"),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.disconnect",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
             run_plugins(tunnels, net=mock_net, log=logger, defs={})
 
         # Still got to the end
@@ -252,12 +276,13 @@ class TestRunPlugins:
         """Cleans up DNS resolvers after disconnect."""
         tunnels = [
             TunnelConfig(
-                name="fortivpn", type="fortivpn", order=1,
+                name="fortivpn",
+                type="fortivpn",
+                order=1,
                 dns={"nameservers": ["10.0.1.1"], "domains": ["alpha.local"]},
             ),
         ]
-        with patch("tv.vpn.fortivpn.proc"), \
-             patch("tv.disconnect.proc"):
+        with patch("tv.vpn.fortivpn.proc"), patch("tv.disconnect.proc"):
             run_plugins(tunnels, net=mock_net, log=logger, defs={})
 
         mock_net.cleanup_dns_resolver.assert_called()
@@ -266,12 +291,13 @@ class TestRunPlugins:
         """Deletes tunnel routes after disconnect."""
         tunnels = [
             TunnelConfig(
-                name="fortivpn", type="fortivpn", order=1,
+                name="fortivpn",
+                type="fortivpn",
+                order=1,
                 routes={"networks": ["10.0.0.0/8"]},
             ),
         ]
-        with patch("tv.vpn.fortivpn.proc"), \
-             patch("tv.disconnect.proc"):
+        with patch("tv.vpn.fortivpn.proc"), patch("tv.disconnect.proc"):
             run_plugins(tunnels, net=mock_net, log=logger, defs={})
 
         mock_net.delete_net_route.assert_called()
@@ -285,6 +311,7 @@ class TestRunPlugins:
 # =========================================================================
 # Bypass routes cleanup
 # =========================================================================
+
 
 class TestBypassRoutesCleanup:
     def test_removes_bypass_hosts(self, mock_net, logger, capsys):
@@ -355,6 +382,7 @@ class TestBypassRoutesCleanup:
 # Domain suffix emergency cleanup
 # =========================================================================
 
+
 class TestDomainSuffixCleanup:
     def test_emergency_cleanup_removes_suffix_resolvers(self, mock_net, logger, capsys):
         """Emergency disconnect removes /etc/resolver/ files for domain_suffix."""
@@ -377,7 +405,9 @@ class TestDomainSuffixCleanup:
         out = capsys.readouterr().out
         assert "resolver" in out.lower()
 
-    def test_emergency_cleanup_no_suffix_no_resolver_cleanup(self, mock_net, logger, capsys):
+    def test_emergency_cleanup_no_suffix_no_resolver_cleanup(
+        self, mock_net, logger, capsys
+    ):
         """No domain_suffix - no resolver cleanup."""
         defs = {
             "global": {

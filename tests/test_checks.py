@@ -21,6 +21,7 @@ from tv.checks import (
 # Positive: primitives
 # =========================================================================
 
+
 class TestCheckPort:
     @patch("subprocess.run")
     def test_open_port(self, mock_run):
@@ -38,10 +39,13 @@ class TestCheckPort:
 
 
 class TestCheckPing:
-    @pytest.mark.parametrize("platform,flag,absent_flag", [
-        ("Darwin", "-t", "-W"),
-        ("Linux", "-W", "-t"),
-    ])
+    @pytest.mark.parametrize(
+        "platform,flag,absent_flag",
+        [
+            ("Darwin", "-t", "-W"),
+            ("Linux", "-W", "-t"),
+        ],
+    )
     @patch("subprocess.run")
     def test_platform_ping_flag(self, mock_run, platform, flag, absent_flag):
         """Platform-specific ping timeout flag."""
@@ -79,6 +83,7 @@ class TestGetExternalIp:
 # Negative / inverse: check failures
 # =========================================================================
 
+
 class TestCheckPortInverse:
     @patch("subprocess.run")
     def test_closed_port(self, mock_run):
@@ -102,11 +107,14 @@ class TestCheckDnsInverse:
 
 
 class TestCheckHttpInverse:
-    @pytest.mark.parametrize("rc,stdout", [
-        (0, "000"),   # curl timeout
-        (7, ""),      # curl connection refused
-        (0, "500"),   # server error (не начинается с 2 или 3)
-    ])
+    @pytest.mark.parametrize(
+        "rc,stdout",
+        [
+            (0, "000"),  # curl timeout
+            (7, ""),  # curl connection refused
+            (0, "500"),  # server error (не начинается с 2 или 3)
+        ],
+    )
     @patch("subprocess.run")
     def test_failure_codes(self, mock_run, rc, stdout):
         mock_run.return_value = subprocess.CompletedProcess([], rc, stdout, "")
@@ -114,10 +122,13 @@ class TestCheckHttpInverse:
 
 
 class TestGetExternalIpInverse:
-    @pytest.mark.parametrize("rc,stdout", [
-        (28, ""),  # curl timeout
-        (0, ""),   # empty response
-    ])
+    @pytest.mark.parametrize(
+        "rc,stdout",
+        [
+            (28, ""),  # curl timeout
+            (0, ""),  # empty response
+        ],
+    )
     @patch("subprocess.run")
     def test_returns_none(self, mock_run, rc, stdout):
         mock_run.return_value = subprocess.CompletedProcess([], rc, stdout, "")
@@ -127,6 +138,7 @@ class TestGetExternalIpInverse:
 # =========================================================================
 # Positive: run_one
 # =========================================================================
+
 
 class TestRunOne:
     def test_ok_result(self, capsys):
@@ -143,6 +155,7 @@ class TestRunOne:
 # Negative / inverse: run_one failures
 # =========================================================================
 
+
 class TestRunOneInverse:
     def test_fail_result(self, capsys):
         r = _run_one(1, True, "test", lambda: False, "ok", "fail_msg", None)
@@ -151,7 +164,7 @@ class TestRunOneInverse:
 
     def test_exception_in_check_is_fail(self, capsys):
         """Исключение в check-функции = fail, не crash."""
-        r = _run_one(1, True, "test", lambda: 1/0, "ok", "error", None)
+        r = _run_one(1, True, "test", lambda: 1 / 0, "ok", "error", None)
         assert r.status == "fail"
 
 
@@ -159,7 +172,7 @@ class TestRunOneInverse:
 # Quiet mode: _collect_check_tasks & run_all_quiet
 # =========================================================================
 
-from tv.checks import _collect_check_tasks, run_all_quiet
+from tv.checks import _collect_check_tasks, run_all_quiet  # noqa: E402
 
 
 class TestCollectCheckTasks:
@@ -269,6 +282,8 @@ class TestRunAllQuiet:
     def test_logger_receives_entries(self):
         log = MagicMock()
         checks = {"ports": [{"host": "h", "port": 80}]}
-        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+        with patch(
+            "subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")
+        ):
             run_all_quiet([("tun", True, checks)], logger=log)
         log.log.assert_called()

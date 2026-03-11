@@ -25,6 +25,7 @@ def linux_net():
 # Factory
 # =========================================================================
 
+
 class TestFactory:
     @patch("platform.system", return_value="Darwin")
     def test_creates_darwin(self, _):
@@ -38,6 +39,7 @@ class TestFactory:
     def test_unknown_os_defaults_to_linux_with_warning(self, _):
         """Неизвестная ОС - LinuxNet как fallback + warning."""
         import warnings
+
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             net = create()
@@ -50,11 +52,13 @@ class TestFactory:
 # Positive: DarwinNet
 # =========================================================================
 
+
 class TestDarwinNet:
     @patch("subprocess.run")
     def test_default_gateway_parses(self, mock_run, darwin_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "   route to: default\n   gateway: 192.168.1.1\n   interface: en0\n",
             "",
         )
@@ -62,7 +66,9 @@ class TestDarwinNet:
 
     @patch("subprocess.run")
     def test_check_interface_true(self, mock_run, darwin_net):
-        mock_run.return_value = subprocess.CompletedProcess([], 0, "ppp0: flags=...", "")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 0, "ppp0: flags=...", ""
+        )
         assert darwin_net.check_interface("ppp0") is True
 
     @patch("subprocess.run")
@@ -86,11 +92,14 @@ class TestDarwinNet:
 # Negative / inverse: DarwinNet failures
 # =========================================================================
 
+
 class TestDarwinNetInverse:
     @patch("subprocess.run")
     def test_no_gateway_returns_none(self, mock_run, darwin_net):
         """Если route -n get default не работает - None."""
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "route: not found")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "route: not found"
+        )
         assert darwin_net.default_gateway() is None
 
     @patch("subprocess.run")
@@ -102,7 +111,9 @@ class TestDarwinNetInverse:
     @patch("subprocess.run")
     def test_add_route_fails_returns_false(self, mock_run, darwin_net):
         """Маршрут уже существует - returncode != 0 - False."""
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "route already exists")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "route already exists"
+        )
         assert darwin_net.add_host_route("1.2.3.4", "192.168.1.1") is False
 
     @patch("subprocess.run")
@@ -115,7 +126,8 @@ class TestDarwinNetInverse:
     def test_interfaces_parses_ifconfig_a(self, mock_run, darwin_net):
         """ifconfig -a: парсит несколько интерфейсов за один вызов."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384\n"
             "\tinet 127.0.0.1 netmask 0xff000000\n"
             "en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500\n"
@@ -142,7 +154,8 @@ class TestDarwinNetInverse:
     def test_ppp_peer_darwin(self, mock_run, darwin_net):
         """macOS: парсит inet X.X.X.X --> Y.Y.Y.Y."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "ppp0: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1500\n"
             "\tinet 10.0.0.2 --> 10.0.0.1 netmask 0xffffffff\n",
             "",
@@ -153,7 +166,8 @@ class TestDarwinNetInverse:
     def test_ppp_peer_darwin_no_peer(self, mock_run, darwin_net):
         """macOS: ifconfig без --> возвращает пустую строку."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "en0: flags=8863<UP,BROADCAST,RUNNING> mtu 1500\n"
             "\tinet 192.168.1.7 netmask 0xffffff00 broadcast 192.168.1.255\n",
             "",
@@ -163,7 +177,9 @@ class TestDarwinNetInverse:
     @patch("subprocess.run")
     def test_ppp_peer_darwin_iface_down(self, mock_run, darwin_net):
         """macOS: интерфейс не существует - пустая строка."""
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "ifconfig: interface ppp0 does not exist")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "ifconfig: interface ppp0 does not exist"
+        )
         assert darwin_net.ppp_peer("ppp0") == ""
 
 
@@ -171,11 +187,14 @@ class TestDarwinNetInverse:
 # Positive: resolve_host (common to both platforms)
 # =========================================================================
 
+
 class TestResolveHost:
     @patch("shutil.which", return_value="/usr/bin/dig")
     @patch("subprocess.run")
     def test_dig_returns_ips(self, mock_run, _, darwin_net):
-        mock_run.return_value = subprocess.CompletedProcess([], 0, "1.2.3.4\n5.6.7.8\n", "")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 0, "1.2.3.4\n5.6.7.8\n", ""
+        )
         ips = darwin_net.resolve_host("test.com")
         assert ips == ["1.2.3.4", "5.6.7.8"]
 
@@ -193,6 +212,7 @@ class TestResolveHost:
 # =========================================================================
 # Negative / inverse: resolve_host failures
 # =========================================================================
+
 
 class TestResolveHostInverse:
     @patch("socket.getaddrinfo", side_effect=socket.gaierror("not found"))
@@ -223,6 +243,7 @@ class TestResolveHostInverse:
 # _run helper with timeout
 # =========================================================================
 
+
 class TestRunHelper:
     @patch("subprocess.run")
     def test_default_timeout(self, mock_run):
@@ -244,12 +265,14 @@ class TestRunHelper:
 # DarwinNet._active_network_services
 # =========================================================================
 
+
 class TestActiveNetworkServices:
     @patch("subprocess.run")
     def test_parses_services(self, mock_run, darwin_net):
         """Парсит вывод networksetup."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "An asterisk (*) denotes that a network service is disabled.\n"
             "Wi-Fi\n"
             "Ethernet\n"
@@ -265,7 +288,8 @@ class TestActiveNetworkServices:
     def test_skips_disabled(self, mock_run, darwin_net):
         """Пропускает отключенные сервисы (со звёздочкой)."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "An asterisk (*) denotes that a network service is disabled.\n"
             "Wi-Fi\n"
             "*Bluetooth PAN\n",
@@ -288,12 +312,14 @@ class TestActiveNetworkServices:
 # Positive: LinuxNet
 # =========================================================================
 
+
 class TestLinuxNet:
     @patch("subprocess.run")
     def test_default_gateway_parses(self, mock_run, linux_net):
         """Парсит вывод ip route show default."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "default via 192.168.1.1 dev eth0 proto dhcp metric 100\n",
             "",
         )
@@ -303,7 +329,8 @@ class TestLinuxNet:
     def test_interfaces_parses(self, mock_run, linux_net):
         """Парсит вывод ip -br addr."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "lo               UNKNOWN        127.0.0.1/8\n"
             "eth0             UP             192.168.1.5/24\n"
             "ppp0             UNKNOWN        10.0.0.2/32\n",
@@ -366,7 +393,9 @@ class TestLinuxNet:
         """Linux: resolvectl с custom interface (tun0, utun99)."""
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
         with patch("shutil.which", return_value="/usr/bin/resolvectl"):
-            results = linux_net.setup_dns_resolver(["alpha.local"], ["10.0.1.1"], "tun0")
+            results = linux_net.setup_dns_resolver(
+                ["alpha.local"], ["10.0.1.1"], "tun0"
+            )
         assert results["alpha.local"] is True
         # Verify tun0 used instead of ppp0
         link_call = mock_run.call_args_list[0]
@@ -418,7 +447,10 @@ class TestLinuxNet:
     @patch("subprocess.run")
     def test_route_table_uses_ip_route(self, mock_run, linux_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, "default via 192.168.1.1 dev eth0\n10.0.0.0/8 via 10.0.0.1 dev ppp0\n", ""
+            [],
+            0,
+            "default via 192.168.1.1 dev eth0\n10.0.0.0/8 via 10.0.0.1 dev ppp0\n",
+            "",
         )
         table = linux_net.route_table()
         assert "default" in table
@@ -428,6 +460,7 @@ class TestLinuxNet:
 # =========================================================================
 # Negative / inverse: LinuxNet failures
 # =========================================================================
+
 
 class TestLinuxNetInverse:
     @patch("subprocess.run")
@@ -450,12 +483,16 @@ class TestLinuxNetInverse:
 
     @patch("subprocess.run")
     def test_check_interface_false(self, mock_run, linux_net):
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "Device not found")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "Device not found"
+        )
         assert linux_net.check_interface("ppp0") is False
 
     @patch("subprocess.run")
     def test_add_route_fails(self, mock_run, linux_net):
-        mock_run.return_value = subprocess.CompletedProcess([], 2, "", "RTNETLINK: File exists")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 2, "", "RTNETLINK: File exists"
+        )
         assert linux_net.add_host_route("1.2.3.4", "192.168.1.1") is False
 
     @patch("subprocess.run")
@@ -463,7 +500,9 @@ class TestLinuxNetInverse:
         """ip route фейлится - fallback на netstat."""
         mock_run.side_effect = [
             subprocess.CompletedProcess([], 1, "", ""),  # ip route fails
-            subprocess.CompletedProcess([], 0, "Kernel IP routing table\ndefault gw 192.168.1.1\n", ""),
+            subprocess.CompletedProcess(
+                [], 0, "Kernel IP routing table\ndefault gw 192.168.1.1\n", ""
+            ),
         ]
         table = linux_net.route_table()
         assert "default" in table
@@ -484,7 +523,9 @@ class TestLinuxNetInverse:
     @patch("subprocess.run")
     def test_setup_dns_no_ppp0(self, mock_run, linux_net):
         """resolvectl есть, но ppp0 нет - все домены False."""
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "Device not found")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "Device not found"
+        )
         with patch("shutil.which", return_value="/usr/bin/resolvectl"):
             results = linux_net.setup_dns_resolver(["test.local"], ["10.0.0.1"])
         assert results["test.local"] is False
@@ -492,16 +533,21 @@ class TestLinuxNetInverse:
     @patch("subprocess.run")
     def test_setup_dns_custom_iface_not_found(self, mock_run, linux_net):
         """Custom interface not found - all domains False."""
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "Device not found")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "Device not found"
+        )
         with patch("shutil.which", return_value="/usr/bin/resolvectl"):
-            results = linux_net.setup_dns_resolver(["test.local"], ["10.0.0.1"], "utun99")
+            results = linux_net.setup_dns_resolver(
+                ["test.local"], ["10.0.0.1"], "utun99"
+            )
         assert results["test.local"] is False
 
     @patch("subprocess.run")
     def test_ppp_peer_linux_ip_addr(self, mock_run, linux_net):
         """Linux: парсит peer из ip addr show."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "4: ppp0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP>\n"
             "    inet 10.0.0.2 peer 10.0.0.1/32 scope global ppp0\n",
             "",
@@ -514,7 +560,8 @@ class TestLinuxNetInverse:
         mock_run.side_effect = [
             subprocess.CompletedProcess([], 1, "", ""),  # ip addr fails
             subprocess.CompletedProcess(
-                [], 0,
+                [],
+                0,
                 "ppp0 Link encap:Point-to-Point Protocol\n"
                 "inet addr:10.0.0.2  P-t-P:10.0.0.1  Mask:255.255.255.255\n",
                 "",
@@ -526,7 +573,9 @@ class TestLinuxNetInverse:
     def test_ppp_peer_linux_no_peer(self, mock_run, linux_net):
         """Linux: ip addr без peer и ifconfig без P-t-P - пустая строка."""
         mock_run.side_effect = [
-            subprocess.CompletedProcess([], 0, "2: eth0: <BROADCAST>\n    inet 192.168.1.5/24\n", ""),
+            subprocess.CompletedProcess(
+                [], 0, "2: eth0: <BROADCAST>\n    inet 192.168.1.5/24\n", ""
+            ),
             subprocess.CompletedProcess([], 1, "", ""),
         ]
         assert linux_net.ppp_peer("eth0") == ""

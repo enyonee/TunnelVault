@@ -10,6 +10,7 @@ from tv.defaults import parse_tunnels
 # V3 format ([tunnels.*] sections)
 # ---------------------------------------------------------------------------
 
+
 class TestParseTunnels:
     def test_basic_tunnel(self):
         defs = {
@@ -164,6 +165,7 @@ class TestParseTunnels:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_default_order_zero(self):

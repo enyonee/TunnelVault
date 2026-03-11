@@ -20,6 +20,7 @@ from tv.checks import (
 # Windows: _check_port uses socket instead of nc
 # =========================================================================
 
+
 class TestCheckPortWindows:
     @patch("tv.checks.IS_WINDOWS", True)
     @patch("socket.create_connection")
@@ -47,6 +48,7 @@ class TestCheckPortWindows:
 # Windows: _check_ping uses -n flag
 # =========================================================================
 
+
 class TestCheckPingWindows:
     @patch("platform.system", return_value="Windows")
     @patch("subprocess.run")
@@ -65,6 +67,7 @@ class TestCheckPingWindows:
 # _ping_hint
 # =========================================================================
 
+
 class TestPingHintWindows:
     @patch("platform.system", return_value="Windows")
     def test_windows_hint(self, _):
@@ -76,6 +79,7 @@ class TestPingHintWindows:
 # =========================================================================
 # HTTP: urllib fallback
 # =========================================================================
+
 
 class TestUrllibFallback:
     @patch("shutil.which", return_value=None)

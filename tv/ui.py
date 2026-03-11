@@ -18,8 +18,8 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 NC = "\033[0m"
 
-from tv.app_config import cfg
-from tv.i18n import t
+from tv.app_config import cfg  # noqa: E402
+from tv.i18n import t  # noqa: E402
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
@@ -29,6 +29,7 @@ def _visible_len(s: str) -> int:
 
 
 # --- Basic messages ---
+
 
 def step(n: int, total: int, title: str, desc: str) -> None:
     print(f"\n  {BOLD}[{n}/{total}] {title}{NC} - {desc}")
@@ -71,6 +72,7 @@ def error_tree(lines: list[tuple[str, str]]) -> None:
 
 
 # --- Interactive input ---
+
 
 def wizard_input(label: str, default: str = "", secret: bool = False) -> str:
     """Interactive prompt for missing config values."""
@@ -178,6 +180,7 @@ def wizard_nameservers(domains: list[str]) -> list[str]:
 
 # --- Logo ---
 
+
 def logo() -> None:
     from tv import __version__
 
@@ -248,8 +251,12 @@ def logo() -> None:
         print(f"         {c}{line}{R}")
     print()
     print(nodes_bot)
-    ver_pad = 4 + max(0, (50 - len(f"v{__version__} · multi-VPN connection manager")) // 2)
-    print(f"{' ' * ver_pad}{_c(83)}v{__version__}{R} {_c(240)}·{R} {_c(243)}multi-VPN connection manager{R}")
+    ver_pad = 4 + max(
+        0, (50 - len(f"v{__version__} · multi-VPN connection manager")) // 2
+    )
+    print(
+        f"{' ' * ver_pad}{_c(83)}v{__version__}{R} {_c(240)}·{R} {_c(243)}multi-VPN connection manager{R}"
+    )
     # Dynamic protocol line from registry
     proto_line = _build_proto_line()
     print(f"{' ' * 12}{proto_line}")
@@ -264,6 +271,7 @@ def _build_proto_line() -> str:
 
     def _c(n: int) -> str:
         return f"\033[38;5;{n}m"
+
     R = NC
 
     colors = [_c(37), _c(97), _c(131), _c(61), _c(130)]
@@ -286,6 +294,7 @@ def _build_proto_line() -> str:
 
 
 # --- Summary table ---
+
 
 def _box(char_l: str, char_r: str) -> None:
     w = cfg.display.box_width

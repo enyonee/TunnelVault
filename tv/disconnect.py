@@ -63,8 +63,11 @@ def cleanup_global_routes(
             _safe(lambda ip=ip: net.delete_host_route(ip), f"del route {ip}", log)
         for hostname in resolve_hosts:
             _safe(
-                lambda h=hostname: [net.delete_host_route(ip) for ip in net.resolve_host(h)],
-                f"del resolved {hostname}", log,
+                lambda h=hostname: [
+                    net.delete_host_route(ip) for ip in net.resolve_host(h)
+                ],
+                f"del resolved {hostname}",
+                log,
             )
 
     # Cleanup bypass routes
@@ -79,11 +82,18 @@ def cleanup_global_routes(
             _safe(lambda ip=ip: net.delete_host_route(ip), f"del bypass {ip}", log)
         for hostname in bypass_domains:
             _safe(
-                lambda h=hostname: [net.delete_host_route(ip) for ip in net.resolve_host(h)],
-                f"del bypass {hostname}", log,
+                lambda h=hostname: [
+                    net.delete_host_route(ip) for ip in net.resolve_host(h)
+                ],
+                f"del bypass {hostname}",
+                log,
             )
         for network in bypass_networks:
-            _safe(lambda n=network: net.delete_net_route(n), f"del bypass net {network}", log)
+            _safe(
+                lambda n=network: net.delete_net_route(n),
+                f"del bypass net {network}",
+                log,
+            )
 
     # Cleanup domain_suffix resolver files and upstream DNS route
     # (skip when engine._stop_dns_proxy already handled this)
@@ -91,13 +101,20 @@ def cleanup_global_routes(
         domain_suffix = bypass_cfg.get("domain_suffix", [])
         upstream_dns = bypass_cfg.get("upstream_dns", "8.8.8.8")
         if domain_suffix:
-            zones = [s.lstrip(".").rstrip(".") for s in domain_suffix if s.lstrip(".").rstrip(".")]
+            zones = [
+                s.lstrip(".").rstrip(".")
+                for s in domain_suffix
+                if s.lstrip(".").rstrip(".")
+            ]
             if zones:
                 print(f"🧹 {t('disc.deleting_dns_bypass')}")
-                _safe(lambda: net.cleanup_dns_resolver(zones), "del suffix resolvers", log)
+                _safe(
+                    lambda: net.cleanup_dns_resolver(zones), "del suffix resolvers", log
+                )
             _safe(
                 lambda: net.delete_host_route(upstream_dns),
-                f"del upstream DNS route {upstream_dns}", log,
+                f"del upstream DNS route {upstream_dns}",
+                log,
             )
 
         # Safety net: scan /etc/resolver/ for leftover tunnelvault files
@@ -107,6 +124,7 @@ def cleanup_global_routes(
                 print(f"🧹 {t('disc.extra_resolvers', files=', '.join(cleaned))}")
                 if log:
                     log.log("INFO", f"Cleaned leftover resolvers: {cleaned}")
+
         _safe(_scan_resolvers, "scan local resolvers", log)
 
 
@@ -135,6 +153,7 @@ def run(
     """Emergency cleanup: kill VPN processes via plugin registry and clean routing."""
     if net is None:
         from tv.net import create
+
         net = create()
 
     if defs is None:
@@ -142,6 +161,7 @@ def run(
 
     # Kill VPN processes via targeted patterns (not killall)
     from tv.vpn.registry import available_types, get_plugin
+
     for type_name in available_types():
         plugin_cls = get_plugin(type_name)
         if script_dir:
@@ -151,7 +171,11 @@ def run(
         if patterns:
             print(f"🔌 {t('disc.disconnecting', name=type_name)}")
         for pattern in patterns:
-            _safe(lambda p=pattern: proc.kill_pattern(p, sudo=True), f"kill {pattern}", log)
+            _safe(
+                lambda p=pattern: proc.kill_pattern(p, sudo=True),
+                f"kill {pattern}",
+                log,
+            )
 
     # Clean up FortiVPN temp configs containing passwords
     for conf in glob.glob(f"{cfg.paths.temp_dir}/forti_*.conf"):
@@ -182,6 +206,7 @@ def run_plugins(
 
     if net is None:
         from tv.net import create
+
         net = create()
 
     if defs is None:
@@ -207,9 +232,12 @@ def run_plugins(
 
 class _NullLogger:
     """Minimal stub when no logger is available."""
+
     log_path = None
+
     def log(self, *a, **kw):
         pass
+
     def log_lines(self, *a, **kw):
         pass
 

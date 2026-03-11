@@ -73,7 +73,9 @@ class TestIsTunnelvaultProcess:
     def test_current_process(self):
         """Current process should match (sys.argv contains test runner)."""
         # Current process is pytest, not tunnelvault
-        assert not daemon.is_tunnelvault_process(os.getpid()) or True  # depends on runner
+        assert (
+            not daemon.is_tunnelvault_process(os.getpid()) or True
+        )  # depends on runner
 
     def test_nonexistent_pid(self):
         assert not daemon.is_tunnelvault_process(999999)

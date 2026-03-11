@@ -33,8 +33,13 @@ class SingBoxPlugin(TunnelPlugin):
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:
         return [
-            ConfigParam("config_file", "param.sb_config", default=cfg.defaults.singbox_config,
-                         env_var="VPN_SINGBOX_CONFIG", target="config_file"),
+            ConfigParam(
+                "config_file",
+                "param.sb_config",
+                default=cfg.defaults.singbox_config,
+                env_var="VPN_SINGBOX_CONFIG",
+                target="config_file",
+            ),
         ]
 
     @property
@@ -79,7 +84,9 @@ class SingBoxPlugin(TunnelPlugin):
         # Connected
         ui.ok(t("vpn.sb.connected", iface=interface))
         self.log.log("INFO", f"sing-box connected ({interface})")
-        self.log.log_lines("INFO", f"ifconfig {interface}:\n{self.net.iface_info(interface)}")
+        self.log.log_lines(
+            "INFO", f"ifconfig {interface}:\n{self.net.iface_info(interface)}"
+        )
 
         # Routes through interface (hosts + networks from config/targets)
         self.add_routes()

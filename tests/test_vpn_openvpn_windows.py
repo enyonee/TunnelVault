@@ -17,7 +17,10 @@ def _setup_mock_net_tap(mock_net):
     Subsequent calls return {Ethernet, Loopback, Ethernet 2} (after connect).
     """
     call_count = 0
-    ifaces_before = {"Ethernet": "192.168.1.7", "Loopback Pseudo-Interface 1": "127.0.0.1"}
+    ifaces_before = {
+        "Ethernet": "192.168.1.7",
+        "Loopback Pseudo-Interface 1": "127.0.0.1",
+    }
     ifaces_after = {
         "Ethernet": "192.168.1.7",
         "Loopback Pseudo-Interface 1": "127.0.0.1",
@@ -51,6 +54,7 @@ def plugin(ovpn_cfg, mock_net, logger, tmp_dir):
 # =========================================================================
 # Windows: launch via run_background (no --daemon)
 # =========================================================================
+
 
 class TestWindowsLaunch:
     @patch("tv.vpn.openvpn.IS_WINDOWS", True)
@@ -93,8 +97,10 @@ class TestWindowsLaunch:
         _setup_mock_net_tap(plugin.net)
         mock_popen = MagicMock()
         mock_popen.pid = 7777
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep") as mock_sleep:
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep") as mock_sleep,
+        ):
             mock_proc.run_background.return_value = mock_popen
             mock_proc.wait_for.side_effect = lambda desc, fn, *a, **kw: fn() or fn()
 
@@ -109,6 +115,7 @@ class TestWindowsLaunch:
 # =========================================================================
 # Windows: no Tunnelblick
 # =========================================================================
+
 
 class TestWindowsNoTunnelblick:
     @patch("tv.vpn.openvpn.IS_WINDOWS", True)
@@ -132,6 +139,7 @@ class TestWindowsNoTunnelblick:
 # =========================================================================
 # Windows: TAP/Wintun interface detection (any new interface, not just tun/utun)
 # =========================================================================
+
 
 class TestWindowsTapDetection:
     @patch("tv.vpn.openvpn.IS_WINDOWS", True)
@@ -184,6 +192,7 @@ class TestWindowsTapDetection:
 # =========================================================================
 # Windows: connect with routes and DNS
 # =========================================================================
+
 
 class TestWindowsRoutesAndDns:
     @patch("tv.vpn.openvpn.IS_WINDOWS", True)

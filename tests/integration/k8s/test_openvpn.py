@@ -28,9 +28,15 @@ class TestOpenVPNConnect:
         ifaces_before = set(real_net.interfaces().keys())
 
         proc = subprocess.Popen(
-            ["openvpn", "--config", str(openvpn_client_config),
-             "--log", "/tmp/test-openvpn.log"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                "openvpn",
+                "--config",
+                str(openvpn_client_config),
+                "--log",
+                "/tmp/test-openvpn.log",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -65,7 +71,8 @@ class TestOpenVPNConnect:
 
         proc = subprocess.Popen(
             ["openvpn", "--config", str(openvpn_client_config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         # Wait for connect
@@ -93,7 +100,8 @@ class TestOpenVPNConnect:
 
         proc = subprocess.Popen(
             ["openvpn", "--config", str(openvpn_client_config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -115,15 +123,14 @@ class TestOpenVPNConnect:
             proc.terminate()
             proc.wait(timeout=5)
 
-    def test_ping_through_vpn(
-        self, openvpn_client_config: Path, real_net: NetManager
-    ):
+    def test_ping_through_vpn(self, openvpn_client_config: Path, real_net: NetManager):
         """Can ping VPN gateway (10.8.0.1) through tunnel."""
         ifaces_before = set(real_net.interfaces().keys())
 
         proc = subprocess.Popen(
             ["openvpn", "--config", str(openvpn_client_config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -138,7 +145,9 @@ class TestOpenVPNConnect:
 
             result = subprocess.run(
                 ["ping", "-c", "3", "-W", "2", "10.8.0.1"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             assert result.returncode == 0, (
                 f"Ping to VPN gateway failed:\n{result.stdout}\n{result.stderr}"

@@ -16,6 +16,7 @@ from tv.watch import (
 # _is_vpn_iface on Windows
 # =========================================================================
 
+
 class TestIsVpnIfaceWindows:
     @patch("tv.watch._IS_WINDOWS", True)
     def test_accepts_any_name(self):
@@ -28,6 +29,7 @@ class TestIsVpnIfaceWindows:
 # =========================================================================
 # _windows_vpn_ifaces: PowerShell Get-NetIPAddress parsing
 # =========================================================================
+
 
 class TestWindowsVpnIfaces:
     PS_OUTPUT = (
@@ -89,6 +91,7 @@ class TestWindowsVpnIfaces:
 # _windows_iface_bytes: PowerShell Get-NetAdapterStatistics parsing
 # =========================================================================
 
+
 class TestWindowsIfaceBytes:
     PS_OUTPUT = (
         "Ethernet                     1048576    524288\n"
@@ -143,6 +146,7 @@ class TestWindowsIfaceBytes:
 # =========================================================================
 # _windows_connections: netstat -an -p TCP parsing
 # =========================================================================
+
 
 class TestWindowsConnections:
     NETSTAT_OUTPUT = (

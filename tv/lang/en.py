@@ -26,7 +26,6 @@ STRINGS: dict[str, str] = {
     "ui.tunnels": "TUNNELS",
     "ui.checks_header": "CHECKS  {passed}/{total}",
     "ui.logs": "LOGS",
-
     # --- tunnelvault.py (main) ---
     "main.one_command": "Only one command allowed",
     "main.interrupted": "Interrupted ({name})",
@@ -55,7 +54,6 @@ STRINGS: dict[str, str] = {
     "main.daemon_stopped": "Daemon stopped (PID={pid})",
     "main.no_pidfile": "No running daemon found (PID file missing)",
     "main.stale_pidfile": "Stale PID file (process {pid} not running), cleaning up",
-
     # --- config.py ---
     "config.settings_loaded": "Settings: loaded",
     "config.settings_error": "Settings: read error",
@@ -70,12 +68,11 @@ STRINGS: dict[str, str] = {
     "config.cert_connect_failed": "Could not connect to {host}:{port}",
     "config.cert_not_generated": "Certificate not generated for {host}:{port}. Run with --setup.",
     "config.cert_unreachable": "{host}:{port} unreachable - skipping cert generation",
-    "config.cert_hint": "Set later: ${env} or \"{file}\" -> fortivpn.trusted_cert",
+    "config.cert_hint": 'Set later: ${env} or "{file}" -> fortivpn.trusted_cert',
     "config.param_not_set": "Parameter '{label}' not set. Run with --setup.",
     "config.routes_label": "Routes ({name})",
     "config.routes_native": "native routing",
     "config.routes_count": "{nets} networks, {hosts} hosts",
-
     # --- defaults.py ---
     "defaults.not_found": "Not found {file}",
     "defaults.expected_at": "Expected at: {path}",
@@ -89,7 +86,6 @@ STRINGS: dict[str, str] = {
     "defaults.config_conflict": "Tunnels '{a}' and '{b}' (type={type}) use same config_file '{cf}'. Specify different config_file in [tunnels.*]",
     "defaults.unknown_tunnels": "Unknown tunnels: {unknown}. Available: {available}",
     "defaults.no_tunnels_available": "(no tunnels)",
-
     # --- checks.py ---
     "check.skip": "skip",
     "check.port_open": "port open",
@@ -101,7 +97,6 @@ STRINGS: dict[str, str] = {
     "check.no_ping": "no ping",
     "check.external_ip": "External IP",
     "check.checks_title": "Connection checks",
-
     # --- engine.py ---
     "engine.clearing": "Clearing previous connections...",
     "engine.disable_ipv6": "Disabling IPv6...",
@@ -115,7 +110,6 @@ STRINGS: dict[str, str] = {
     "engine.settings_incomplete": "Settings incomplete, starting wizard...",
     "engine.binary_not_found": "'{binary}' not found, skipping profile '{name}' (install the package to use it)",
     "engine.no_available_tunnels": "No tunnels available - all required VPN packages are missing",
-
     # --- disconnect.py ---
     "disc.deleting_routes": "Deleting routes...",
     "disc.deleting_bypass": "Deleting bypass routes...",
@@ -124,7 +118,6 @@ STRINGS: dict[str, str] = {
     "disc.restore_ipv6": "Restoring IPv6...",
     "disc.all_disconnected": "All disconnected",
     "disc.disconnecting": "Disconnecting {name}...",
-
     # --- status.py ---
     "status.title": "tunnelvault - status",
     "status.vpn_processes": "VPN processes",
@@ -138,7 +131,6 @@ STRINGS: dict[str, str] = {
     "status.gateway_unknown": "not determined",
     "status.external_ip": "External IP",
     "status.external_ip_fail": "could not determine",
-
     # --- validate.py ---
     "validate.title": "tunnelvault - configuration validation",
     "validate.no_tunnels": "No [tunnels.*] sections",
@@ -160,7 +152,6 @@ STRINGS: dict[str, str] = {
     "validate.warnings_title": "Warnings ({count}):",
     "validate.config_valid": "Configuration is valid",
     "validate.no_critical_errors": "No critical errors",
-
     # --- watch.py ---
     "watch.loading": "Collecting data",
     "watch.no_active_vpn": "no active VPN",
@@ -168,7 +159,6 @@ STRINGS: dict[str, str] = {
     "watch.no_connections": "no connections",
     "watch.more_connections": "... {count} more",
     "watch.exit_hint": "Ctrl+C to exit",
-
     # --- vpn/openvpn.py ---
     "vpn.ovpn.not_connected": "OpenVPN did not connect within {timeout}s",
     "vpn.ovpn.alive_no_iface": "Process alive (PID={pid}), but interface did not appear",
@@ -179,7 +169,6 @@ STRINGS: dict[str, str] = {
     "vpn.ovpn.connected": "OpenVPN connected ({iface})",
     "vpn.ovpn.using_tunnelblick": "OpenVPN connected (Tunnelblick)",
     "vpn.ovpn.config_not_found": "Config file not found: {path}",
-
     # --- vpn/fortivpn.py ---
     "vpn.forti.not_connected": "FortiVPN did not start within {timeout}s",
     "vpn.forti.alive_no_iface": "Process alive (PID={pid}), but {label} did not appear",
@@ -189,7 +178,6 @@ STRINGS: dict[str, str] = {
     "vpn.forti.no_gw_fallback": "Could not determine PPP gateway, using fallback: {gw}",
     "vpn.forti.no_gw": "Could not determine PPP gateway, routes may not work",
     "vpn.forti.unsupported_windows": "openfortivpn is not available on Windows",
-
     # --- vpn/singbox.py ---
     "vpn.sb.not_connected": "sing-box did not start within {timeout}s",
     "vpn.sb.alive_no_iface": "Process alive (PID={pid}), but interface did not appear",
@@ -197,7 +185,6 @@ STRINGS: dict[str, str] = {
     "vpn.sb.log_hint": "Log: {path}",
     "vpn.sb.connected": "sing-box connected ({iface})",
     "vpn.sb.config_not_found": "Config file not found: {path}",
-
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN config",
     "param.sb_config": "sing-box config",
@@ -208,7 +195,6 @@ STRINGS: dict[str, str] = {
     "param.cert_mode": "Certificate (auto/manual)",
     "param.cert_sha256": "SHA256 certificate",
     "param.fallback_gw": "Fallback GW",
-
     # --- daemon.py ---
     "daemon.log_hint": "Log: tail -f {path}",
     "daemon.enabled": "Autostart enabled",
@@ -216,19 +202,15 @@ STRINGS: dict[str, str] = {
     "daemon.disabled": "Autostart disabled",
     "daemon.already_disabled": "Autostart not configured",
     "daemon.systemd_unit_written": "Systemd unit written: {path}",
-
     # --- routing.py ---
     "routing.wildcard_no_dot": "*.{domain} - domain must contain a dot (*.example.local)",
     "routing.invalid_cidr": "{target} - invalid CIDR",
     "routing.invalid_ip": "{target} - invalid IP address",
     "routing.unrecognized": "{target} - unrecognized format",
-
     # --- proc.py ---
     "proc.waiting": "Waiting for {desc}...",
-
     # --- status.py ---
     "status.gateway_title": "Default gateway",
-
     # --- CLI help strings ---
     "cli.desc": "tunnelvault - multi-VPN connection manager",
     "cli.disconnect": "Disconnect all VPN",

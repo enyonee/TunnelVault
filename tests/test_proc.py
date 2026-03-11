@@ -16,6 +16,7 @@ from tv import proc
 # Positive: run
 # =========================================================================
 
+
 class TestRun:
     def test_captures_stdout(self):
         r = proc.run(["echo", "hello"])
@@ -40,6 +41,7 @@ class TestRun:
 # Negative / inverse: run failures
 # =========================================================================
 
+
 class TestRunInverse:
     def test_nonexistent_command_raises(self):
         """Несуществующая команда - FileNotFoundError."""
@@ -60,6 +62,7 @@ class TestRunInverse:
 # =========================================================================
 # Positive: run_background
 # =========================================================================
+
 
 class TestRunBackground:
     def test_returns_popen(self):
@@ -85,6 +88,7 @@ class TestRunBackground:
 # Negative / inverse: run_background failures
 # =========================================================================
 
+
 class TestRunBackgroundInverse:
     def test_nonexistent_command_raises(self):
         """Если бинарника нет - FileNotFoundError."""
@@ -104,6 +108,7 @@ class TestRunBackgroundInverse:
 # Positive: wait_for
 # =========================================================================
 
+
 class TestWaitFor:
     @patch("tv.proc.time.sleep")
     def test_returns_true_on_immediate_success(self, _):
@@ -113,9 +118,11 @@ class TestWaitFor:
     @patch("tv.proc.time.sleep")
     def test_returns_true_after_retries(self, _):
         counter = {"n": 0}
+
         def check():
             counter["n"] += 1
             return counter["n"] >= 2
+
         result = proc.wait_for("test", check, timeout=5)
         assert result is True
 
@@ -123,6 +130,7 @@ class TestWaitFor:
 # =========================================================================
 # Negative / inverse: wait_for failures
 # =========================================================================
+
 
 class TestWaitForInverse:
     @patch("tv.proc.time.sleep")
@@ -134,8 +142,10 @@ class TestWaitForInverse:
     @patch("tv.proc.time.sleep")
     def test_check_exception_is_not_caught(self, _):
         """Исключение в check_fn пробрасывается наружу."""
+
         def bad_check():
             raise RuntimeError("boom")
+
         with pytest.raises(RuntimeError, match="boom"):
             proc.wait_for("test", bad_check, timeout=1)
 
@@ -143,6 +153,7 @@ class TestWaitForInverse:
 # =========================================================================
 # Positive: find_pids
 # =========================================================================
+
 
 class TestFindPids:
     def test_finds_current_process(self):
@@ -162,6 +173,7 @@ class TestFindPids:
 # Negative / inverse: find_pids
 # =========================================================================
 
+
 class TestFindPidsInverse:
     def test_empty_result_for_garbage(self):
         """Паттерн, которому ничего не матчит."""
@@ -172,6 +184,7 @@ class TestFindPidsInverse:
 # =========================================================================
 # Positive: kill_pattern
 # =========================================================================
+
 
 class TestKillPattern:
     @patch("subprocess.run")
@@ -192,6 +205,7 @@ class TestKillPattern:
 # Negative / inverse: kill_pattern edge cases
 # =========================================================================
 
+
 class TestKillPatternInverse:
     @patch("subprocess.run")
     def test_empty_pattern_noop(self, mock_run):
@@ -209,6 +223,7 @@ class TestKillPatternInverse:
 # =========================================================================
 # kill_by_pid
 # =========================================================================
+
 
 class TestKillByPid:
     @patch("subprocess.run")
@@ -229,7 +244,9 @@ class TestKillByPid:
 
     @patch("subprocess.run")
     def test_returns_false_on_failure(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "No such process")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "No such process"
+        )
         result = proc.kill_by_pid(99999)
         assert result is False
 
@@ -237,6 +254,7 @@ class TestKillByPid:
 # =========================================================================
 # is_alive
 # =========================================================================
+
 
 class TestIsAlive:
     def test_current_pid_is_alive(self):

@@ -123,8 +123,10 @@ class TestShowExternalIp:
 
 class TestRun:
     def test_full_run(self, mock_net, capsys):
-        with patch("tv.status.proc") as mock_proc, \
-             patch("tv.status.get_external_ip", return_value="5.5.5.5"):
+        with (
+            patch("tv.status.proc") as mock_proc,
+            patch("tv.status.get_external_ip", return_value="5.5.5.5"),
+        ):
             mock_proc.find_pids.return_value = []
             mock_net.interfaces.return_value = {"en0": "192.168.1.5"}
             status.run(net=mock_net)
@@ -136,9 +138,11 @@ class TestRun:
         mock_net_instance = MagicMock()
         mock_net_instance.interfaces.return_value = {}
         mock_net_instance.default_gateway.return_value = None
-        with patch("tv.net.create", return_value=mock_net_instance), \
-             patch("tv.status.proc") as mock_proc, \
-             patch("tv.status.get_external_ip", return_value=None):
+        with (
+            patch("tv.net.create", return_value=mock_net_instance),
+            patch("tv.status.proc") as mock_proc,
+            patch("tv.status.get_external_ip", return_value=None),
+        ):
             mock_proc.find_pids.return_value = []
             status.run()
 

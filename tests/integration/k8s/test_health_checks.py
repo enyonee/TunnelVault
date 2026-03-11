@@ -26,7 +26,8 @@ class TestHealthChecksThroughVPN:
         """Start OpenVPN connection for the test, teardown after."""
         self.proc = subprocess.Popen(
             ["openvpn", "--config", str(openvpn_client_config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         # Wait for tun interface
@@ -73,12 +74,12 @@ class TestHealthChecksNoVPN:
 
     def test_port_check_openvpn_server(self, openvpn_server: str):
         """Can reach OpenVPN server port directly."""
-        result = subprocess.run(
+        subprocess.run(
             ["nc", "-z", "-u", "-w", "3", openvpn_server, "1194"],
-            capture_output=True, timeout=5,
+            capture_output=True,
+            timeout=5,
         )
         # UDP nc might not confirm, just verify no crash
-        assert True
 
     def test_port_check_ocserv(self, ocserv_host: str, ocserv_port: str):
         """Can reach ocserv TCP port."""
@@ -88,4 +89,6 @@ class TestHealthChecksNoVPN:
     def test_port_check_singbox(self, singbox_server: str, singbox_ss_port: str):
         """Can reach sing-box Shadowsocks port."""
         ok = _check_port(singbox_server, int(singbox_ss_port), timeout=5)
-        assert ok is True, f"Cannot reach sing-box at {singbox_server}:{singbox_ss_port}"
+        assert ok is True, (
+            f"Cannot reach sing-box at {singbox_server}:{singbox_ss_port}"
+        )

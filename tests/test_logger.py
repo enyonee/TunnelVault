@@ -12,6 +12,7 @@ from tv.logger import Logger
 # Positive
 # =========================================================================
 
+
 class TestLogger:
     def test_creates_empty_log(self, tmp_path: Path):
         log = Logger(tmp_path / "test.log")
@@ -46,6 +47,7 @@ class TestLogger:
 # Negative / inverse
 # =========================================================================
 
+
 class TestLoggerInverse:
     def test_truncates_existing_log(self, tmp_path: Path):
         """Новый Logger ПЕРЕЗАТИРАЕТ существующий лог."""
@@ -72,6 +74,7 @@ class TestLoggerInverse:
 # =========================================================================
 # Log level filtering
 # =========================================================================
+
 
 class TestLogLevelFiltering:
     def test_level_error_filters_info(self, tmp_path: Path):
@@ -112,6 +115,7 @@ class TestLogLevelFiltering:
 # =========================================================================
 # Format preservation
 # =========================================================================
+
 
 class TestFormatPreservation:
     def test_warn_format_not_warning(self, tmp_path: Path):

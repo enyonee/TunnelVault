@@ -42,9 +42,7 @@ class OpenVPNPlugin(TunnelPlugin):
     binary = "openvpn"
     type_display_name = "OpenVPN"
     process_names = ("openvpn",)
-    kill_patterns = (
-        "openvpn --config .*/tunnelvault/",
-    )
+    kill_patterns = ("openvpn --config .*/tunnelvault/",)
 
     @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
@@ -59,8 +57,13 @@ class OpenVPNPlugin(TunnelPlugin):
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:
         return [
-            ConfigParam("config_file", "param.ovpn_config", default=cfg.defaults.openvpn_config,
-                         env_var="VPN_OVPN_CONFIG", target="config_file"),
+            ConfigParam(
+                "config_file",
+                "param.ovpn_config",
+                default=cfg.defaults.openvpn_config,
+                env_var="VPN_OVPN_CONFIG",
+                target="config_file",
+            ),
         ]
 
     @property
@@ -97,16 +100,28 @@ class OpenVPNPlugin(TunnelPlugin):
         # --- Launch ---
         if IS_WINDOWS:
             # Windows: no --daemon (POSIX-only), use run_background()
-            self.log.log("INFO", f"Launch: openvpn --config {config_path} --log {log_path}")
+            self.log.log(
+                "INFO", f"Launch: openvpn --config {config_path} --log {log_path}"
+            )
             ovpn_proc = proc.run_background(
                 ["openvpn", "--config", str(config_path), "--log", str(log_path)],
                 sudo=True,
             )
             pid = ovpn_proc.pid
         else:
-            self.log.log("INFO", f"Launch: sudo openvpn --config {config_path} --daemon --log {log_path}")
+            self.log.log(
+                "INFO",
+                f"Launch: sudo openvpn --config {config_path} --daemon --log {log_path}",
+            )
             proc.run(
-                ["openvpn", "--config", str(config_path), "--daemon", "--log", str(log_path)],
+                [
+                    "openvpn",
+                    "--config",
+                    str(config_path),
+                    "--daemon",
+                    "--log",
+                    str(log_path),
+                ],
                 sudo=True,
             )
             # Find PID (openvpn --daemon forks; poll up to 1.5s for forked process)
@@ -133,7 +148,8 @@ class OpenVPNPlugin(TunnelPlugin):
                         return True
                 else:
                     new_tun = [
-                        i for i in new_ifaces
+                        i
+                        for i in new_ifaces
                         if i.startswith("tun") or i.startswith("utun")
                     ]
                     if new_tun:
@@ -141,7 +157,9 @@ class OpenVPNPlugin(TunnelPlugin):
                         return True
                 return False
 
-            if proc.wait_for("OpenVPN", _check_new_iface, cfg.timeouts.openvpn_init, self.log):
+            if proc.wait_for(
+                "OpenVPN", _check_new_iface, cfg.timeouts.openvpn_init, self.log
+            ):
                 if not self.cfg.interface:
                     self.cfg.interface = detected_iface
 

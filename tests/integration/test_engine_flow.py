@@ -45,23 +45,23 @@ def project_dir(tmp_path) -> Path:
     """Realistic project dir with defaults.toml, config files, and settings."""
     # defaults.toml
     (tmp_path / "defaults.toml").write_text(
-        '[tunnels.openvpn]\n'
+        "[tunnels.openvpn]\n"
         'type = "openvpn"\n'
-        'order = 1\n'
+        "order = 1\n"
         'config_file = "client.ovpn"\n'
         'log = "/tmp/test-openvpn.log"\n'
-        '\n'
-        '[tunnels.openvpn.checks]\n'
+        "\n"
+        "[tunnels.openvpn.checks]\n"
         'http = ["https://google.com"]\n'
-        '\n'
-        '[tunnels.singbox]\n'
+        "\n"
+        "[tunnels.singbox]\n"
         'type = "singbox"\n'
-        'order = 2\n'
+        "order = 2\n"
         'config_file = "singbox.json"\n'
         'interface = "utun99"\n'
         'log = "/tmp/test-singbox.log"\n'
-        '\n'
-        '[tunnels.singbox.routes]\n'
+        "\n"
+        "[tunnels.singbox.routes]\n"
         'networks = ["172.18.0.0/16"]\n'
     )
 
@@ -82,6 +82,7 @@ def project_dir(tmp_path) -> Path:
 @pytest.fixture
 def defs(project_dir) -> dict:
     from tv import defaults as defaults_mod
+
     return defaults_mod.load(project_dir)
 
 
@@ -96,6 +97,7 @@ def engine(project_dir, defs, mock_net) -> Engine:
 # =========================================================================
 # Full prepare -> connect cycle
 # =========================================================================
+
 
 class TestFullPrepareConnect:
     def test_prepare_populates_tunnels_from_real_toml(self, engine):
@@ -128,8 +130,10 @@ class TestFullPrepareConnect:
         settings_path = project_dir / ".vpn-settings.json"
         settings_path.unlink()
 
-        with patch("tv.ui.wizard_input", return_value=""), \
-             patch("tv.ui.wizard_targets", return_value=[]):
+        with (
+            patch("tv.ui.wizard_input", return_value=""),
+            patch("tv.ui.wizard_targets", return_value=[]),
+        ):
             engine.prepare()
 
         assert settings_path.exists()
@@ -141,10 +145,16 @@ class TestFullPrepareConnect:
         """connect_all creates plugins and calls connect() for each tunnel."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True, pid=100)) as mock_ovpn, \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=True, pid=200)) as mock_sb:
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect",
+                return_value=VPNResult(ok=True, pid=100),
+            ) as mock_ovpn,
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect",
+                return_value=VPNResult(ok=True, pid=200),
+            ) as mock_sb,
+        ):
             engine.connect_all()
 
         mock_ovpn.assert_called_once()
@@ -156,10 +166,16 @@ class TestFullPrepareConnect:
         """Results match tunnel order from defaults.toml."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True, pid=100, detail="openvpn")), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=True, pid=200, detail="singbox")):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect",
+                return_value=VPNResult(ok=True, pid=100, detail="openvpn"),
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect",
+                return_value=VPNResult(ok=True, pid=200, detail="singbox"),
+            ),
+        ):
             engine.connect_all()
 
         assert engine.results[0].detail == "openvpn"
@@ -170,6 +186,7 @@ class TestFullPrepareConnect:
 # Config file validation
 # =========================================================================
 
+
 class TestConfigNotFound:
     def test_openvpn_missing_config_fails(self, engine, project_dir):
         """OpenVPN connect fails cleanly when config file doesn't exist."""
@@ -177,8 +194,9 @@ class TestConfigNotFound:
         # Delete the config file after prepare
         (project_dir / "client.ovpn").unlink()
 
-        with patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=True)):
+        with patch(
+            "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+        ):
             engine.connect_all()
 
         ovpn_result = engine.results[0]
@@ -190,8 +208,9 @@ class TestConfigNotFound:
         engine.prepare()
         (project_dir / "singbox.json").unlink()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True)):
+        with patch(
+            "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+        ):
             engine.connect_all()
 
         sb_result = engine.results[1]
@@ -203,17 +222,21 @@ class TestConfigNotFound:
 # Stale PID detection
 # =========================================================================
 
+
 class TestStalePidDetection:
     def test_reuse_when_pid_and_interface_alive(self, engine):
         """PID alive + interface alive = reuse, no connect() call."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=999), \
-             patch("tv.engine.proc.is_alive", return_value=True), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect") as mock_sb_connect:
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=999),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch("tv.vpn.singbox.SingBoxPlugin.connect") as mock_sb_connect,
+        ):
             engine.connect_all()
 
         # sing-box reused (not connected fresh)
@@ -227,14 +250,19 @@ class TestStalePidDetection:
         """PID alive + interface gone = kill stale + reconnect."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=888), \
-             patch("tv.engine.proc.is_alive", return_value=True), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=True, pid=999)) as mock_sb_connect, \
-             patch("tv.vpn.singbox.SingBoxPlugin.disconnect") as mock_disc:
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=888),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect",
+                return_value=VPNResult(ok=True, pid=999),
+            ) as mock_sb_connect,
+            patch("tv.vpn.singbox.SingBoxPlugin.disconnect") as mock_disc,
+        ):
             engine.net.check_interface.return_value = False
             engine.connect_all()
 
@@ -247,15 +275,22 @@ class TestStalePidDetection:
         """If disconnect() throws on stale process, still attempt reconnect."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=777), \
-             patch("tv.engine.proc.is_alive", return_value=True), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=True, pid=111)) as mock_sb_connect, \
-             patch("tv.vpn.singbox.SingBoxPlugin.disconnect",
-                    side_effect=OSError("kill failed")):
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=777),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect",
+                return_value=VPNResult(ok=True, pid=111),
+            ) as mock_sb_connect,
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.disconnect",
+                side_effect=OSError("kill failed"),
+            ),
+        ):
             engine.net.check_interface.return_value = False
             engine.connect_all()
 
@@ -268,6 +303,7 @@ class TestStalePidDetection:
 # Hooks fire correctly through the flow
 # =========================================================================
 
+
 class TestHooksThroughFlow:
     def test_pre_post_hooks_fire_for_all_tunnels(self, engine):
         """Hooks fire for each tunnel regardless of reuse vs fresh connect."""
@@ -278,10 +314,14 @@ class TestHooksThroughFlow:
         engine.on("pre_connect", lambda **kw: pre_calls.append(kw["tunnel"].name))
         engine.on("post_connect", lambda **kw: post_calls.append(kw["tunnel"].name))
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=True)):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+        ):
             engine.connect_all()
 
         assert pre_calls == ["openvpn", "singbox"]
@@ -294,10 +334,16 @@ class TestHooksThroughFlow:
         results = []
         engine.on("post_connect", lambda **kw: results.append(kw["result"]))
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect",
-                    return_value=VPNResult(ok=True, detail="ovpn-ok")), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect",
-                    return_value=VPNResult(ok=False, detail="sb-fail")):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect",
+                return_value=VPNResult(ok=True, detail="ovpn-ok"),
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect",
+                return_value=VPNResult(ok=False, detail="sb-fail"),
+            ),
+        ):
             engine.connect_all()
 
         assert results[0].detail == "ovpn-ok"

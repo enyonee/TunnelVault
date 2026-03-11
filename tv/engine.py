@@ -217,7 +217,9 @@ class Engine:
                         f"{plugin.display_name} PID={existing_pid} alive but "
                         f"interface {tcfg.interface} gone, reconnecting",
                     )
-                    ui.warn(f"{plugin.display_name}: PID={existing_pid} alive, interface {tcfg.interface} gone")
+                    ui.warn(
+                        f"{plugin.display_name}: PID={existing_pid} alive, interface {tcfg.interface} gone"
+                    )
                     try:
                         plugin._pid = existing_pid
                         plugin.disconnect()
@@ -349,7 +351,10 @@ class Engine:
         # Глобальные маршруты (vpn_server_routes, bypass) - без этого
         # disconnect нужно вызывать дважды: daemon убивается, но routes остаются
         disconnect.cleanup_global_routes(
-            self.net, self.log, self.defs, skip_dns_suffix=True,
+            self.net,
+            self.log,
+            self.defs,
+            skip_dns_suffix=True,
         )
         self.net.restore_ipv6()
 

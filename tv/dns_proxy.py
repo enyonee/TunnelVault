@@ -58,7 +58,9 @@ class BypassDNSProxy:
 
         self._stop_event.clear()
         self._thread = threading.Thread(
-            target=self._serve, name="dns-bypass-proxy", daemon=True,
+            target=self._serve,
+            name="dns-bypass-proxy",
+            daemon=True,
         )
         self._thread.start()
         self._log.log("INFO", f"DNS bypass proxy started on {self._bind}:{self._port}")
@@ -86,11 +88,15 @@ class BypassDNSProxy:
         if self._sock is None:
             return
         if self._thread is not None and self._thread.is_alive():
-            self._log.log("WARN", "DNS proxy restart_thread: thread still alive, skipping")
+            self._log.log(
+                "WARN", "DNS proxy restart_thread: thread still alive, skipping"
+            )
             return
         self._stop_event.clear()
         self._thread = threading.Thread(
-            target=self._serve, name="dns-bypass-proxy", daemon=True,
+            target=self._serve,
+            name="dns-bypass-proxy",
+            daemon=True,
         )
         self._thread.start()
         self._log.log("INFO", "DNS bypass proxy thread restarted (post-fork)")

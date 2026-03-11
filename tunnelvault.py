@@ -33,6 +33,7 @@ def _is_admin() -> bool:
     if IS_WINDOWS:
         try:
             import ctypes
+
             return ctypes.windll.shell32.IsUserAnAdmin() != 0  # type: ignore[attr-defined,union-attr]
         except (AttributeError, OSError):
             return False
@@ -197,6 +198,7 @@ def main() -> None:
 
     # --- Reconnect lock (protects against signal during reconnect) ---
     import threading
+
     _reconnect_lock = threading.Lock()
 
     # --- Signal handlers ---
@@ -230,6 +232,7 @@ def main() -> None:
         # Remove PID file if we're the daemon
         try:
             from tv import daemon as daemon_mod
+
             daemon_mod.remove_pid(script_dir)
         except Exception:
             pass

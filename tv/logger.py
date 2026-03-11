@@ -135,12 +135,15 @@ class Logger:
 
         self.log("ENV", "--- VPN processes ---")
         from tv.vpn.registry import available_types, get_plugin
+
         vpn_keywords = []
         for t in available_types():
             vpn_keywords.extend(get_plugin(t).process_names)
 
         r = subprocess.run(
-            ["ps", "aux"], capture_output=True, text=True,
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
             timeout=cfg.timeouts.ps_aux,
         )
         for line in r.stdout.splitlines():

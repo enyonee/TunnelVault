@@ -27,14 +27,14 @@ class VPNResult:
 class ConfigParam:
     """Declarative description of a single config parameter for a plugin."""
 
-    key: str              # key in TunnelConfig.auth / .config_file / .extra
-    label: str            # i18n key for UI label (e.g. "param.host")
+    key: str  # key in TunnelConfig.auth / .config_file / .extra
+    label: str  # i18n key for UI label (e.g. "param.host")
     required: bool = False
     secret: bool = False
     default: str = ""
-    env_var: str = ""     # e.g. "VPN_FORTI_HOST"
+    env_var: str = ""  # e.g. "VPN_FORTI_HOST"
     target: str = "auth"  # "auth" | "config_file" | "extra"
-    prompt: bool = True   # False = resolve from TOML/ENV/saved only, never wizard
+    prompt: bool = True  # False = resolve from TOML/ENV/saved only, never wizard
 
 
 @dataclass
@@ -216,7 +216,9 @@ class TunnelPlugin(ABC):
         domains = self.cfg.dns.get("domains", [])
         if nameservers and domains:
             results = self.net.setup_dns_resolver(
-                domains, nameservers, self.cfg.interface,
+                domains,
+                nameservers,
+                self.cfg.interface,
             )
             for domain, ok in results.items():
                 self.log.log(

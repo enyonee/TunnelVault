@@ -58,7 +58,7 @@ class TestValidate:
                 },
             },
         }
-        result = validate.run(defs, tmp_dir)
+        validate.run(defs, tmp_dir)
         out = capsys.readouterr().out
         # Missing file is a warning, not error
         assert "nonexistent.ovpn" in out
@@ -127,7 +127,7 @@ class TestValidate:
 
     def test_empty_tunnels(self, tmp_dir, capsys):
         defs = {"tunnels": {}}
-        result = validate.run(defs, tmp_dir)
+        validate.run(defs, tmp_dir)
         out = capsys.readouterr().out
         assert "No [tunnels.*]" in out
 

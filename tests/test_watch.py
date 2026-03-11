@@ -27,6 +27,7 @@ from tv.watch import (
 # Formatting
 # =========================================================================
 
+
 class TestFormatting:
     def test_fmt_rate_bytes(self):
         assert _fmt_rate(500) == "500 B/s"
@@ -68,6 +69,7 @@ class TestFormatting:
 # =========================================================================
 # macOS parsing
 # =========================================================================
+
 
 class TestDarwinVpnIfaces:
     IFCONFIG_OUTPUT = """\
@@ -174,6 +176,7 @@ tcp4       0      0  10.8.0.22.54110        10.1.5.32.80           TIME_WAIT
 # Linux parsing
 # =========================================================================
 
+
 class TestLinuxVpnIfaces:
     IP_BR_OUTPUT = """\
 lo               UNKNOWN        127.0.0.1/8
@@ -211,7 +214,9 @@ Inter-|   Receive                                                |  Transmit
         with patch("builtins.open", create=True) as mock_open:
             mock_open.return_value.__enter__ = lambda s: s
             mock_open.return_value.__exit__ = lambda *a: None
-            mock_open.return_value.readlines.return_value = self.PROC_NET_DEV.splitlines(True)
+            mock_open.return_value.readlines.return_value = (
+                self.PROC_NET_DEV.splitlines(True)
+            )
             result = _linux_iface_bytes()
 
         assert result == {"tun0": (100000, 50000)}
@@ -261,13 +266,18 @@ TIME-WAIT  0      0      10.8.0.22:54110      10.1.5.32:80
 # Display rendering
 # =========================================================================
 
+
 class TestBuildDisplay:
     def test_renders_with_snapshots(self):
         snapshots = [
             TunnelSnapshot(
-                name="fortivpn", interface="ppp0", ip="10.0.0.2",
-                bytes_in=100000, bytes_out=50000,
-                rate_in=1234.0, rate_out=567.0,
+                name="fortivpn",
+                interface="ppp0",
+                ip="10.0.0.2",
+                bytes_in=100000,
+                bytes_out=50000,
+                rate_in=1234.0,
+                rate_out=567.0,
                 connections=[
                     Connection("10.0.0.2:54108", "10.1.5.30:443", "ESTAB"),
                 ],
@@ -289,7 +299,9 @@ class TestBuildDisplay:
     def test_renders_no_connections(self):
         snapshots = [
             TunnelSnapshot(
-                name="singbox", interface="utun99", ip="172.16.0.1",
+                name="singbox",
+                interface="utun99",
+                ip="172.16.0.1",
             ),
         ]
         panel = _build_display(snapshots, datetime(2025, 1, 15, 14, 32, 5))
@@ -302,7 +314,9 @@ class TestBuildDisplay:
         ]
         snapshots = [
             TunnelSnapshot(
-                name="test", interface="ppp0", ip="10.0.0.2",
+                name="test",
+                interface="ppp0",
+                ip="10.0.0.2",
                 connections=conns,
             ),
         ]
@@ -322,6 +336,7 @@ class TestBuildDisplay:
 # _resolve_names: interface -> tunnel name matching
 # =========================================================================
 
+
 class TestResolveNames:
     """Test interface-to-profile matching logic."""
 
@@ -337,7 +352,11 @@ class TestResolveNames:
 
     def test_one_profile_one_interface(self):
         """Two utun interfaces but one openvpn profile - only first matches."""
-        ifaces = {"utun4": "10.8.0.22", "utun40": "198.19.254.2", "utun99": "172.19.0.1"}
+        ifaces = {
+            "utun4": "10.8.0.22",
+            "utun40": "198.19.254.2",
+            "utun99": "172.19.0.1",
+        }
         exact = {"utun99": "singbox"}
         prefix = {"utun": "openvpn"}
         result = _resolve_names(ifaces, exact, prefix, show_all=False)
@@ -373,19 +392,21 @@ class TestResolveNames:
         assert result == {"ppp0": "ppp0", "utun4": "utun4"}
 
     def test_empty_ifaces(self):
-        result = _resolve_names({}, {"utun99": "singbox"}, {"ppp": "forti"}, show_all=False)
+        result = _resolve_names(
+            {}, {"utun99": "singbox"}, {"ppp": "forti"}, show_all=False
+        )
         assert result == {}
 
     def test_two_profiles_no_openvpn(self):
         """Remove openvpn, keep fortivpn + singbox. Old openvpn utun4 should be hidden."""
         ifaces = {
             "ppp0": "10.212.134.103",
-            "utun4": "10.8.0.22",       # old openvpn, no profile
-            "utun40": "198.19.254.2",    # system
+            "utun4": "10.8.0.22",  # old openvpn, no profile
+            "utun40": "198.19.254.2",  # system
             "utun99": "172.19.0.1",
         }
         exact = {"utun99": "singbox"}
-        prefix = {"ppp": "fortivpn"}      # no openvpn prefix
+        prefix = {"ppp": "fortivpn"}  # no openvpn prefix
         result = _resolve_names(ifaces, exact, prefix, show_all=False)
         assert result == {"ppp0": "fortivpn", "utun99": "singbox"}
         assert "utun4" not in result
@@ -394,7 +415,7 @@ class TestResolveNames:
     def test_two_profiles_no_fortivpn(self):
         """Remove fortivpn, keep openvpn + singbox."""
         ifaces = {
-            "ppp0": "10.212.134.103",    # old fortivpn, no profile
+            "ppp0": "10.212.134.103",  # old fortivpn, no profile
             "utun4": "10.8.0.22",
             "utun40": "198.19.254.2",
             "utun99": "172.19.0.1",

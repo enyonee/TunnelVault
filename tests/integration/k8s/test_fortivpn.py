@@ -44,9 +44,9 @@ class TestFortiVPNConnect:
         ifaces_before = set(real_net.interfaces().keys())
 
         proc = subprocess.Popen(
-            ["openfortivpn", "-c", str(forti_config_file),
-             "--no-routes", "--no-dns"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            ["openfortivpn", "-c", str(forti_config_file), "--no-routes", "--no-dns"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
 
         try:
@@ -79,9 +79,9 @@ class TestFortiVPNConnect:
         ifaces_before = set(real_net.interfaces().keys())
 
         proc = subprocess.Popen(
-            ["openfortivpn", "-c", str(forti_config_file),
-             "--no-routes", "--no-dns"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ["openfortivpn", "-c", str(forti_config_file), "--no-routes", "--no-dns"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         # Wait for connect
@@ -100,16 +100,14 @@ class TestFortiVPNConnect:
         ppp_ifaces = [i for i in new_ifaces if i.startswith("ppp")]
         assert len(ppp_ifaces) == 0, f"Leftover ppp interfaces: {ppp_ifaces}"
 
-    def test_ping_through_vpn(
-        self, forti_config_file: Path, real_net: NetManager
-    ):
+    def test_ping_through_vpn(self, forti_config_file: Path, real_net: NetManager):
         """Can ping VPN gateway through PPP tunnel."""
         ifaces_before = set(real_net.interfaces().keys())
 
         proc = subprocess.Popen(
-            ["openfortivpn", "-c", str(forti_config_file),
-             "--no-routes", "--no-dns"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ["openfortivpn", "-c", str(forti_config_file), "--no-routes", "--no-dns"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -133,7 +131,9 @@ class TestFortiVPNConnect:
 
             result = subprocess.run(
                 ["ping", "-c", "3", "-W", "2", peer],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             assert result.returncode == 0, (
                 f"Ping to PPP peer {peer} failed:\n{result.stdout}\n{result.stderr}"
