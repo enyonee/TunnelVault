@@ -1025,9 +1025,10 @@ class TestResolveLogDir:
 
     def test_absolute_stays_absolute(self, tmp_dir):
         """Absolute log_dir is returned as-is."""
-        cfg.paths.log_dir = "/var/log/tunnelvault"
+        abs_path = str(tmp_dir / "custom_logs")
+        cfg.paths.log_dir = abs_path
         result = resolve_log_dir(tmp_dir)
-        assert result == Path("/var/log/tunnelvault")
+        assert result == Path(abs_path)
 
 
 class TestEnsureLogDir:
