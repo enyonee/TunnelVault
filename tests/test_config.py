@@ -91,6 +91,10 @@ class TestSaveTunnelSettings:
         assert data["fortivpn"]["host"] == "vpn.test.local"
         assert data["openvpn"]["config_file"] == "client.ovpn"
 
+    @pytest.mark.skipif(
+        __import__("platform").system() == "Windows",
+        reason="Unix file permissions not supported on Windows",
+    )
     def test_file_permissions_600(self, tmp_dir: Path):
         tunnels = [TunnelConfig(name="openvpn", type="openvpn", config_file="c.ovpn")]
         save_tunnel_settings(tunnels, tmp_dir)
