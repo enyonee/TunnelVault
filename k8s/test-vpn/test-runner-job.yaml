@@ -1,6 +1,3 @@
-# Test runner Job - builds from repo, runs integration tests against VPN servers
-# Usage: kubectl apply -f test-runner-job.yaml
-# Pre-req: VPN servers must be running in test-vpn namespace
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -9,75 +6,62 @@ metadata:
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
+  activeDeadlineSeconds: 600
   template:
     spec:
       restartPolicy: Never
-      securityContext:
-        runAsUser: 0
       containers:
-      - name: test-runner
-        image: ghcr.io/enyonee/tunnelvault-test:latest
-        securityContext:
-          privileged: true
-          capabilities:
-            add: ["NET_ADMIN", "SYS_ADMIN"]
-        env:
-        - name: OPENVPN_SERVER
-          value: "openvpn-server.test-vpn.svc.cluster.local"
-        - name: OCSERV_HOST
-          value: "ocserv.test-vpn.svc.cluster.local"
-        - name: OCSERV_PORT
-          value: "4443"
-        - name: OCSERV_USER
-          value: "testuser"
-        - name: OCSERV_PASS
-          value: "testpass"
-        - name: SINGBOX_SERVER
-          value: "singbox-server.test-vpn.svc.cluster.local"
-        - name: SINGBOX_SS_PORT
-          value: "8388"
-        - name: SINGBOX_SS_PASSWORD
-          value: "test-password-12345"
-        command:
-        - sh
-        - -c
-        - |
-          # Create TUN device if not exists
-          mkdir -p /dev/net
-          [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
-          chmod 600 /dev/net/tun
+        - name: test-runner
+          image: ghcr.io/enyonee/tunnelvault-test:latest
+          securityContext:
+            # NET_ADMIN для TUN/VPN. privileged не нужен - mknod в command
+            capabilities:
+              add: [NET_ADMIN]
+          env:
+            - name: OPENVPN_SERVER
+              value: "openvpn-server.test-vpn.svc.cluster.local"
+            - name: OCSERV_HOST
+              value: "ocserv.test-vpn.svc.cluster.local"
+            - name: OCSERV_PORT
+              value: "4443"
+            - name: OCSERV_USER
+              value: "testuser"
+            - name: OCSERV_PASS
+              value: "testpass"  # test-only
+            - name: SINGBOX_SERVER
+              value: "singbox-server.test-vpn.svc.cluster.local"
+            - name: SINGBOX_SS_PORT
+              value: "8388"
+            - name: SINGBOX_SS_PASSWORD
+              value: "test-password-12345"  # test-only
+          command:
+            - sh
+            - -c
+            - |
+              # TUN device (NET_ADMIN достаточно для mknod)
+              mkdir -p /dev/net
+              [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
+              chmod 600 /dev/net/tun
 
-          # Wait for VPN servers
-          echo "Waiting for VPN servers..."
-          for i in $(seq 1 30); do
-            nc -z -w1 openvpn-server 1194 2>/dev/null && break
-            sleep 2
-          done
-          for i in $(seq 1 30); do
-            nc -z -w1 ocserv 4443 2>/dev/null && break
-            sleep 2
-          done
-          for i in $(seq 1 30); do
-            nc -z -w1 singbox-server 8388 2>/dev/null && break
-            sleep 2
-          done
+              # Ждём VPN серверы
+              echo "Waiting for VPN servers..."
+              for svc in "openvpn-server 1194" "ocserv 4443" "singbox-server 8388"; do
+                host=$(echo $svc | cut -d' ' -f1)
+                port=$(echo $svc | cut -d' ' -f2)
+                for i in $(seq 1 30); do
+                  nc -z -w1 $host $port 2>/dev/null && break
+                  sleep 2
+                done
+              done
 
-          echo "VPN servers ready. Running tests..."
-          cd /app
-          uv run pytest tests/integration/k8s/ -x -v --tb=short 2>&1
-          exit $?
-        resources:
-          requests:
-            memory: 256Mi
-            cpu: 200m
-          limits:
-            memory: 512Mi
-            cpu: 500m
-        volumeMounts:
-        - name: tun
-          mountPath: /dev/net/tun
-      volumes:
-      - name: tun
-        hostPath:
-          path: /dev/net/tun
-          type: CharDevice
+              echo "Running tests..."
+              cd /app
+              uv run pytest tests/integration/k8s/ -x -v --tb=short 2>&1
+              exit $?
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
