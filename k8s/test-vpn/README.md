@@ -1,6 +1,12 @@
 # Integration Test Infrastructure
 
-K8s namespace `test-vpn` с тремя VPN серверами для интеграционных тестов tunnelvault.
+Ephemeral K8s namespace с VPN серверами для интеграционных тестов tunnelvault.
+
+## Принципы
+
+- **Ephemeral** - namespace создаётся на время тестов и удаляется после
+- **Isolated** - NetworkPolicy блокирует доступ к prod/shared namespaces
+- **Resource-limited** - ResourceQuota: max 2 CPU, 2Gi RAM, 10 pods, 0 PVCs
 
 ## VPN серверы
 
@@ -10,32 +16,36 @@ K8s namespace `test-vpn` с тремя VPN серверами для интег�
 | ocserv | 4443/tcp | OpenConnect | FortiVPN (openfortivpn) connect/disconnect |
 | singbox-server | 8388/tcp | Shadowsocks | sing-box tun mode |
 
-## Деплой
+## Запуск (ephemeral)
 
 ```bash
+# Один скрипт: создаёт namespace, деплоит серверы, запускает тесты, удаляет namespace
+./run-tests.sh
+
+# Оставить namespace после тестов (для отладки)
+./run-tests.sh --keep
+```
+
+## Запуск (ручной)
+
+```bash
+# Создать namespace с политиками
 kubectl apply -f namespace.yaml
+kubectl apply -f network-policy.yaml
+kubectl apply -f resource-quota.yaml
+
+# Деплой VPN серверов
 kubectl apply -f openvpn-server.yaml
 kubectl apply -f ocserv.yaml
 kubectl apply -f singbox-server.yaml
 
-# Дождаться готовности
-kubectl wait --for=condition=Available deploy --all -n test-vpn --timeout=120s
-```
-
-## Запуск тестов
-
-### В K8s (полный набор)
-
-```bash
-# Собрать образ test-runner
+# Собрать и запустить тесты
 docker build -t ghcr.io/enyonee/tunnelvault-test:latest -f Dockerfile.test-runner ../..
-
-# Запустить Job
 kubectl apply -f test-runner-job.yaml
 kubectl logs -f -n test-vpn job/tunnelvault-integration-test
 ```
 
-### Локально (для разработки)
+## Локально (для разработки)
 
 ```bash
 # Пробросить порты VPN серверов
@@ -50,8 +60,9 @@ SINGBOX_SERVER=localhost SINGBOX_SS_PORT=8388 SINGBOX_SS_PASSWORD=test-password-
 sudo -E uv run pytest tests/integration/k8s/ -x -v --tb=short
 ```
 
-## Cleanup
+## Безопасность
 
-```bash
-kubectl delete namespace test-vpn
-```
+- **NetworkPolicy**: test pods не могут достучаться до pod/service CIDR других namespaces (10.42.0.0/16, 10.43.0.0/16). Интернет разрешён.
+- **ResourceQuota**: max 1 CPU requests, 2 CPU limits, 2Gi memory, 10 pods, 0 PVCs (только emptyDir)
+- **LimitRange**: дефолтные лимиты 200m CPU / 256Mi RAM на контейнер
+- **No ArgoCD**: test namespaces не управляются ArgoCD

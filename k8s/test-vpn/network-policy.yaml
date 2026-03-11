@@ -1,0 +1,51 @@
+# Изоляция test-vpn от prod/shared namespaces
+# Test pods могут общаться только друг с другом и с DNS (kube-system)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-egress-to-prod
+  namespace: test-vpn
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  # Разрешить трафик внутри test-vpn namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: test-vpn
+  # Разрешить DNS (kube-system CoreDNS)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Разрешить внешний интернет (для скачивания пакетов, проверки external IP)
+  # но НЕ в pod CIDR других namespaces
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.42.0.0/16   # K3s pod CIDR
+        - 10.43.0.0/16   # K3s service CIDR
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-ingress-from-outside
+  namespace: test-vpn
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  # Только трафик из test-vpn namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: test-vpn
