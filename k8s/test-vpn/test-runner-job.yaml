@@ -16,7 +16,7 @@ spec:
           securityContext:
             # NET_ADMIN для TUN/VPN. privileged не нужен - mknod в command
             capabilities:
-              add: [NET_ADMIN]
+              add: [NET_ADMIN, MKNOD]
           env:
             - name: OPENVPN_SERVER
               value: "openvpn-server.test-vpn.svc.cluster.local"
