@@ -36,11 +36,25 @@ class TestDefaults:
             ("timeouts", "ps_aux", 10),
             # paths
             ("paths", "log_dir", "logs"),
-            ("paths", "temp_dir", "/tmp"),
+            pytest.param(
+                "paths",
+                "temp_dir",
+                "/tmp",
+                marks=pytest.mark.skipif(
+                    __import__("platform").system() == "Windows", reason="Unix path"
+                ),
+            ),
             ("paths", "settings_file", ".vpn-settings.json"),
             ("paths", "defaults_file", "defaults.toml"),
             ("paths", "main_log", "tunnelvault.log"),
-            ("paths", "resolver_dir", "/etc/resolver"),
+            pytest.param(
+                "paths",
+                "resolver_dir",
+                "/etc/resolver",
+                marks=pytest.mark.skipif(
+                    __import__("platform").system() == "Windows", reason="Unix path"
+                ),
+            ),
             # defaults
             ("defaults", "fortivpn_port", "44333"),
             ("defaults", "fortivpn_cert_mode", "auto"),

@@ -244,9 +244,12 @@ class TestRunAllQuiet:
         assert results == []
         assert ext_ip == ""
 
+    @patch("socket.create_connection")
     @patch("subprocess.run")
-    def test_all_pass(self, mock_run, capsys):
+    def test_all_pass(self, mock_run, mock_sock, capsys):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        mock_sock.return_value.__enter__ = lambda s: s
+        mock_sock.return_value.__exit__ = lambda s, *a: None
         checks = {"ports": [{"host": "h", "port": 80}]}
         results, _ = run_all_quiet([("tun", True, checks)])
         assert len(results) == 1
@@ -255,8 +258,9 @@ class TestRunAllQuiet:
         assert "1/1" in err
         assert "passed" in err
 
+    @patch("socket.create_connection", side_effect=OSError("refused"))
     @patch("subprocess.run")
-    def test_fail_shows_failed_count(self, mock_run, capsys):
+    def test_fail_shows_failed_count(self, mock_run, mock_sock, capsys):
         mock_run.return_value = subprocess.CompletedProcess([], 1, "", "")
         checks = {"ports": [{"host": "h", "port": 80}]}
         results, _ = run_all_quiet([("tun", True, checks)])
@@ -282,8 +286,13 @@ class TestRunAllQuiet:
     def test_logger_receives_entries(self):
         log = MagicMock()
         checks = {"ports": [{"host": "h", "port": 80}]}
-        with patch(
-            "subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")
+        mock_sock = MagicMock()
+        with (
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, "", ""),
+            ),
+            patch("socket.create_connection", return_value=mock_sock),
         ):
             run_all_quiet([("tun", True, checks)], logger=log)
         log.log.assert_called()
