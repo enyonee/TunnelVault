@@ -51,42 +51,8 @@ jobs:
 
             <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View logs</a>
 
-  integration-test:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    services:
-      openvpn-server:
-        image: kylemanna/openvpn:latest
-        ports:
-          - 1194:1194/udp
-        options: --cap-add=NET_ADMIN
-      singbox-server:
-        image: ghcr.io/sagernet/sing-box:latest
-        ports:
-          - 8388:8388
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
-
-      - name: Install VPN clients
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openvpn openfortivpn iproute2 iputils-ping netcat-openbsd
-
-      - run: uv sync --extra dev
-
-      - name: Run integration tests (Linux only)
-        env:
-          OPENVPN_SERVER: localhost
-          SINGBOX_SERVER: localhost
-          SINGBOX_SS_PORT: "8388"
-          SINGBOX_SS_PASSWORD: "test-password-12345"
-        run: |
-          sudo mkdir -p /dev/net
-          sudo mknod /dev/net/tun c 10 200 2>/dev/null || true
-          uv run pytest tests/integration/k8s/test_singbox.py tests/integration/k8s/test_health_checks.py -x -v --tb=short -m network || true
+  # Integration tests: separate workflow (integration.yml)
+  # Trigger: gh workflow run integration.yml -f branch=<branch>
 
   notify-release:
     if: startsWith(github.ref, 'refs/tags/v')
