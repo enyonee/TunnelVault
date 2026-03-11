@@ -35,6 +35,9 @@ class Timeouts:
     ps_aux: int = 10
     keepalive_interval: int = 30
     keepalive_reconnect_pause: float = 2.0
+    network_wait_timeout: int = 30
+    network_wait_interval: float = 2.0
+    keepalive_max_retries: int = 5
 
 
 def _default_temp_dir() -> str:
