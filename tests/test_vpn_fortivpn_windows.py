@@ -107,6 +107,7 @@ class TestWindowsPing:
             patch("tv.vpn.fortivpn.os.close"),
             patch("tv.vpn.fortivpn.os.unlink"),
             patch("tv.vpn.fortivpn.proc") as mock_proc,
+            patch("tv.vpn.fortivpn.IS_WINDOWS", False),
             patch("tv.vpn.fortivpn.platform.system", return_value=platform_name),
         ):
             mock_proc.run_background.return_value = mock_popen
