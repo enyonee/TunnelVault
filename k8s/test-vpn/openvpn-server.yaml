@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openvpn-server-config
+  namespace: test-vpn
+data:
+  setup.sh: |
+    #!/bin/sh
+    set -e
+    PKI=/etc/openvpn/pki
+    if [ ! -f "$PKI/ca.crt" ]; then
+      echo "Generating PKI..."
+      cd /etc/openvpn
+      easyrsa init-pki
+      easyrsa --batch build-ca nopass
+      easyrsa --batch build-server-full server nopass
+      easyrsa --batch build-client-full client nopass
+      easyrsa gen-dh
+      openvpn --genkey secret /etc/openvpn/ta.key
+      echo "PKI generated"
+    fi
+
+    # Generate server config
+    cat > /etc/openvpn/server.conf <<CONF
+    port 1194
+    proto udp
+    dev tun
+    ca /etc/openvpn/pki/ca.crt
+    cert /etc/openvpn/pki/issued/server.crt
+    key /etc/openvpn/pki/private/server.key
+    dh /etc/openvpn/pki/dh.pem
+    tls-auth /etc/openvpn/ta.key 0
+    server 10.8.0.0 255.255.255.0
+    push "route 10.99.0.0 255.255.255.0"
+    push "dhcp-option DNS 10.8.0.1"
+    keepalive 10 120
+    cipher AES-256-GCM
+    persist-key
+    persist-tun
+    verb 3
+    CONF
+
+    # Generate client config
+    cat > /etc/openvpn/client.ovpn <<CONF
+    client
+    dev tun
+    proto udp
+    remote openvpn-server.test-vpn.svc.cluster.local 1194
+    resolv-retry infinite
+    nobind
+    persist-key
+    persist-tun
+    cipher AES-256-GCM
+    key-direction 1
+    verb 3
+    <ca>
+    $(cat /etc/openvpn/pki/ca.crt)
+    </ca>
+    <cert>
+    $(cat /etc/openvpn/pki/issued/client.crt)
+    </cert>
+    <key>
+    $(cat /etc/openvpn/pki/private/client.key)
+    </key>
+    <tls-auth>
+    $(cat /etc/openvpn/ta.key)
+    </tls-auth>
+    CONF
+
+    # Copy client config to shared volume
+    cp /etc/openvpn/client.ovpn /shared/client.ovpn
+    echo "Client config written to /shared/client.ovpn"
+
+    exec openvpn --config /etc/openvpn/server.conf
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openvpn-server
+  namespace: test-vpn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openvpn-server
+  template:
+    metadata:
+      labels:
+        app: openvpn-server
+    spec:
+      containers:
+      - name: openvpn
+        image: alpine:3.21
+        command: ["/bin/sh", "/scripts/setup.sh"]
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+        ports:
+        - containerPort: 1194
+          protocol: UDP
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+        - name: pki
+          mountPath: /etc/openvpn/pki
+        - name: shared
+          mountPath: /shared
+        resources:
+          requests:
+            memory: 32Mi
+            cpu: 50m
+          limits:
+            memory: 128Mi
+            cpu: 200m
+      initContainers:
+      - name: install-deps
+        image: alpine:3.21
+        command:
+        - sh
+        - -c
+        - apk add --no-cache openvpn easy-rsa && cp -r /usr/share/easy-rsa/* /usr/local/bin/ 2>/dev/null; ln -sf /usr/share/easy-rsa/easyrsa /usr/local/bin/easyrsa 2>/dev/null; true
+        volumeMounts:
+        - name: pki
+          mountPath: /etc/openvpn/pki
+      volumes:
+      - name: scripts
+        configMap:
+          name: openvpn-server-config
+          defaultMode: 0755
+      - name: pki
+        emptyDir: {}
+      - name: shared
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openvpn-server
+  namespace: test-vpn
+spec:
+  selector:
+    app: openvpn-server
+  ports:
+  - port: 1194
+    targetPort: 1194
+    protocol: UDP

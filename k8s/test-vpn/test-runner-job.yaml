@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tunnelvault-integration-test
+  namespace: test-vpn
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  activeDeadlineSeconds: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: test-runner
+          image: ghcr.io/enyonee/tunnelvault-test:latest
+          securityContext:
+            # NET_ADMIN для TUN/VPN, MKNOD для создания /dev/net/tun
+            capabilities:
+              add: [NET_ADMIN, MKNOD]
+          env:
+            - name: OPENVPN_SERVER
+              value: "openvpn-server.test-vpn.svc.cluster.local"
+            - name: OCSERV_HOST
+              value: "ocserv.test-vpn.svc.cluster.local"
+            - name: OCSERV_PORT
+              value: "4443"
+            - name: OCSERV_USER
+              value: "testuser"
+            - name: OCSERV_PASS
+              value: "testpass"  # test-only
+            - name: SINGBOX_SERVER
+              value: "singbox-server.test-vpn.svc.cluster.local"
+            - name: SINGBOX_SS_PORT
+              value: "8388"
+            - name: SINGBOX_SS_PASSWORD
+              value: "test-password-12345"  # test-only
+          command:
+            - sh
+            - -c
+            - |
+              # TUN device (MKNOD cap для mknod, NET_ADMIN для VPN)
+              mkdir -p /dev/net
+              [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
+              chmod 600 /dev/net/tun
+
+              # Ждём VPN серверы
+              echo "Waiting for VPN servers..."
+              for svc in "openvpn-server 1194" "ocserv 4443" "singbox-server 8388"; do
+                host=$(echo $svc | cut -d' ' -f1)
+                port=$(echo $svc | cut -d' ' -f2)
+                for i in $(seq 1 30); do
+                  nc -z -w1 $host $port 2>/dev/null && break
+                  sleep 2
+                done
+              done
+
+              echo "Running tests..."
+              cd /app
+              uv run pytest tests/integration/k8s/ -x -v --tb=short 2>&1
+              exit $?
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

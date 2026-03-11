@@ -14,6 +14,7 @@ pythonpath = ["."]
 addopts = "-n auto"
 markers = [
     "network: tests that require network access (real openssl, DNS)",
+    "k8s: tests that require K8s test-vpn infrastructure (VPN servers)",
 ]
 
 [dependency-groups]
