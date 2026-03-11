@@ -8,12 +8,16 @@ on:
         required: true
         default: "main"
 
+permissions:
+  packages: write
+
 jobs:
   k8s-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       NS: test-vpn-${{ github.run_id }}
+      SSH: ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,32 +32,30 @@ jobs:
 
       - name: Create ephemeral namespace
         run: |
-          ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} \
-            "sudo kubectl create namespace $NS && \
-             sudo kubectl label namespace $NS env=test app=tunnelvault"
+          $SSH "sudo kubectl create namespace $NS && \
+                sudo kubectl label namespace $NS env=test app=tunnelvault"
 
       - name: Apply NetworkPolicy + ResourceQuota
         run: |
           for f in k8s/test-vpn/network-policy.yaml k8s/test-vpn/resource-quota.yaml; do
             sed "s/namespace: test-vpn/namespace: $NS/g" "$f" | \
-              ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} "sudo kubectl apply -f -"
+              $SSH "sudo kubectl apply -f -"
           done
 
       - name: Deploy VPN servers
         run: |
           for f in k8s/test-vpn/openvpn-server.yaml k8s/test-vpn/ocserv.yaml k8s/test-vpn/singbox-server.yaml; do
             sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g" "$f" | \
-              ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} "sudo kubectl apply -f -"
+              $SSH "sudo kubectl apply -f -"
           done
 
       - name: Wait for VPN servers
         run: |
-          ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} \
-            "sudo kubectl wait --for=condition=Available deploy --all -n $NS --timeout=120s || true; sleep 5"
+          $SSH "sudo kubectl wait --for=condition=Available deploy --all -n $NS --timeout=120s || true; sleep 5"
 
       - name: Build and push test runner
         run: |
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker build -t ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }} \
             -f k8s/test-vpn/Dockerfile.test-runner .
           docker push ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }}
@@ -64,22 +66,18 @@ jobs:
               -e "s/\.test-vpn/.$NS/g" \
               -e "s|ghcr.io/enyonee/tunnelvault-test:latest|ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }}|g" \
               k8s/test-vpn/test-runner-job.yaml | \
-            ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} "sudo kubectl apply -f -"
+            $SSH "sudo kubectl apply -f -"
 
       - name: Wait and collect logs
         id: test-results
         run: |
-          ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} \
-            "sudo kubectl wait --for=condition=Complete job/tunnelvault-integration-test -n $NS --timeout=300s 2>/dev/null || \
-             sudo kubectl wait --for=condition=Failed job/tunnelvault-integration-test -n $NS --timeout=300s 2>/dev/null || true"
+          $SSH "sudo kubectl wait --for=condition=Complete job/tunnelvault-integration-test -n $NS --timeout=300s 2>/dev/null || \
+                sudo kubectl wait --for=condition=Failed job/tunnelvault-integration-test -n $NS --timeout=300s 2>/dev/null || true"
 
-          LOGS=$(ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} \
-            "sudo kubectl logs -n $NS job/tunnelvault-integration-test 2>&1" || echo "Failed to get logs")
-          echo "$LOGS"
+          $SSH "sudo kubectl logs -n $NS job/tunnelvault-integration-test 2>&1" || echo "Failed to get logs"
 
-          EXIT=$(ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} \
-            "sudo kubectl get pod -n $NS -l job-name=tunnelvault-integration-test \
-             -o jsonpath='{.items[0].status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null" || echo "1")
+          EXIT=$($SSH "sudo kubectl get pod -n $NS -l job-name=tunnelvault-integration-test \
+            -o jsonpath='{.items[0].status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null" || echo "1")
 
           echo "exit_code=$EXIT" >> "$GITHUB_OUTPUT"
           [ "$EXIT" = "0" ]
@@ -87,13 +85,7 @@ jobs:
       - name: Cleanup namespace
         if: always()
         run: |
-          ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }} \
-            "sudo kubectl delete namespace $NS --wait=false 2>/dev/null || true"
-
-      - name: Cleanup test image
-        if: always()
-        run: |
-          docker rmi ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }} 2>/dev/null || true
+          $SSH "sudo kubectl delete namespace $NS --wait=false 2>/dev/null || true"
 
       - name: Notify Telegram
         if: always()
