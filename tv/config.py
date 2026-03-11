@@ -423,7 +423,7 @@ def _write_settings(data: dict, script_dir: Path) -> None:
     try:
         os.chmod(tmp_path, 0o600)
         _chown_to_real_user(tmp_path)
-        os.rename(tmp_path, str(path))
+        os.replace(tmp_path, str(path))
     except Exception:
         try:
             os.unlink(tmp_path)
