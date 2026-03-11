@@ -34,7 +34,7 @@ jobs:
       - run: uv sync --group dev
 
       - name: Run tests
-        run: uv run pytest tests/ -x -q -p no:xdist -m "not network" --ignore=tests/integration/k8s
+        run: uv run pytest tests/ -x -q -o "addopts=" -m "not network" --ignore=tests/integration/k8s
 
       - name: Notify Telegram - CI failed
         if: failure() && matrix.os == 'ubuntu-latest'
