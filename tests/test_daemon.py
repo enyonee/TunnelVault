@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import os
-import plistlib
+import platform
 import subprocess
 from unittest.mock import patch
 
-from tv import daemon
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="daemon module uses fcntl/plistlib (Unix-only)",
+)
+
+import plistlib  # noqa: E402
+
+from tv import daemon  # noqa: E402
 
 
 # =========================================================================
