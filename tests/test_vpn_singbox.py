@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import contextlib
+import platform
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from tv.vpn.base import TunnelConfig
 from tv.vpn.singbox import SingBoxPlugin
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows", reason="sing-box plugin is Unix-only"
+)
 
 
 @contextlib.contextmanager

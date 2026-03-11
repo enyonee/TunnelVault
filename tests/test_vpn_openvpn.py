@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import platform
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +12,10 @@ import pytest
 
 from tv.vpn.base import TunnelConfig
 from tv.vpn.openvpn import OpenVPNPlugin
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows", reason="OpenVPN plugin is Unix-only"
+)
 
 
 def _setup_mock_net_tun(mock_net):
