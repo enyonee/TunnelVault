@@ -71,6 +71,7 @@ class TestFormatting:
 # =========================================================================
 
 
+@patch("tv.watch._IS_WINDOWS", False)
 class TestDarwinVpnIfaces:
     IFCONFIG_OUTPUT = """\
 lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384
@@ -100,6 +101,7 @@ ppp0: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1400
             assert _darwin_vpn_ifaces() == {}
 
 
+@patch("tv.watch._IS_WINDOWS", False)
 class TestDarwinIfaceBytes:
     NETSTAT_IB_OUTPUT = """\
 Name    Mtu   Network       Address            Ipkts Ierrs  Ibytes    Opkts Oerrs  Obytes    Coll
@@ -177,6 +179,7 @@ tcp4       0      0  10.8.0.22.54110        10.1.5.32.80           TIME_WAIT
 # =========================================================================
 
 
+@patch("tv.watch._IS_WINDOWS", False)
 class TestLinuxVpnIfaces:
     IP_BR_OUTPUT = """\
 lo               UNKNOWN        127.0.0.1/8
@@ -201,6 +204,7 @@ ppp0             UP             10.0.0.2 peer 10.0.0.1
             assert _linux_vpn_ifaces() == {}
 
 
+@patch("tv.watch._IS_WINDOWS", False)
 class TestLinuxIfaceBytes:
     PROC_NET_DEV = """\
 Inter-|   Receive                                                |  Transmit
