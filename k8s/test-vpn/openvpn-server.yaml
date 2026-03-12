@@ -18,7 +18,7 @@ spec:
         image: ghcr.io/enyonee/tunnelvault-openvpn-server:latest
         securityContext:
           capabilities:
-            add: ["NET_ADMIN"]
+            add: ["NET_ADMIN", "MKNOD"]
         ports:
         - containerPort: 1194
           protocol: UDP
