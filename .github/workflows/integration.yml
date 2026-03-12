@@ -31,6 +31,22 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.VDS_HOST_KEY }}" >> ~/.ssh/known_hosts
 
+      - name: Build and push images
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          TAG=${{ github.run_id }}
+
+          docker build -t ghcr.io/enyonee/tunnelvault-openvpn-server:$TAG \
+            -f k8s/test-vpn/Dockerfile.openvpn-server .
+          docker build -t ghcr.io/enyonee/tunnelvault-ocserv:$TAG \
+            -f k8s/test-vpn/Dockerfile.ocserv .
+          docker build -t ghcr.io/enyonee/tunnelvault-test:$TAG \
+            -f k8s/test-vpn/Dockerfile.test-runner .
+
+          docker push ghcr.io/enyonee/tunnelvault-openvpn-server:$TAG
+          docker push ghcr.io/enyonee/tunnelvault-ocserv:$TAG
+          docker push ghcr.io/enyonee/tunnelvault-test:$TAG
+
       - name: Create ephemeral namespace
         run: |
           $SSH "sudo kubectl create namespace $NS && \
@@ -43,29 +59,56 @@ jobs:
               $SSH "sudo kubectl apply -f -"
           done
 
+      - name: Create GHCR pull secret
+        run: |
+          $SSH "sudo kubectl create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
+            -n $NS"
+
+      - name: Create client configs
+        run: |
+          # OpenVPN client config with correct namespace
+          sed "s/NS_PLACEHOLDER/$NS/g" k8s/test-vpn/pki/client.ovpn > /tmp/client.ovpn
+
+          # ocserv fingerprint
+          FINGERPRINT=$(cat k8s/test-vpn/pki/ocserv-fingerprint.txt)
+
+          $SSH "sudo kubectl create configmap vpn-client-configs -n $NS \
+            --from-literal=client.ovpn='$(cat /tmp/client.ovpn)' \
+            --from-literal=ocserv-fingerprint='$FINGERPRINT'"
+
       - name: Deploy VPN servers
         run: |
+          TAG=${{ github.run_id }}
           for f in k8s/test-vpn/openvpn-server.yaml k8s/test-vpn/ocserv.yaml k8s/test-vpn/singbox-server.yaml; do
-            sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g" "$f" | \
+            sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g; s|:latest|:$TAG|g" "$f" | \
               $SSH "sudo kubectl apply -f -"
+          done
+          # Patch imagePullSecrets
+          for deploy in openvpn-server ocserv; do
+            $SSH "sudo kubectl patch deploy $deploy -n $NS -p '{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"ghcr-pull\"}]}}}}'"
           done
 
       - name: Wait for VPN servers
         run: |
-          $SSH "sudo kubectl wait --for=condition=Available deploy --all -n $NS --timeout=120s || true; sleep 5"
-
-      - name: Build and push test runner
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker build -t ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }} \
-            -f k8s/test-vpn/Dockerfile.test-runner .
-          docker push ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }}
+          for i in $(seq 1 40); do
+            READY=$($SSH "sudo kubectl get deploy -n $NS -o jsonpath='{range .items[*]}{.metadata.name}={.status.availableReplicas}{\" \"}{end}'" || echo "")
+            echo "Deploy status: $READY"
+            if echo "$READY" | grep -q "openvpn-server=1" && echo "$READY" | grep -q "singbox-server=1"; then
+              echo "VPN servers ready"
+              break
+            fi
+            sleep 10
+          done
 
       - name: Run test Job
         run: |
+          TAG=${{ github.run_id }}
           sed -e "s/namespace: test-vpn/namespace: $NS/g" \
               -e "s/\.test-vpn/.$NS/g" \
-              -e "s|ghcr.io/enyonee/tunnelvault-test:latest|ghcr.io/enyonee/tunnelvault-test:${{ github.run_id }}|g" \
+              -e "s|ghcr.io/enyonee/tunnelvault-test:latest|ghcr.io/enyonee/tunnelvault-test:$TAG|g" \
               k8s/test-vpn/test-runner-job.yaml | \
             $SSH "sudo kubectl apply -f -"
 
@@ -83,6 +126,7 @@ jobs:
 
       - name: Collect logs
         id: test-results
+        if: always()
         run: |
           $SSH "sudo kubectl logs -n $NS job/tunnelvault-integration-test 2>&1" || echo "Failed to get logs"
 

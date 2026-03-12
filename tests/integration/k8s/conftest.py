@@ -83,11 +83,12 @@ def openvpn_client_config(tmp_path: Path, openvpn_server: str) -> Path:
     In K8s, the openvpn-server pod generates a client.ovpn at /shared/client.ovpn.
     For the test runner, we generate a minimal config or use the shared one.
     """
+    # ConfigMap mounted at /shared with client.ovpn (includes certs)
     shared_config = Path("/shared/client.ovpn")
     if shared_config.exists():
         return shared_config
 
-    # Fallback: minimal config (won't have certs, tests should handle this)
+    # Fallback: minimal config without certs (connect will fail)
     config_path = tmp_path / "client.ovpn"
     config_path.write_text(
         textwrap.dedent(f"""\
@@ -117,7 +118,7 @@ def fortivpn_config(
     """FortiVPN tunnel config dict for the ocserv test server."""
     # Get server certificate fingerprint
     fingerprint = ""
-    fp_file = Path("/shared/server-fingerprint.txt")
+    fp_file = Path("/shared/ocserv-fingerprint")
     if fp_file.exists():
         fingerprint = fp_file.read_text().strip()
 

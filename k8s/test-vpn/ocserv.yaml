@@ -1,86 +1,3 @@
-# ocserv - OpenConnect VPN Server (compatible with openfortivpn)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ocserv-config
-  namespace: test-vpn
-data:
-  ocserv.conf: |
-    auth = "plain[passwd=/etc/ocserv/passwd]"
-    tcp-port = 4443
-    run-as-user = nobody
-    run-as-group = nogroup
-    socket-file = /var/run/ocserv-socket
-    server-cert = /etc/ocserv/server.pem
-    server-key = /etc/ocserv/server-key.pem
-    ca-cert = /etc/ocserv/ca.pem
-    isolate-workers = false
-    max-clients = 4
-    max-same-clients = 2
-    try-mtu-discovery = false
-    cisco-client-compat = true
-    dtls-legacy = true
-    device = vpns
-    default-domain = test.local
-    ipv4-network = 10.9.0.0/24
-    dns = 10.9.0.1
-    route = 10.99.0.0/255.255.255.0
-    no-route = 0.0.0.0/128.0.0.0
-    no-route = 128.0.0.0/128.0.0.0
-  setup.sh: |
-    #!/bin/sh
-    set -e
-    CERT_DIR=/etc/ocserv
-
-    if [ ! -f "$CERT_DIR/server.pem" ]; then
-      echo "Generating ocserv certificates..."
-      apk add --no-cache gnutls-utils
-
-      # CA
-      certtool --generate-privkey --outfile $CERT_DIR/ca-key.pem
-      cat > /tmp/ca.tmpl <<EOF
-    cn = "Test VPN CA"
-    organization = "TunnelVault Test"
-    serial = 1
-    expiration_days = 3650
-    ca
-    signing_key
-    cert_signing_key
-    crl_signing_key
-    EOF
-      certtool --generate-self-signed --load-privkey $CERT_DIR/ca-key.pem \
-        --template /tmp/ca.tmpl --outfile $CERT_DIR/ca.pem
-
-      # Server cert
-      certtool --generate-privkey --outfile $CERT_DIR/server-key.pem
-      cat > /tmp/server.tmpl <<EOF
-    cn = "ocserv.test-vpn.svc.cluster.local"
-    organization = "TunnelVault Test"
-    serial = 2
-    expiration_days = 3650
-    signing_key
-    encryption_key
-    tls_www_server
-    dns_name = "ocserv.test-vpn.svc.cluster.local"
-    dns_name = "ocserv"
-    EOF
-      certtool --generate-certificate --load-privkey $CERT_DIR/server-key.pem \
-        --load-ca-certificate $CERT_DIR/ca.pem --load-ca-privkey $CERT_DIR/ca-key.pem \
-        --template /tmp/server.tmpl --outfile $CERT_DIR/server.pem
-
-      # Get SHA256 fingerprint for openfortivpn trusted-cert
-      FINGERPRINT=$(certtool --infile $CERT_DIR/server.pem --fingerprint --hash=sha256 | tr -d ':')
-      echo "$FINGERPRINT" > /shared/server-fingerprint.txt
-      cp $CERT_DIR/ca.pem /shared/ca.pem
-      echo "Server fingerprint: $FINGERPRINT"
-    fi
-
-    # Create test user
-    echo "testuser:testpass" > /etc/ocserv/passwd
-
-    echo "Starting ocserv..."
-    exec ocserv -f -c /etc/ocserv/ocserv.conf
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -98,24 +15,13 @@ spec:
     spec:
       containers:
       - name: ocserv
-        image: alpine:3.21
-        command: ["/bin/sh", "-c", "apk add --no-cache ocserv gnutls-utils && /scripts/setup.sh"]
+        image: ghcr.io/enyonee/tunnelvault-ocserv:latest
         securityContext:
           capabilities:
             add: ["NET_ADMIN"]
         ports:
         - containerPort: 4443
           protocol: TCP
-        volumeMounts:
-        - name: config
-          mountPath: /scripts
-        - name: config
-          mountPath: /etc/ocserv/ocserv.conf
-          subPath: ocserv.conf
-        - name: certs
-          mountPath: /etc/ocserv
-        - name: shared
-          mountPath: /shared
         resources:
           requests:
             memory: 32Mi
@@ -123,15 +29,6 @@ spec:
           limits:
             memory: 128Mi
             cpu: 200m
-      volumes:
-      - name: config
-        configMap:
-          name: ocserv-config
-          defaultMode: 0755
-      - name: certs
-        emptyDir: {}
-      - name: shared
-        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
