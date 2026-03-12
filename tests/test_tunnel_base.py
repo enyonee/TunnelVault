@@ -16,6 +16,7 @@ from tv.vpn import registry
 # TunnelConfig
 # ---------------------------------------------------------------------------
 
+
 class TestTunnelConfig:
     def test_defaults(self):
         tc = TunnelConfig()
@@ -60,6 +61,7 @@ class TestTunnelConfig:
 # TunnelPlugin ABC
 # ---------------------------------------------------------------------------
 
+
 class _DummyPlugin(TunnelPlugin):
     """Minimal concrete plugin for testing the ABC."""
 
@@ -87,19 +89,19 @@ def dummy_plugin(tmp_path, mock_net):
 @pytest.fixture
 def make_dummy(tmp_path, mock_net):
     """Factory for _DummyPlugin with custom TunnelConfig fields."""
+
     def _make(**cfg_kw):
         tc = TunnelConfig(**cfg_kw)
         log = Logger(tmp_path / "t.log")
         return _DummyPlugin(tc, mock_net, log, tmp_path)
+
     return _make
 
 
 class TestTunnelPluginABC:
     def test_cannot_instantiate_abc(self, tmp_path, mock_net):
         with pytest.raises(TypeError):
-            TunnelPlugin(
-                TunnelConfig(), mock_net, Logger(tmp_path / "t.log"), tmp_path
-            )
+            TunnelPlugin(TunnelConfig(), mock_net, Logger(tmp_path / "t.log"), tmp_path)
 
     def test_concrete_connect(self, dummy_plugin):
         result = dummy_plugin.connect()
@@ -118,12 +120,18 @@ class TestTunnelPluginABC:
 
     def test_add_routes_with_gateway(self, dummy_plugin):
         dummy_plugin.add_routes(gateway="192.168.1.1")
-        dummy_plugin.net.add_host_route.assert_called_once_with("1.2.3.4", "192.168.1.1")
-        dummy_plugin.net.add_net_route.assert_called_once_with("10.0.0.0/8", "192.168.1.1")
+        dummy_plugin.net.add_host_route.assert_called_once_with(
+            "1.2.3.4", "192.168.1.1"
+        )
+        dummy_plugin.net.add_net_route.assert_called_once_with(
+            "10.0.0.0/8", "192.168.1.1"
+        )
 
     def test_add_routes_with_interface(self, make_dummy, mock_net):
         p = make_dummy(
-            name="singbox", type="singbox", interface="utun99",
+            name="singbox",
+            type="singbox",
+            interface="utun99",
             routes={"hosts": ["5.6.7.8"], "networks": ["172.16.0.0/12"]},
         )
         p.add_routes()
@@ -139,18 +147,24 @@ class TestTunnelPluginABC:
     def test_setup_dns(self, dummy_plugin):
         dummy_plugin.setup_dns()
         dummy_plugin.net.setup_dns_resolver.assert_called_once_with(
-            ["alpha.local"], ["10.0.1.1"], "",
+            ["alpha.local"],
+            ["10.0.1.1"],
+            "",
         )
 
     def test_setup_dns_passes_interface(self, make_dummy, mock_net):
         """Interface from cfg is passed to net.setup_dns_resolver."""
         p = make_dummy(
-            name="vpn", type="dummy", interface="tun0",
+            name="vpn",
+            type="dummy",
+            interface="tun0",
             dns={"nameservers": ["10.0.1.1"], "domains": ["alpha.local"]},
         )
         p.setup_dns()
         mock_net.setup_dns_resolver.assert_called_once_with(
-            ["alpha.local"], ["10.0.1.1"], "tun0",
+            ["alpha.local"],
+            ["10.0.1.1"],
+            "tun0",
         )
 
     def test_setup_dns_empty(self, make_dummy, mock_net):
@@ -160,12 +174,16 @@ class TestTunnelPluginABC:
 
     def test_cleanup_dns(self, dummy_plugin):
         dummy_plugin.cleanup_dns()
-        dummy_plugin.net.cleanup_dns_resolver.assert_called_once_with(["alpha.local"], "")
+        dummy_plugin.net.cleanup_dns_resolver.assert_called_once_with(
+            ["alpha.local"], ""
+        )
 
     def test_cleanup_dns_passes_interface(self, make_dummy, mock_net):
         """Interface from cfg is passed to net.cleanup_dns_resolver."""
         p = make_dummy(
-            name="vpn", type="dummy", interface="tun0",
+            name="vpn",
+            type="dummy",
+            interface="tun0",
             dns={"nameservers": ["10.0.1.1"], "domains": ["alpha.local"]},
         )
         p.cleanup_dns()
@@ -245,6 +263,7 @@ class TestTunnelPluginABC:
 # Registry
 # ---------------------------------------------------------------------------
 
+
 class TestRegistry:
     @pytest.fixture(autouse=True)
     def _isolate_registry(self):
@@ -257,24 +276,33 @@ class TestRegistry:
     def test_register_and_get(self):
         @registry.register("test-vpn")
         class TestVPN(TunnelPlugin):
-            def connect(self): return VPNResult()
+            def connect(self):
+                return VPNResult()
+
             @property
-            def process_name(self): return "test"
+            def process_name(self):
+                return "test"
 
         assert registry.get_plugin("test-vpn") is TestVPN
 
     def test_available_types(self):
         @registry.register("beta")
         class B(TunnelPlugin):
-            def connect(self): return VPNResult()
+            def connect(self):
+                return VPNResult()
+
             @property
-            def process_name(self): return "b"
+            def process_name(self):
+                return "b"
 
         @registry.register("alpha")
         class A(TunnelPlugin):
-            def connect(self): return VPNResult()
+            def connect(self):
+                return VPNResult()
+
             @property
-            def process_name(self): return "a"
+            def process_name(self):
+                return "a"
 
         assert registry.available_types() == ["alpha", "beta"]
 
@@ -285,23 +313,33 @@ class TestRegistry:
     def test_duplicate_register_raises(self):
         @registry.register("dup")
         class First(TunnelPlugin):
-            def connect(self): return VPNResult()
+            def connect(self):
+                return VPNResult()
+
             @property
-            def process_name(self): return "first"
+            def process_name(self):
+                return "first"
 
         with pytest.raises(ValueError, match="already registered"):
+
             @registry.register("dup")
             class Second(TunnelPlugin):
-                def connect(self): return VPNResult()
+                def connect(self):
+                    return VPNResult()
+
                 @property
-                def process_name(self): return "second"
+                def process_name(self):
+                    return "second"
 
     def test_clear(self):
         @registry.register("temp")
         class Temp(TunnelPlugin):
-            def connect(self): return VPNResult()
+            def connect(self):
+                return VPNResult()
+
             @property
-            def process_name(self): return "t"
+            def process_name(self):
+                return "t"
 
         assert registry.available_types() == ["temp"]
         registry.clear()

@@ -16,6 +16,7 @@ from tv.checks import CheckResult
 # Fixtures
 # =========================================================================
 
+
 @pytest.fixture
 def v3_defs(tmp_dir):
     """Minimal v3 defs with two tunnels for Engine tests."""
@@ -61,6 +62,7 @@ def _skip_setup_io():
 # Init
 # =========================================================================
 
+
 class TestEngineInit:
     def test_stores_params(self, engine, tmp_dir, v3_defs, mock_net, logger):
         assert engine.script_dir == tmp_dir
@@ -82,6 +84,7 @@ class TestEngineInit:
 # =========================================================================
 # Hooks
 # =========================================================================
+
 
 class TestHooks:
     def test_on_registers_hook(self, engine):
@@ -125,6 +128,7 @@ class TestHooks:
 # Prepare
 # =========================================================================
 
+
 class TestPrepare:
     def test_populates_tunnels(self, engine):
         engine.prepare()
@@ -157,9 +161,12 @@ class TestPrepare:
                 "forti": {
                     "type": "fortivpn",
                     "auth": {
-                        "host": "vpn.test.com", "port": "443",
-                        "login": "u", "pass": "p",
-                        "cert_mode": "manual", "trusted_cert": "abc",
+                        "host": "vpn.test.com",
+                        "port": "443",
+                        "login": "u",
+                        "pass": "p",
+                        "cert_mode": "manual",
+                        "trusted_cert": "abc",
                     },
                     "routes": {"targets": ["10.0.0.0/8", "*.alpha.local"]},
                     "dns": {"nameservers": ["10.0.1.1"]},
@@ -180,7 +187,11 @@ class TestPrepare:
         """Wizard is called when tunnel has no routes and no targets."""
         defs = {
             "tunnels": {
-                "openvpn": {"type": "openvpn", "order": 1, "config_file": "client.ovpn"},
+                "openvpn": {
+                    "type": "openvpn",
+                    "order": 1,
+                    "config_file": "client.ovpn",
+                },
             },
         }
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
@@ -193,7 +204,11 @@ class TestPrepare:
         """Settings file exists + setup=False: quiet mode, no wizard, profiles shown."""
         defs = {
             "tunnels": {
-                "openvpn": {"type": "openvpn", "order": 1, "config_file": "client.ovpn"},
+                "openvpn": {
+                    "type": "openvpn",
+                    "order": 1,
+                    "config_file": "client.ovpn",
+                },
             },
         }
         settings = {"openvpn": {"config_file": "client.ovpn", "targets": []}}
@@ -213,15 +228,21 @@ class TestPrepare:
         """--setup flag: wizard runs even with settings file."""
         defs = {
             "tunnels": {
-                "openvpn": {"type": "openvpn", "order": 1, "config_file": "client.ovpn"},
+                "openvpn": {
+                    "type": "openvpn",
+                    "order": 1,
+                    "config_file": "client.ovpn",
+                },
             },
         }
         settings = {"openvpn": {"config_file": "client.ovpn"}}
         (tmp_dir / ".vpn-settings.json").write_text(json.dumps(settings))
 
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
-        with patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz, \
-             patch("tv.ui.wizard_input", return_value="") as mock_input:
+        with (
+            patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz,
+            patch("tv.ui.wizard_input", return_value="") as mock_input,
+        ):
             e.prepare(setup=True)
 
         # setup=True triggers wizard for both params and routes
@@ -232,7 +253,11 @@ class TestPrepare:
         """No settings file + setup=False: wizard runs (first-time use)."""
         defs = {
             "tunnels": {
-                "openvpn": {"type": "openvpn", "order": 1, "config_file": "client.ovpn"},
+                "openvpn": {
+                    "type": "openvpn",
+                    "order": 1,
+                    "config_file": "client.ovpn",
+                },
             },
         }
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
@@ -246,7 +271,8 @@ class TestPrepare:
         defs = {
             "tunnels": {
                 "forti": {
-                    "type": "fortivpn", "order": 1,
+                    "type": "fortivpn",
+                    "order": 1,
                     # No auth at all - login/pass/host missing
                 },
             },
@@ -256,18 +282,21 @@ class TestPrepare:
 
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         # Should auto-switch to wizard mode (setup=True) instead of crashing
-        with patch("tv.config._resolve_param") as mock_resolve, \
-             patch("tv.ui.wizard_targets", return_value=[]):
+        with (
+            patch("tv.config._resolve_param") as mock_resolve,
+            patch("tv.ui.wizard_targets", return_value=[]),
+        ):
             # First call (quiet): raises SetupRequiredError
             # Second call (wizard): returns values
             from tv.config import SetupRequiredError
+
             mock_resolve.side_effect = [
                 SetupRequiredError("missing"),  # quiet mode -> triggers auto-setup
-                "vpn.com",   # host (wizard)
-                "443",       # port (wizard)
-                "user",      # login (wizard)
-                "secret",    # pass (wizard)
-                "auto",      # cert_mode (wizard)
+                "vpn.com",  # host (wizard)
+                "443",  # port (wizard)
+                "user",  # login (wizard)
+                "secret",  # pass (wizard)
+                "auto",  # cert_mode (wizard)
             ]
             with patch("tv.config._handle_forti_cert"):
                 e.prepare(setup=False)
@@ -280,7 +309,8 @@ class TestPrepare:
         defs = {
             "tunnels": {
                 "forti": {
-                    "type": "fortivpn", "order": 1,
+                    "type": "fortivpn",
+                    "order": 1,
                 },
             },
         }
@@ -288,7 +318,10 @@ class TestPrepare:
 
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
         from tv.config import SetupRequiredError
-        with patch("tv.config._resolve_param", side_effect=SetupRequiredError("missing")):
+
+        with patch(
+            "tv.config._resolve_param", side_effect=SetupRequiredError("missing")
+        ):
             with pytest.raises(SetupRequiredError):
                 e.prepare(setup=False)
 
@@ -297,11 +330,14 @@ class TestPrepare:
 # Setup
 # =========================================================================
 
+
 class TestSetup:
     def test_no_disconnect_without_clear(self, engine):
         engine.tunnels = []
-        with patch("tv.engine.disconnect.run") as mock_disc, \
-             patch("tv.engine.time.sleep"):
+        with (
+            patch("tv.engine.disconnect.run") as mock_disc,
+            patch("tv.engine.time.sleep"),
+        ):
             engine.setup()
 
         mock_disc.assert_not_called()
@@ -309,12 +345,16 @@ class TestSetup:
 
     def test_calls_disconnect_with_clear(self, engine):
         engine.tunnels = []
-        with patch("tv.engine.disconnect.run") as mock_disc, \
-             patch("tv.engine.time.sleep"):
+        with (
+            patch("tv.engine.disconnect.run") as mock_disc,
+            patch("tv.engine.time.sleep"),
+        ):
             engine.setup(clear=True)
 
         mock_disc.assert_called_once_with(
-            engine.net, engine.log, engine.defs,
+            engine.net,
+            engine.log,
+            engine.defs,
             script_dir=engine.script_dir,
         )
         engine.net.disable_ipv6.assert_called_once()
@@ -353,11 +393,18 @@ class TestSetup:
 # Connect all
 # =========================================================================
 
+
 class TestConnectAll:
     def test_connects_tunnels(self, engine):
         engine.prepare()
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+        ):
             engine.connect_all()
 
         assert len(engine.results) == 2
@@ -366,8 +413,14 @@ class TestConnectAll:
 
     def test_connect_all_is_idempotent(self, engine):
         engine.prepare()
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+        ):
             engine.connect_all()
             engine.connect_all()
 
@@ -382,8 +435,14 @@ class TestConnectAll:
         engine.on("pre_connect", pre)
         engine.on("post_connect", post)
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=False)):
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=False)
+            ),
+        ):
             engine.connect_all()
 
         assert pre.call_count == 2
@@ -401,13 +460,17 @@ class TestConnectAll:
 # Check all
 # =========================================================================
 
+
 class TestCheckAll:
     def test_runs_checks_and_returns_results(self, engine):
         engine.tunnels = [TunnelConfig(name="t", type="openvpn")]
         engine.results = [VPNResult(ok=True)]
 
         fake_results = [CheckResult("test", "ok", "ok")]
-        with patch("tv.engine.checks.run_all_from_tunnels", return_value=(fake_results, "1.2.3.4")):
+        with patch(
+            "tv.engine.checks.run_all_from_tunnels",
+            return_value=(fake_results, "1.2.3.4"),
+        ):
             results, ext_ip = engine.check_all()
 
         assert len(results) == 1
@@ -458,6 +521,7 @@ class TestCheckAll:
 # =========================================================================
 # Disconnect all
 # =========================================================================
+
 
 class TestDisconnectAll:
     def test_disconnects_in_reverse_order(self, engine):
@@ -526,6 +590,7 @@ class TestDisconnectAll:
 # VPN server routes
 # =========================================================================
 
+
 class TestVpnServerRoutes:
     def test_global_format(self, engine, _skip_setup_io):
         engine.defs = {
@@ -559,6 +624,7 @@ class TestVpnServerRoutes:
 # =========================================================================
 # Bypass routes
 # =========================================================================
+
 
 class TestBypassRoutes:
     def test_setup_adds_bypass_host_routes(self, engine, _skip_setup_io):
@@ -605,6 +671,7 @@ class TestBypassRoutes:
 # DNS proxy lifecycle
 # =========================================================================
 
+
 class TestDNSProxy:
     def test_setup_starts_dns_proxy(self, engine, _skip_setup_io):
         """domain_suffix config starts DNS proxy and creates resolver files."""
@@ -635,10 +702,12 @@ class TestDNSProxy:
         engine.net.add_host_route.assert_any_call("8.8.8.8", "192.168.1.1")
         # Resolver files created for each zone
         engine.net.setup_dns_resolver.assert_any_call(
-            domains=["ru"], nameservers=["127.0.0.1"],
+            domains=["ru"],
+            nameservers=["127.0.0.1"],
         )
         engine.net.setup_dns_resolver.assert_any_call(
-            domains=["рф"], nameservers=["127.0.0.1"],
+            domains=["рф"],
+            nameservers=["127.0.0.1"],
         )
 
     def test_disconnect_stops_dns_proxy(self, engine, _skip_setup_io):
@@ -744,16 +813,19 @@ class TestDNSProxy:
 # Reuse existing connections
 # =========================================================================
 
+
 class TestReuseExistingConnections:
     def test_skips_connect_when_pid_alive(self, engine):
         """Existing alive process -> skip connect, reuse PID."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=12345), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=67890), \
-             patch("tv.engine.proc.is_alive", return_value=True), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect") as mock_ovpn, \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect") as mock_sb:
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=12345),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=67890),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch("tv.vpn.openvpn.OpenVPNPlugin.connect") as mock_ovpn,
+            patch("tv.vpn.singbox.SingBoxPlugin.connect") as mock_sb,
+        ):
             engine.connect_all()
 
         # connect() never called
@@ -776,10 +848,16 @@ class TestReuseExistingConnections:
         """No existing process -> normal connect."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)) as mock_ovpn, \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)) as mock_sb:
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None),
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ) as mock_ovpn,
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ) as mock_sb,
+        ):
             engine.connect_all()
 
         mock_ovpn.assert_called_once()
@@ -789,11 +867,17 @@ class TestReuseExistingConnections:
         """Existing PID found but process dead -> normal connect."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=99999), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None), \
-             patch("tv.engine.proc.is_alive", return_value=False), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)) as mock_ovpn, \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)) as mock_sb:
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=99999),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None),
+            patch("tv.engine.proc.is_alive", return_value=False),
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ) as mock_ovpn,
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ) as mock_sb,
+        ):
             engine.connect_all()
 
         mock_ovpn.assert_called_once()
@@ -803,12 +887,18 @@ class TestReuseExistingConnections:
         """PID alive but interface gone -> kill stale process and reconnect."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=67890), \
-             patch("tv.engine.proc.is_alive", return_value=True), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)) as mock_sb, \
-             patch("tv.vpn.singbox.SingBoxPlugin.disconnect") as mock_disc:
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=None),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=67890),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ) as mock_sb,
+            patch("tv.vpn.singbox.SingBoxPlugin.disconnect") as mock_disc,
+        ):
             engine.net.check_interface.return_value = False
             engine.connect_all()
 
@@ -828,15 +918,21 @@ class TestReuseExistingConnections:
         def mock_alive(pid):
             return pid == 11111
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", side_effect=mock_discover), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None), \
-             patch("tv.engine.proc.is_alive", side_effect=mock_alive), \
-             patch("tv.vpn.openvpn.OpenVPNPlugin.connect") as mock_ovpn, \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)) as mock_sb:
+        with (
+            patch(
+                "tv.vpn.openvpn.OpenVPNPlugin.discover_pid", side_effect=mock_discover
+            ),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None),
+            patch("tv.engine.proc.is_alive", side_effect=mock_alive),
+            patch("tv.vpn.openvpn.OpenVPNPlugin.connect") as mock_ovpn,
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ) as mock_sb,
+        ):
             engine.connect_all()
 
         mock_ovpn.assert_not_called()  # reused
-        mock_sb.assert_called_once()   # connected fresh
+        mock_sb.assert_called_once()  # connected fresh
 
         assert engine.results[0].ok is True
         assert engine.results[0].pid == 11111
@@ -851,9 +947,11 @@ class TestReuseExistingConnections:
         engine.on("pre_connect", pre)
         engine.on("post_connect", post)
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=100), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=200), \
-             patch("tv.engine.proc.is_alive", return_value=True):
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=100),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=200),
+            patch("tv.engine.proc.is_alive", return_value=True),
+        ):
             engine.connect_all()
 
         assert pre.call_count == 2
@@ -863,10 +961,14 @@ class TestReuseExistingConnections:
         """Reused connection prints OK message."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=555), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None), \
-             patch("tv.engine.proc.is_alive", return_value=True), \
-             patch("tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)):
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=555),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=None),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch(
+                "tv.vpn.singbox.SingBoxPlugin.connect", return_value=VPNResult(ok=True)
+            ),
+        ):
             engine.connect_all()
 
         out = capsys.readouterr().out
@@ -877,6 +979,7 @@ class TestReuseExistingConnections:
 # =========================================================================
 # Quiet mode
 # =========================================================================
+
 
 class TestQuietMode:
     def test_setup_quiet_no_ui_messages(self, engine, _skip_setup_io, capsys):
@@ -900,9 +1003,11 @@ class TestQuietMode:
         """Quiet connect_all skips step headers."""
         engine.prepare()
 
-        with patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=100), \
-             patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=200), \
-             patch("tv.engine.proc.is_alive", return_value=True):
+        with (
+            patch("tv.vpn.openvpn.OpenVPNPlugin.discover_pid", return_value=100),
+            patch("tv.vpn.singbox.SingBoxPlugin.discover_pid", return_value=200),
+            patch("tv.engine.proc.is_alive", return_value=True),
+        ):
             engine.connect_all(quiet=True)
 
         out = capsys.readouterr().out
@@ -913,8 +1018,12 @@ class TestQuietMode:
         engine.tunnels = [TunnelConfig(name="t", type="openvpn")]
         engine.results = [VPNResult(ok=True)]
 
-        with patch("tv.engine.checks.run_all_quiet", return_value=([], "")) as mock_quiet, \
-             patch("tv.engine.checks.run_all_from_tunnels") as mock_loud:
+        with (
+            patch(
+                "tv.engine.checks.run_all_quiet", return_value=([], "")
+            ) as mock_quiet,
+            patch("tv.engine.checks.run_all_from_tunnels") as mock_loud,
+        ):
             engine.check_all(quiet=True)
 
         mock_quiet.assert_called_once()
@@ -925,8 +1034,12 @@ class TestQuietMode:
         engine.tunnels = [TunnelConfig(name="t", type="openvpn")]
         engine.results = [VPNResult(ok=True)]
 
-        with patch("tv.engine.checks.run_all_from_tunnels", return_value=([], "")) as mock_loud, \
-             patch("tv.engine.checks.run_all_quiet") as mock_quiet:
+        with (
+            patch(
+                "tv.engine.checks.run_all_from_tunnels", return_value=([], "")
+            ) as mock_loud,
+            patch("tv.engine.checks.run_all_quiet") as mock_quiet,
+        ):
             engine.check_all(quiet=False)
 
         mock_loud.assert_called_once()
@@ -1079,8 +1192,12 @@ class TestQuietMode:
         engine._dns_proxy = mock_proxy
         engine._dns_proxy_zones = ["ru"]
         engine._dns_proxy_upstream = "8.8.8.8"
-        engine.net.cleanup_dns_resolver.side_effect = lambda z: call_order.append("resolver")
-        engine.net.delete_host_route.side_effect = lambda ip: call_order.append(f"route:{ip}")
+        engine.net.cleanup_dns_resolver.side_effect = lambda z: call_order.append(
+            "resolver"
+        )
+        engine.net.delete_host_route.side_effect = lambda ip: call_order.append(
+            f"route:{ip}"
+        )
 
         engine.disconnect_all()
 

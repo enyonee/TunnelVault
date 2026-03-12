@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     netcat-openbsd \
     procps \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # sing-box
@@ -22,9 +23,9 @@ RUN curl -Lo /tmp/sing-box.tar.gz \
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN pip install uv && uv sync --extra dev --no-install-project
+RUN pip install uv && uv sync --group dev --no-install-project
 
 COPY . .
-RUN uv sync --extra dev
+RUN uv sync --group dev
 
-CMD ["uv", "run", "pytest", "tests/integration/k8s/", "-x", "-v", "--tb=short"]
+CMD uv run pytest tests/integration/k8s/ -x -v --tb=short -o "addopts=" -p no:xdist

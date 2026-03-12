@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import platform
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -14,6 +15,10 @@ from tv.vpn.fortivpn import (
     FortiDNSInfo,
     _detect_ppp_gateway,
     parse_forti_dns,
+)
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows", reason="FortiVPN is Unix-only"
 )
 
 

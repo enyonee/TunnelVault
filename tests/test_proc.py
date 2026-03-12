@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -11,10 +12,13 @@ import pytest
 
 from tv import proc
 
+IS_WINDOWS = platform.system() == "Windows"
+
 
 # =========================================================================
 # Positive: run
 # =========================================================================
+
 
 class TestRun:
     def test_captures_stdout(self):
@@ -22,6 +26,7 @@ class TestRun:
         assert r.stdout.strip() == "hello"
         assert r.returncode == 0
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="sudo not available on Windows")
     def test_sudo_prepends(self):
         """sudo=True добавляет 'sudo' в начало."""
         with patch("subprocess.run") as mock:
@@ -31,6 +36,15 @@ class TestRun:
             assert args[0] == "sudo"
             assert args[1] == "test_cmd"
 
+    def test_sudo_noop_on_windows(self):
+        """sudo=True на Windows не добавляет sudo."""
+        with patch("subprocess.run") as mock, patch("tv.proc.IS_WINDOWS", True):
+            mock.return_value = subprocess.CompletedProcess([], 0, "", "")
+            proc.run(["test_cmd"], sudo=True)
+            args = mock.call_args[0][0]
+            assert args[0] == "test_cmd"
+
+    @pytest.mark.skipif(IS_WINDOWS, reason="'false' command not available on Windows")
     def test_returns_nonzero_without_raising(self):
         r = proc.run(["false"])
         assert r.returncode != 0
@@ -40,17 +54,20 @@ class TestRun:
 # Negative / inverse: run failures
 # =========================================================================
 
+
 class TestRunInverse:
     def test_nonexistent_command_raises(self):
         """Несуществующая команда - FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
             proc.run(["nonexistent_command_xyz_123"])
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="'sleep' command not available on Windows")
     def test_timeout_raises(self):
         """Если команда зависает - TimeoutExpired."""
         with pytest.raises(subprocess.TimeoutExpired):
             proc.run(["sleep", "10"], timeout=0.1)
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="'false' command not available on Windows")
     def test_check_true_raises_on_failure(self):
         """check=True + ненулевой код - CalledProcessError."""
         with pytest.raises(subprocess.CalledProcessError):
@@ -61,12 +78,15 @@ class TestRunInverse:
 # Positive: run_background
 # =========================================================================
 
+
 class TestRunBackground:
+    @pytest.mark.skipif(IS_WINDOWS, reason="'sleep' not available on Windows")
     def test_returns_popen(self):
         p = proc.run_background(["sleep", "0.1"])
         assert isinstance(p, subprocess.Popen)
         p.wait()
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="'echo' behaves differently on Windows")
     def test_writes_to_log_file(self, tmp_path: Path):
         log = str(tmp_path / "out.log")
         p = proc.run_background(["echo", "hello_bg"], log_path=log)
@@ -74,6 +94,7 @@ class TestRunBackground:
         content = Path(log).read_text()
         assert "hello_bg" in content
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="os.getuid() not available on Windows")
     def test_log_file_owned_by_current_user(self, tmp_path: Path):
         log = str(tmp_path / "owned.log")
         p = proc.run_background(["echo", "test"], log_path=log)
@@ -84,6 +105,7 @@ class TestRunBackground:
 # =========================================================================
 # Negative / inverse: run_background failures
 # =========================================================================
+
 
 class TestRunBackgroundInverse:
     def test_nonexistent_command_raises(self):
@@ -104,6 +126,7 @@ class TestRunBackgroundInverse:
 # Positive: wait_for
 # =========================================================================
 
+
 class TestWaitFor:
     @patch("tv.proc.time.sleep")
     def test_returns_true_on_immediate_success(self, _):
@@ -113,9 +136,11 @@ class TestWaitFor:
     @patch("tv.proc.time.sleep")
     def test_returns_true_after_retries(self, _):
         counter = {"n": 0}
+
         def check():
             counter["n"] += 1
             return counter["n"] >= 2
+
         result = proc.wait_for("test", check, timeout=5)
         assert result is True
 
@@ -123,6 +148,7 @@ class TestWaitFor:
 # =========================================================================
 # Negative / inverse: wait_for failures
 # =========================================================================
+
 
 class TestWaitForInverse:
     @patch("tv.proc.time.sleep")
@@ -134,8 +160,10 @@ class TestWaitForInverse:
     @patch("tv.proc.time.sleep")
     def test_check_exception_is_not_caught(self, _):
         """Исключение в check_fn пробрасывается наружу."""
+
         def bad_check():
             raise RuntimeError("boom")
+
         with pytest.raises(RuntimeError, match="boom"):
             proc.wait_for("test", bad_check, timeout=1)
 
@@ -144,7 +172,9 @@ class TestWaitForInverse:
 # Positive: find_pids
 # =========================================================================
 
+
 class TestFindPids:
+    @pytest.mark.skipif(IS_WINDOWS, reason="pgrep pattern differs on Windows")
     def test_finds_current_process(self):
         """Должен найти текущий python процесс."""
         # pgrep -f с уникальным паттерном из нашего PID
@@ -162,7 +192,9 @@ class TestFindPids:
 # Negative / inverse: find_pids
 # =========================================================================
 
+
 class TestFindPidsInverse:
+    @pytest.mark.skipif(IS_WINDOWS, reason="PowerShell-based find_pids slow on CI")
     def test_empty_result_for_garbage(self):
         """Паттерн, которому ничего не матчит."""
         pids = proc.find_pids("zzz_no_such_process_zzz_999")
@@ -173,7 +205,9 @@ class TestFindPidsInverse:
 # Positive: kill_pattern
 # =========================================================================
 
+
 class TestKillPattern:
+    @pytest.mark.skipif(IS_WINDOWS, reason="bracket trick uses pkill (Unix only)")
     @patch("subprocess.run")
     def test_uses_bracket_trick(self, mock_run):
         """Bracket trick: 'foo' -> '[f]oo'."""
@@ -181,6 +215,7 @@ class TestKillPattern:
         args = mock_run.call_args[0][0]
         assert "[o]penfortivpn" in args
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="sudo not available on Windows")
     @patch("subprocess.run")
     def test_sudo_flag(self, mock_run):
         proc.kill_pattern("test", sudo=True)
@@ -191,6 +226,7 @@ class TestKillPattern:
 # =========================================================================
 # Negative / inverse: kill_pattern edge cases
 # =========================================================================
+
 
 class TestKillPatternInverse:
     @patch("subprocess.run")
@@ -210,7 +246,9 @@ class TestKillPatternInverse:
 # kill_by_pid
 # =========================================================================
 
+
 class TestKillByPid:
+    @pytest.mark.skipif(IS_WINDOWS, reason="Unix kill command")
     @patch("subprocess.run")
     def test_happy_path(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
@@ -219,6 +257,7 @@ class TestKillByPid:
         args = mock_run.call_args[0][0]
         assert args == ["kill", "12345"]
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="sudo not available on Windows")
     @patch("subprocess.run")
     def test_with_sudo(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
@@ -229,7 +268,9 @@ class TestKillByPid:
 
     @patch("subprocess.run")
     def test_returns_false_on_failure(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "No such process")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "No such process"
+        )
         result = proc.kill_by_pid(99999)
         assert result is False
 
@@ -237,6 +278,7 @@ class TestKillByPid:
 # =========================================================================
 # is_alive
 # =========================================================================
+
 
 class TestIsAlive:
     def test_current_pid_is_alive(self):
@@ -246,6 +288,7 @@ class TestIsAlive:
         # PID 999999 вряд ли существует
         assert proc.is_alive(999999) is False
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="PID_MAX_LIMIT is Linux-specific")
     def test_nonexistent_large_pid(self):
         """Несуществующий PID -> не живой."""
         # PID -1 и 0 на macOS имеют специальное значение (process group),

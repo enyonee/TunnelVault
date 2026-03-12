@@ -292,7 +292,9 @@ def _handle_forti_cert(
         tcfg.auth["trusted_cert"] = cert
     else:
         ui.warn(t("config.cert_unreachable", host=host, port=port))
-        ui.info(f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.settings_file)}{ui.NC}")
+        ui.info(
+            f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.settings_file)}{ui.NC}"
+        )
 
 
 def resolve_tunnel_routes(
@@ -421,7 +423,7 @@ def _write_settings(data: dict, script_dir: Path) -> None:
     try:
         os.chmod(tmp_path, 0o600)
         _chown_to_real_user(tmp_path)
-        os.rename(tmp_path, str(path))
+        os.replace(tmp_path, str(path))
     except Exception:
         try:
             os.unlink(tmp_path)

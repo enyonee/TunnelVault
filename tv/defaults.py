@@ -35,10 +35,15 @@ def load(script_dir: Path, *, setup: bool = False) -> dict:
             example = script_dir / f"{defaults_file}.example"
             if example.exists():
                 import shutil
+
                 shutil.copy2(str(example), str(path))
-                print(f"  {ui.GREEN}📋{ui.NC} {t('defaults.created_from_example', file=defaults_file)}")
+                print(
+                    f"  {ui.GREEN}📋{ui.NC} {t('defaults.created_from_example', file=defaults_file)}"
+                )
             else:
-                print(f"  {ui.RED}❌ {t('defaults.not_found', file=defaults_file)}{ui.NC}")
+                print(
+                    f"  {ui.RED}❌ {t('defaults.not_found', file=defaults_file)}{ui.NC}"
+                )
                 print(f"  {ui.DIM}{t('defaults.expected_at', path=path)}{ui.NC}")
                 sys.exit(1)
         else:
@@ -50,7 +55,9 @@ def load(script_dir: Path, *, setup: bool = False) -> dict:
         with open(path, "rb") as f:
             data = tomllib.load(f)
     except Exception as e:
-        print(f"  {ui.RED}❌ {t('defaults.parse_error', file=defaults_file, error=e)}{ui.NC}")
+        print(
+            f"  {ui.RED}❌ {t('defaults.parse_error', file=defaults_file, error=e)}{ui.NC}"
+        )
         sys.exit(1)
 
     if "tunnels" not in data:
@@ -60,9 +67,12 @@ def load(script_dir: Path, *, setup: bool = False) -> dict:
 
     # Load [app] section into centralized config
     from tv import app_config
+
     app_config.load(data.get("app", {}))
 
-    print(f"  {ui.GREEN}📋{ui.NC} {t('defaults.loaded')} {ui.DIM}({defaults_file}){ui.NC}")
+    print(
+        f"  {ui.GREEN}📋{ui.NC} {t('defaults.loaded')} {ui.DIM}({defaults_file}){ui.NC}"
+    )
     return data
 
 
@@ -97,8 +107,16 @@ def parse_tunnels(defs: dict) -> list[TunnelConfig]:
 
         # Collect type-specific extra fields
         known_keys = {
-            "type", "order", "enabled", "config_file", "log", "interface",
-            "routes", "dns", "checks", "auth",
+            "type",
+            "order",
+            "enabled",
+            "config_file",
+            "log",
+            "interface",
+            "routes",
+            "dns",
+            "checks",
+            "auth",
         }
         tc.extra = copy.deepcopy({k: v for k, v in raw.items() if k not in known_keys})
 
@@ -170,7 +188,12 @@ def _validate_tunnels(tunnels: list[TunnelConfig]) -> None:
         if tc.interface:
             if tc.interface in ifaces:
                 raise ValueError(
-                    t("defaults.iface_conflict", a=tc.name, b=ifaces[tc.interface], iface=tc.interface)
+                    t(
+                        "defaults.iface_conflict",
+                        a=tc.name,
+                        b=ifaces[tc.interface],
+                        iface=tc.interface,
+                    )
                 )
             ifaces[tc.interface] = tc.name
 
@@ -196,7 +219,11 @@ def filter_tunnels(tunnels: list[TunnelConfig], names: str) -> list[TunnelConfig
     if unknown:
         available = ", ".join(sorted(known)) or t("defaults.no_tunnels_available")
         raise ValueError(
-            t("defaults.unknown_tunnels", unknown=", ".join(unknown), available=available)
+            t(
+                "defaults.unknown_tunnels",
+                unknown=", ".join(unknown),
+                available=available,
+            )
         )
 
     requested_set = set(requested)
@@ -211,8 +238,12 @@ def validate_config_files(tunnels: list[TunnelConfig]) -> None:
             by_type = configs_by_type.setdefault(tc.type, {})
             if tc.config_file in by_type:
                 raise ValueError(
-                    t("defaults.config_conflict",
-                      a=tc.name, b=by_type[tc.config_file],
-                      type=tc.type, cf=tc.config_file)
+                    t(
+                        "defaults.config_conflict",
+                        a=tc.name,
+                        b=by_type[tc.config_file],
+                        type=tc.type,
+                        cf=tc.config_file,
+                    )
                 )
             by_type[tc.config_file] = tc.name

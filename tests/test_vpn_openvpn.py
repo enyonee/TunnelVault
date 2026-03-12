@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import platform
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +12,10 @@ import pytest
 
 from tv.vpn.base import TunnelConfig
 from tv.vpn.openvpn import OpenVPNPlugin
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows", reason="OpenVPN plugin is Unix-only"
+)
 
 
 def _setup_mock_net_tun(mock_net):
@@ -37,8 +42,7 @@ def _openvpn_connect_ok(plugin, pids=None):
     if pids is None:
         pids = [[], [12345]]
     _setup_mock_net_tun(plugin.net)
-    with patch("tv.vpn.openvpn.proc") as mock_proc, \
-         patch("tv.vpn.openvpn.time.sleep"):
+    with patch("tv.vpn.openvpn.proc") as mock_proc, patch("tv.vpn.openvpn.time.sleep"):
         mock_proc.find_pids.side_effect = pids
         mock_proc.run.return_value = subprocess.CompletedProcess([], 0, "", "")
         mock_proc.wait_for.side_effect = lambda desc, fn, *a, **kw: fn() or fn()
@@ -65,6 +69,7 @@ def plugin(ovpn_cfg, mock_net, logger, tmp_dir):
 # Meta
 # =========================================================================
 
+
 class TestMeta:
     def test_process_name(self, plugin):
         assert plugin.process_name == "openvpn"
@@ -74,12 +79,14 @@ class TestMeta:
 
     def test_registered(self):
         from tv.vpn.registry import get_plugin
+
         assert get_plugin("openvpn") is OpenVPNPlugin
 
 
 # =========================================================================
 # Positive: Tunnelblick detection
 # =========================================================================
+
 
 class TestTunnelblickDetection:
     def test_tunnelblick_active_skips_own_openvpn(self, plugin, capsys):
@@ -99,8 +106,10 @@ class TestTunnelblickDetection:
     def test_tunnelblick_running_without_openvpn(self, plugin):
         """Tunnelblick запущен, но его openvpn нет - запускаем свой."""
         _setup_mock_net_tun(plugin.net)
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep"):
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep"),
+        ):
             # 1) Tunnelblick? [111]  2) Tunnelblick.*openvpn? []
             # 3) openvpn --config ... ? [12345]
             mock_proc.find_pids.side_effect = [[111], [], [12345]]
@@ -115,6 +124,7 @@ class TestTunnelblickDetection:
 # =========================================================================
 # Positive: successful connection
 # =========================================================================
+
 
 class TestConnectSuccess:
     def test_normal_connection(self, plugin):
@@ -148,7 +158,9 @@ class TestConnectSuccess:
             plugin.connect()
 
         plugin.net.setup_dns_resolver.assert_called_once_with(
-            ["alpha.local"], ["10.0.1.1"], "tun0",
+            ["alpha.local"],
+            ["10.0.1.1"],
+            "tun0",
         )
 
     def test_no_routes_when_not_configured(self, plugin):
@@ -180,14 +192,17 @@ class TestConnectSuccess:
 # Negative / inverse: connection failures
 # =========================================================================
 
+
 class TestConnectFailure:
     def test_no_pid_after_start(self, plugin, capsys):
         """openvpn запустился, но PID не найден -> fail."""
         ovpn_log = Path(plugin.cfg.log)
         ovpn_log.write_text("")
 
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep"):
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep"),
+        ):
             mock_proc.find_pids.side_effect = [
                 [],  # Tunnelblick
                 [],  # openvpn PID retry 1
@@ -205,10 +220,12 @@ class TestConnectFailure:
         ovpn_log = Path(plugin.cfg.log)
         ovpn_log.write_text("")
 
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep"):
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep"),
+        ):
             mock_proc.find_pids.side_effect = [
-                [],       # Tunnelblick
+                [],  # Tunnelblick
                 [12345],  # openvpn PID
             ]
             mock_proc.run.return_value = subprocess.CompletedProcess([], 0, "", "")
@@ -220,8 +237,10 @@ class TestConnectFailure:
 
     def test_failure_shows_log_hint(self, plugin, capsys):
         """При ошибке показывает путь к логу."""
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep"):
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep"),
+        ):
             mock_proc.find_pids.side_effect = [[], [12345]]
             mock_proc.run.return_value = subprocess.CompletedProcess([], 0, "", "")
             mock_proc.wait_for.return_value = False
@@ -235,8 +254,10 @@ class TestConnectFailure:
 
     def test_failure_no_pid_shows_message(self, plugin, capsys):
         """PID не найден после запуска - показывает сообщение."""
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep"):
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep"),
+        ):
             mock_proc.find_pids.side_effect = [[], [], [], []]
             mock_proc.run.return_value = subprocess.CompletedProcess([], 0, "", "")
 
@@ -248,8 +269,10 @@ class TestConnectFailure:
 
     def test_failure_process_alive_shows_pid(self, plugin, capsys):
         """Процесс жив, но интерфейс не появился."""
-        with patch("tv.vpn.openvpn.proc") as mock_proc, \
-             patch("tv.vpn.openvpn.time.sleep"):
+        with (
+            patch("tv.vpn.openvpn.proc") as mock_proc,
+            patch("tv.vpn.openvpn.time.sleep"),
+        ):
             mock_proc.find_pids.side_effect = [[], [12345]]
             mock_proc.run.return_value = subprocess.CompletedProcess([], 0, "", "")
             mock_proc.wait_for.return_value = False
@@ -265,6 +288,7 @@ class TestConnectFailure:
 # =========================================================================
 # Disconnect
 # =========================================================================
+
 
 class TestDisconnect:
     def test_disconnect_by_pid(self, plugin):
@@ -290,9 +314,11 @@ class TestDisconnect:
     def test_disconnect_pid_timeout_warns_and_falls_through(self, plugin):
         """PID kill timeout -> warning logged + pattern fallback."""
         plugin._pid = 12345
-        with patch("tv.vpn.base.proc") as base_proc, \
-             patch("tv.vpn.base.time.sleep"), \
-             patch("tv.vpn.openvpn.proc") as ovpn_proc:
+        with (
+            patch("tv.vpn.base.proc") as base_proc,
+            patch("tv.vpn.base.time.sleep"),
+            patch("tv.vpn.openvpn.proc") as ovpn_proc,
+        ):
             base_proc.is_alive.return_value = True  # never dies
             base_proc.kill_by_pid.return_value = True
 
@@ -319,6 +345,7 @@ class TestDisconnect:
 # =========================================================================
 # Config validation
 # =========================================================================
+
 
 class TestConfigValidation:
     def test_connect_config_not_found(self, plugin):

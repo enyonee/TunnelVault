@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import os
-import plistlib
+import platform
 import subprocess
 from unittest.mock import patch
 
-from tv import daemon
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="daemon module uses fcntl/plistlib (Unix-only)",
+)
+
+import plistlib  # noqa: E402
+
+from tv import daemon  # noqa: E402
 
 
 # =========================================================================
@@ -73,7 +82,9 @@ class TestIsTunnelvaultProcess:
     def test_current_process(self):
         """Current process should match (sys.argv contains test runner)."""
         # Current process is pytest, not tunnelvault
-        assert not daemon.is_tunnelvault_process(os.getpid()) or True  # depends on runner
+        assert (
+            not daemon.is_tunnelvault_process(os.getpid()) or True
+        )  # depends on runner
 
     def test_nonexistent_pid(self):
         assert not daemon.is_tunnelvault_process(999999)

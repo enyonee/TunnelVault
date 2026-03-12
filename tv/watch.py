@@ -34,6 +34,7 @@ from tv.i18n import t
 
 # --- Data types ---
 
+
 @dataclass
 class Connection:
     local: str
@@ -61,13 +62,22 @@ _IS_WINDOWS = platform.system() == "Windows"
 _MAX_CONNECTIONS = 30
 
 _PORT_LABELS = {
-    22: "SSH", 53: "DNS", 80: "HTTP", 443: "HTTPS",
-    3306: "MySQL", 3389: "RDP", 5432: "PG", 5672: "AMQP",
-    6379: "Redis", 8080: "HTTP", 8443: "HTTPS",
+    22: "SSH",
+    53: "DNS",
+    80: "HTTP",
+    443: "HTTPS",
+    3306: "MySQL",
+    3389: "RDP",
+    5432: "PG",
+    5672: "AMQP",
+    6379: "Redis",
+    8080: "HTTP",
+    8443: "HTTPS",
 }
 
 
 # --- Formatting ---
+
 
 def _fmt_rate(bps: float) -> str:
     """Format bytes/sec to human-readable."""
@@ -104,7 +114,9 @@ class _DNSCache:
     def __init__(self, max_workers: int = 4) -> None:
         self._cache: dict[str, str | None] = {}  # ip -> hostname | None (pending)
         self._lock = threading.Lock()
-        self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="rdns")
+        self._pool = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="rdns"
+        )
 
     def get(self, ip: str) -> str:
         """Get hostname for IP. Returns IP immediately if not yet resolved."""
@@ -155,10 +167,13 @@ def _cmd(args: list[str], timeout: int = 5) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError):
-        return subprocess.CompletedProcess(args=args, returncode=-1, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args=args, returncode=-1, stdout="", stderr=""
+        )
 
 
 # --- macOS data collection ---
+
 
 def _darwin_vpn_ifaces() -> dict[str, str]:
     """Get VPN interface -> IP via single ifconfig call."""
@@ -225,15 +240,18 @@ def _darwin_connections(local_ips: set[str]) -> list[Connection]:
             continue
         remote_raw = parts[4]
         rip, _, rport = remote_raw.rpartition(".")
-        conns.append(Connection(
-            local=f"{lip}:{lport}",
-            remote=f"{rip}:{rport}",
-            state=state[:5],
-        ))
+        conns.append(
+            Connection(
+                local=f"{lip}:{lport}",
+                remote=f"{rip}:{rport}",
+                state=state[:5],
+            )
+        )
     return conns
 
 
 # --- Linux data collection ---
+
 
 def _linux_vpn_ifaces() -> dict[str, str]:
     """Get VPN interface -> IP via ip command."""
@@ -267,7 +285,7 @@ def _linux_iface_bytes() -> dict[str, tuple[int, int]]:
         name = stripped[:idx].strip()
         if not _is_vpn_iface(name):
             continue
-        nums = stripped[idx + 1:].split()
+        nums = stripped[idx + 1 :].split()
         # rx_bytes(0) ... tx_bytes(8)
         if len(nums) >= 9:
             try:
@@ -293,22 +311,30 @@ def _linux_connections(local_ips: set[str]) -> list[Connection]:
         lip = local_raw.rsplit(":", 1)[0]
         if lip not in local_ips:
             continue
-        conns.append(Connection(
-            local=local_raw,
-            remote=remote_raw,
-            state=state[:5],
-        ))
+        conns.append(
+            Connection(
+                local=local_raw,
+                remote=remote_raw,
+                state=state[:5],
+            )
+        )
     return conns
 
 
 # --- Windows data collection ---
 
+
 def _windows_vpn_ifaces() -> dict[str, str]:
     """Get interface -> IP via PowerShell Get-NetIPAddress (locale-safe)."""
-    r = _cmd(["powershell", "-Command",
-              "Get-NetIPAddress -AddressFamily IPv4 | "
-              "Select-Object InterfaceAlias, IPAddress | "
-              "Format-Table -HideTableHeaders"])
+    r = _cmd(
+        [
+            "powershell",
+            "-Command",
+            "Get-NetIPAddress -AddressFamily IPv4 | "
+            "Select-Object InterfaceAlias, IPAddress | "
+            "Format-Table -HideTableHeaders",
+        ]
+    )
     if r.returncode != 0:
         return {}
     result = {}
@@ -324,10 +350,15 @@ def _windows_vpn_ifaces() -> dict[str, str]:
 
 def _windows_iface_bytes() -> dict[str, tuple[int, int]]:
     """Get (bytes_in, bytes_out) via PowerShell Get-NetAdapterStatistics."""
-    r = _cmd(["powershell", "-Command",
-              "Get-NetAdapterStatistics | "
-              "Select-Object Name, ReceivedBytes, SentBytes | "
-              "Format-Table -HideTableHeaders"])
+    r = _cmd(
+        [
+            "powershell",
+            "-Command",
+            "Get-NetAdapterStatistics | "
+            "Select-Object Name, ReceivedBytes, SentBytes | "
+            "Format-Table -HideTableHeaders",
+        ]
+    )
     if r.returncode != 0:
         return {}
     result = {}
@@ -360,15 +391,18 @@ def _windows_connections(local_ips: set[str]) -> list[Connection]:
         lip = local_raw.rsplit(":", 1)[0]
         if lip not in local_ips:
             continue
-        conns.append(Connection(
-            local=local_raw,
-            remote=remote_raw,
-            state=state[:5],
-        ))
+        conns.append(
+            Connection(
+                local=local_raw,
+                remote=remote_raw,
+                state=state[:5],
+            )
+        )
     return conns
 
 
 # --- Display ---
+
 
 def _build_display(
     snapshots: list[TunnelSnapshot],
@@ -395,8 +429,10 @@ def _build_display(
     if snapshots:
         for s in snapshots:
             bw.add_row(
-                s.name, s.interface,
-                _fmt_rate(s.rate_in), _fmt_rate(s.rate_out),
+                s.name,
+                s.interface,
+                _fmt_rate(s.rate_in),
+                _fmt_rate(s.rate_out),
                 _fmt_total(s.bytes_in + s.bytes_out),
             )
     else:
@@ -421,7 +457,8 @@ def _build_display(
                 st = "green" if "ESTAB" in c.state else "yellow"
                 remote_display = _fmt_remote(c.remote)
                 ct.add_row(
-                    c.local, "→",
+                    c.local,
+                    "→",
                     f"[yellow]{remote_display}[/yellow]",
                     f"[{st}]{c.state}[/{st}]",
                     _port_label(c.remote),
@@ -429,7 +466,10 @@ def _build_display(
             if len(s.connections) > _MAX_CONNECTIONS:
                 ct.add_row(
                     f"[dim]{t('watch.more_connections', count=len(s.connections) - _MAX_CONNECTIONS)}",
-                    "", "", "", "",
+                    "",
+                    "",
+                    "",
+                    "",
                 )
         else:
             ct.add_row(f"[dim italic]{t('watch.no_connections')}", "", "", "", "")
@@ -437,9 +477,7 @@ def _build_display(
         title = f"[bold]{s.name}[/bold] [dim]({s.interface} {s.ip})[/dim]"
         n = len(s.connections)
         sub = f"[dim]{n}[/dim]" if n else None
-        renderables.append(
-            Panel(ct, title=title, subtitle=sub, border_style="dim")
-        )
+        renderables.append(Panel(ct, title=title, subtitle=sub, border_style="dim"))
 
     n_tunnels = len(snapshots)
     n_conns = sum(len(s.connections) for s in snapshots)
@@ -459,6 +497,7 @@ def _build_display(
 
 
 # --- Main loop ---
+
 
 def _resolve_names(
     vpn_ifaces: dict[str, str],
@@ -567,7 +606,9 @@ def run(
                 all_conns = get_conns(vpn_ips)
                 poll_ms = (time.monotonic() - t0) * 1000
 
-                named = _resolve_names(vpn_ifaces, exact_names, prefix_names, show_all or not has_config)
+                named = _resolve_names(
+                    vpn_ifaces, exact_names, prefix_names, show_all or not has_config
+                )
 
                 snapshots = []
                 for iface, ip in sorted(vpn_ifaces.items()):
@@ -586,16 +627,21 @@ def run(
                     prev_bytes[iface] = (b_in, b_out)
 
                     iface_conns = [
-                        c for c in all_conns
-                        if c.local.rsplit(":", 1)[0] == ip
+                        c for c in all_conns if c.local.rsplit(":", 1)[0] == ip
                     ]
 
-                    snapshots.append(TunnelSnapshot(
-                        name=name, interface=iface, ip=ip,
-                        bytes_in=b_in, bytes_out=b_out,
-                        rate_in=rate_in, rate_out=rate_out,
-                        connections=iface_conns,
-                    ))
+                    snapshots.append(
+                        TunnelSnapshot(
+                            name=name,
+                            interface=iface,
+                            ip=ip,
+                            bytes_in=b_in,
+                            bytes_out=b_out,
+                            rate_in=rate_in,
+                            rate_out=rate_out,
+                            connections=iface_conns,
+                        )
+                    )
 
                 prev_time = now
                 live.update(_build_display(snapshots, ts, poll_ms=poll_ms))

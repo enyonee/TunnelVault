@@ -21,20 +21,25 @@ IS_WINDOWS = platform.system() == "Windows"
 @dataclass
 class CheckResult:
     label: str
-    status: str   # "ok" | "fail" | "skip"
+    status: str  # "ok" | "fail" | "skip"
     detail: str
 
 
 # --- Check primitives (each returns True on success) ---
 
-def _run_check(cmd: list[str], timeout: int | None = None) -> subprocess.CompletedProcess:
+
+def _run_check(
+    cmd: list[str], timeout: int | None = None
+) -> subprocess.CompletedProcess:
     """subprocess.run with timeout protection for check commands."""
     if timeout is None:
         timeout = cfg.timeouts.check_subprocess
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(args=cmd, returncode=-1, stdout="", stderr="timeout")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=-1, stdout="", stderr="timeout"
+        )
 
 
 def _check_port(host: str, port: int, timeout: int | None = None) -> bool:
@@ -80,6 +85,7 @@ def _urllib_get(url: str, timeout: int) -> tuple[int, str]:
     import ssl
     import urllib.request
     import urllib.error
+
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -98,8 +104,18 @@ def _check_http(url: str, timeout: int | None = None) -> bool:
         timeout = cfg.timeouts.check_http
     if shutil.which("curl"):
         r = _run_check(
-            ["curl", "-4", "-sk", "--max-time", str(timeout),
-             "-o", os.devnull, "-w", "%{http_code}", url],
+            [
+                "curl",
+                "-4",
+                "-sk",
+                "--max-time",
+                str(timeout),
+                "-o",
+                os.devnull,
+                "-w",
+                "%{http_code}",
+                url,
+            ],
             timeout + 2,
         )
         if r.returncode != 0:
@@ -117,8 +133,18 @@ def _check_http_any(url: str, timeout: int | None = None) -> bool:
         timeout = cfg.timeouts.check_http
     if shutil.which("curl"):
         r = _run_check(
-            ["curl", "-4", "-sk", "--max-time", str(timeout),
-             "-o", os.devnull, "-w", "%{http_code}", url],
+            [
+                "curl",
+                "-4",
+                "-sk",
+                "--max-time",
+                str(timeout),
+                "-o",
+                os.devnull,
+                "-w",
+                "%{http_code}",
+                url,
+            ],
             timeout + 2,
         )
         return r.returncode == 0 and r.stdout.strip() != "000"
@@ -131,7 +157,9 @@ def get_external_ip(url: str, timeout: int | None = None) -> Optional[str]:
     if timeout is None:
         timeout = cfg.timeouts.check_external_ip
     if shutil.which("curl"):
-        r = _run_check(["curl", "-4", "-s", "--max-time", str(timeout), url], timeout + 2)
+        r = _run_check(
+            ["curl", "-4", "-s", "--max-time", str(timeout), url], timeout + 2
+        )
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip()
         return None
@@ -143,6 +171,7 @@ def get_external_ip(url: str, timeout: int | None = None) -> Optional[str]:
 
 
 # --- Check runner ---
+
 
 def _run_one(
     idx: int,
@@ -172,16 +201,27 @@ def _run_one(
     if ok:
         print(f"{ui.GREEN}✅{ui.NC}")
         if logger:
-            logger.log("CHECK", f"[{idx}] {label} ({cmd_hint}) -> OK ({ok_msg})" if cmd_hint else f"[{idx}] {label} -> OK ({ok_msg})")
+            logger.log(
+                "CHECK",
+                f"[{idx}] {label} ({cmd_hint}) -> OK ({ok_msg})"
+                if cmd_hint
+                else f"[{idx}] {label} -> OK ({ok_msg})",
+            )
         return CheckResult(label, "ok", ok_msg)
     else:
         print(f"{ui.RED}❌{ui.NC}")
         if logger:
-            logger.log("CHECK", f"[{idx}] {label} ({cmd_hint}) -> FAIL ({fail_msg})" if cmd_hint else f"[{idx}] {label} -> FAIL ({fail_msg})")
+            logger.log(
+                "CHECK",
+                f"[{idx}] {label} ({cmd_hint}) -> FAIL ({fail_msg})"
+                if cmd_hint
+                else f"[{idx}] {label} -> FAIL ({fail_msg})",
+            )
         return CheckResult(label, "fail", fail_msg)
 
 
 # --- Command hints ---
+
 
 def _ping_hint(host: str) -> str:
     system = platform.system()
@@ -204,6 +244,7 @@ def _fallback_hint(fallback: str, host: str) -> str:
 
 
 # --- Ping with fallback ---
+
 
 def _parse_fallback(fallback: str, host: str) -> tuple[Callable[[], bool], str] | None:
     """Parse fallback spec like 'port:53' or 'dns:some.host'. Returns (fn, label)."""
@@ -242,7 +283,11 @@ def _run_ping_check(
         hint_parts.append(f"-> {fb_cmd_hint}")
     cmd_display = " ".join(hint_parts)
 
-    print(f"   {ui.DIM}[{idx}]{ui.NC} {check_label} {ui.DIM}{cmd_display}{ui.NC} ... ", end="", flush=True)
+    print(
+        f"   {ui.DIM}[{idx}]{ui.NC} {check_label} {ui.DIM}{cmd_display}{ui.NC} ... ",
+        end="",
+        flush=True,
+    )
 
     if not guard:
         print(f"{ui.YELLOW}⏭{ui.NC}")
@@ -271,26 +316,37 @@ def _run_ping_check(
             fb_ok = False
 
         if fb_ok:
-            print(f"{ui.YELLOW}⚠{ui.NC}{ui.GREEN}✅{ui.NC} {ui.DIM}(fallback: {fb_cmd_hint}){ui.NC}")
+            print(
+                f"{ui.YELLOW}⚠{ui.NC}{ui.GREEN}✅{ui.NC} {ui.DIM}(fallback: {fb_cmd_hint}){ui.NC}"
+            )
             detail = f"fallback: {fb_label}"
             if logger:
-                logger.log("CHECK", f"[{idx}] {check_label} ({p_hint} fail -> {fb_cmd_hint}) -> OK")
+                logger.log(
+                    "CHECK",
+                    f"[{idx}] {check_label} ({p_hint} fail -> {fb_cmd_hint}) -> OK",
+                )
             return CheckResult(check_label, "ok", detail)
         else:
             print(f"{ui.RED}❌{ui.NC} {ui.DIM}({p_hint} + {fb_cmd_hint}){ui.NC}")
             detail = f"ping + {fb_label} fail"
             if logger:
-                logger.log("CHECK", f"[{idx}] {check_label} ({p_hint} fail, {fb_cmd_hint} fail) -> FAIL")
+                logger.log(
+                    "CHECK",
+                    f"[{idx}] {check_label} ({p_hint} fail, {fb_cmd_hint} fail) -> FAIL",
+                )
             return CheckResult(check_label, "fail", detail)
 
     # No fallback, plain fail
     print(f"{ui.RED}❌{ui.NC}")
     if logger:
-        logger.log("CHECK", f"[{idx}] {check_label} ({p_hint}) -> FAIL ({t('check.no_ping')})")
+        logger.log(
+            "CHECK", f"[{idx}] {check_label} ({p_hint}) -> FAIL ({t('check.no_ping')})"
+        )
     return CheckResult(check_label, "fail", t("check.no_ping"))
 
 
 # --- Per-tunnel checks ---
+
 
 def run_all_from_tunnels(
     tunnel_checks: list[tuple[str, bool, dict]],
@@ -330,12 +386,18 @@ def run_all_from_tunnels(
             if not host or not port:
                 continue
             idx += 1
-            results.append(_run_one(
-                idx, is_ok, f"{host}:{port}",
-                lambda h=host, p=port: _check_port(h, p),
-                t("check.port_open"), t("check.port_closed"), logger,
-                cmd_hint=f"nc -z {host} {port}",
-            ))
+            results.append(
+                _run_one(
+                    idx,
+                    is_ok,
+                    f"{host}:{port}",
+                    lambda h=host, p=port: _check_port(h, p),
+                    t("check.port_open"),
+                    t("check.port_closed"),
+                    logger,
+                    cmd_hint=f"nc -z {host} {port}",
+                )
+            )
 
         # Ping (with optional fallback)
         for entry in checks_cfg.get("ping", []):
@@ -345,9 +407,16 @@ def run_all_from_tunnels(
             label = entry.get("label", host)
             fallback = entry.get("fallback", "")
             idx += 1
-            results.append(_run_ping_check(
-                idx, is_ok, host, label, fallback, logger,
-            ))
+            results.append(
+                _run_ping_check(
+                    idx,
+                    is_ok,
+                    host,
+                    label,
+                    fallback,
+                    logger,
+                )
+            )
 
         # DNS
         for entry in checks_cfg.get("dns", []):
@@ -356,23 +425,35 @@ def run_all_from_tunnels(
             if not name or not server:
                 continue
             idx += 1
-            results.append(_run_one(
-                idx, is_ok, f"{name} @{server}",
-                lambda n=name, s=server: _check_dns(n, s),
-                t("check.resolves"), t("check.no_resolve"), logger,
-                cmd_hint=f"nslookup {name} {server}",
-            ))
+            results.append(
+                _run_one(
+                    idx,
+                    is_ok,
+                    f"{name} @{server}",
+                    lambda n=name, s=server: _check_dns(n, s),
+                    t("check.resolves"),
+                    t("check.no_resolve"),
+                    logger,
+                    cmd_hint=f"nslookup {name} {server}",
+                )
+            )
 
         # HTTP
         for url in checks_cfg.get("http", []):
             label = url.replace("https://", "").replace("http://", "").rstrip("/")
             idx += 1
-            results.append(_run_one(
-                idx, is_ok, label,
-                lambda u=url: _check_http_any(u),
-                "ok", t("check.timeout"), logger,
-                cmd_hint=f"curl -s {url}",
-            ))
+            results.append(
+                _run_one(
+                    idx,
+                    is_ok,
+                    label,
+                    lambda u=url: _check_http_any(u),
+                    "ok",
+                    t("check.timeout"),
+                    logger,
+                    cmd_hint=f"curl -s {url}",
+                )
+            )
 
         # External IP (special case)
         ext_ip_url = checks_cfg.get("external_ip_url", "")
@@ -380,7 +461,11 @@ def run_all_from_tunnels(
             idx += 1
             ext_hint = f"curl -s {ext_ip_url}"
             ext_label = t("check.external_ip")
-            print(f"   {ui.DIM}[{idx}]{ui.NC} {ext_label} {ui.DIM}{ext_hint}{ui.NC} ... ", end="", flush=True)
+            print(
+                f"   {ui.DIM}[{idx}]{ui.NC} {ext_label} {ui.DIM}{ext_hint}{ui.NC} ... ",
+                end="",
+                flush=True,
+            )
             if is_ok:
                 ext_ip = get_external_ip(ext_ip_url) or ""
                 if ext_ip:
@@ -403,12 +488,16 @@ def run_all_from_tunnels(
         passed = sum(1 for r in results if r.status == "ok")
         failed = sum(1 for r in results if r.status == "fail")
         skipped = sum(1 for r in results if r.status == "skip")
-        logger.log("INFO", f"Checks: passed={passed} failed={failed} skipped={skipped} total={len(results)}")
+        logger.log(
+            "INFO",
+            f"Checks: passed={passed} failed={failed} skipped={skipped} total={len(results)}",
+        )
 
     return results, ext_ip
 
 
 # --- Quiet mode (single animated line) ---
+
 
 def _collect_check_tasks(
     tunnel_checks: list[tuple[str, bool, dict]],
@@ -424,11 +513,14 @@ def _collect_check_tasks(
             host = entry.get("host", "")
             port = entry.get("port", 0)
             if host and port:
-                tasks.append((
-                    f"{host}:{port}",
-                    is_ok, "port",
-                    lambda h=host, p=port: _check_port(h, p),
-                ))
+                tasks.append(
+                    (
+                        f"{host}:{port}",
+                        is_ok,
+                        "port",
+                        lambda h=host, p=port: _check_port(h, p),
+                    )
+                )
 
         for entry in checks_cfg.get("ping", []):
             host = entry.get("host", "")
@@ -458,11 +550,14 @@ def _collect_check_tasks(
             name = entry.get("name", "")
             server = entry.get("server", "")
             if name and server:
-                tasks.append((
-                    f"{name} @{server}",
-                    is_ok, "dns",
-                    lambda n=name, s=server: _check_dns(n, s),
-                ))
+                tasks.append(
+                    (
+                        f"{name} @{server}",
+                        is_ok,
+                        "dns",
+                        lambda n=name, s=server: _check_dns(n, s),
+                    )
+                )
 
         for url in checks_cfg.get("http", []):
             label = url.replace("https://", "").replace("http://", "").rstrip("/")
@@ -470,10 +565,14 @@ def _collect_check_tasks(
 
         ext_ip_url = checks_cfg.get("external_ip_url", "")
         if ext_ip_url:
-            tasks.append((
-                "external-ip", is_ok, "ext_ip",
-                lambda u=ext_ip_url: get_external_ip(u),
-            ))
+            tasks.append(
+                (
+                    "external-ip",
+                    is_ok,
+                    "ext_ip",
+                    lambda u=ext_ip_url: get_external_ip(u),
+                )
+            )
 
     return tasks
 

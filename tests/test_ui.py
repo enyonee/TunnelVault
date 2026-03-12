@@ -9,6 +9,7 @@ from tv import ui
 # Positive: helpers
 # =========================================================================
 
+
 class TestVisibleLen:
     def test_plain_text(self):
         assert ui._visible_len("hello") == 5
@@ -27,6 +28,7 @@ class TestVisibleLen:
 # =========================================================================
 # Positive: summary table
 # =========================================================================
+
 
 class TestPrintSummary:
     def test_renders_without_error(self, capsys):
@@ -70,6 +72,7 @@ class TestPrintSummary:
 # Negative / inverse: edge cases
 # =========================================================================
 
+
 class TestSummaryInverse:
     def test_long_labels_dont_break_box(self, capsys):
         """Очень длинные лейблы не ломают рамку."""
@@ -98,6 +101,7 @@ class TestSummaryInverse:
 # =========================================================================
 # Proto line (plugin display names in logo)
 # =========================================================================
+
 
 class TestBuildProtoLine:
     def test_contains_display_names(self):

@@ -21,12 +21,20 @@ from tv.checks import (
 # Positive: primitives
 # =========================================================================
 
+
 class TestCheckPort:
+    @patch("socket.create_connection")
     @patch("subprocess.run")
-    def test_open_port(self, mock_run):
+    def test_open_port(self, mock_run, mock_sock):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        mock_sock.return_value.__enter__ = lambda s: s
+        mock_sock.return_value.__exit__ = lambda s, *a: None
         assert _check_port("127.0.0.1", 80) is True
 
+    @pytest.mark.skipif(
+        __import__("platform").system() == "Windows",
+        reason="nc not available on Windows",
+    )
     @patch("subprocess.run")
     def test_uses_nc(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
@@ -38,10 +46,13 @@ class TestCheckPort:
 
 
 class TestCheckPing:
-    @pytest.mark.parametrize("platform,flag,absent_flag", [
-        ("Darwin", "-t", "-W"),
-        ("Linux", "-W", "-t"),
-    ])
+    @pytest.mark.parametrize(
+        "platform,flag,absent_flag",
+        [
+            ("Darwin", "-t", "-W"),
+            ("Linux", "-W", "-t"),
+        ],
+    )
     @patch("subprocess.run")
     def test_platform_ping_flag(self, mock_run, platform, flag, absent_flag):
         """Platform-specific ping timeout flag."""
@@ -79,9 +90,11 @@ class TestGetExternalIp:
 # Negative / inverse: check failures
 # =========================================================================
 
+
 class TestCheckPortInverse:
+    @patch("socket.create_connection", side_effect=OSError("refused"))
     @patch("subprocess.run")
-    def test_closed_port(self, mock_run):
+    def test_closed_port(self, mock_run, mock_sock):
         mock_run.return_value = subprocess.CompletedProcess([], 1, "", "")
         assert _check_port("127.0.0.1", 99999) is False
 
@@ -102,11 +115,14 @@ class TestCheckDnsInverse:
 
 
 class TestCheckHttpInverse:
-    @pytest.mark.parametrize("rc,stdout", [
-        (0, "000"),   # curl timeout
-        (7, ""),      # curl connection refused
-        (0, "500"),   # server error (не начинается с 2 или 3)
-    ])
+    @pytest.mark.parametrize(
+        "rc,stdout",
+        [
+            (0, "000"),  # curl timeout
+            (7, ""),  # curl connection refused
+            (0, "500"),  # server error (не начинается с 2 или 3)
+        ],
+    )
     @patch("subprocess.run")
     def test_failure_codes(self, mock_run, rc, stdout):
         mock_run.return_value = subprocess.CompletedProcess([], rc, stdout, "")
@@ -114,10 +130,13 @@ class TestCheckHttpInverse:
 
 
 class TestGetExternalIpInverse:
-    @pytest.mark.parametrize("rc,stdout", [
-        (28, ""),  # curl timeout
-        (0, ""),   # empty response
-    ])
+    @pytest.mark.parametrize(
+        "rc,stdout",
+        [
+            (28, ""),  # curl timeout
+            (0, ""),  # empty response
+        ],
+    )
     @patch("subprocess.run")
     def test_returns_none(self, mock_run, rc, stdout):
         mock_run.return_value = subprocess.CompletedProcess([], rc, stdout, "")
@@ -127,6 +146,7 @@ class TestGetExternalIpInverse:
 # =========================================================================
 # Positive: run_one
 # =========================================================================
+
 
 class TestRunOne:
     def test_ok_result(self, capsys):
@@ -143,6 +163,7 @@ class TestRunOne:
 # Negative / inverse: run_one failures
 # =========================================================================
 
+
 class TestRunOneInverse:
     def test_fail_result(self, capsys):
         r = _run_one(1, True, "test", lambda: False, "ok", "fail_msg", None)
@@ -151,7 +172,7 @@ class TestRunOneInverse:
 
     def test_exception_in_check_is_fail(self, capsys):
         """Исключение в check-функции = fail, не crash."""
-        r = _run_one(1, True, "test", lambda: 1/0, "ok", "error", None)
+        r = _run_one(1, True, "test", lambda: 1 / 0, "ok", "error", None)
         assert r.status == "fail"
 
 
@@ -159,7 +180,7 @@ class TestRunOneInverse:
 # Quiet mode: _collect_check_tasks & run_all_quiet
 # =========================================================================
 
-from tv.checks import _collect_check_tasks, run_all_quiet
+from tv.checks import _collect_check_tasks, run_all_quiet  # noqa: E402
 
 
 class TestCollectCheckTasks:
@@ -231,9 +252,12 @@ class TestRunAllQuiet:
         assert results == []
         assert ext_ip == ""
 
+    @patch("socket.create_connection")
     @patch("subprocess.run")
-    def test_all_pass(self, mock_run, capsys):
+    def test_all_pass(self, mock_run, mock_sock, capsys):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        mock_sock.return_value.__enter__ = lambda s: s
+        mock_sock.return_value.__exit__ = lambda s, *a: None
         checks = {"ports": [{"host": "h", "port": 80}]}
         results, _ = run_all_quiet([("tun", True, checks)])
         assert len(results) == 1
@@ -242,8 +266,9 @@ class TestRunAllQuiet:
         assert "1/1" in err
         assert "passed" in err
 
+    @patch("socket.create_connection", side_effect=OSError("refused"))
     @patch("subprocess.run")
-    def test_fail_shows_failed_count(self, mock_run, capsys):
+    def test_fail_shows_failed_count(self, mock_run, mock_sock, capsys):
         mock_run.return_value = subprocess.CompletedProcess([], 1, "", "")
         checks = {"ports": [{"host": "h", "port": 80}]}
         results, _ = run_all_quiet([("tun", True, checks)])
@@ -269,6 +294,13 @@ class TestRunAllQuiet:
     def test_logger_receives_entries(self):
         log = MagicMock()
         checks = {"ports": [{"host": "h", "port": 80}]}
-        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+        mock_sock = MagicMock()
+        with (
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, "", ""),
+            ),
+            patch("socket.create_connection", return_value=mock_sock),
+        ):
             run_all_quiet([("tun", True, checks)], logger=log)
         log.log.assert_called()

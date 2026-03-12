@@ -39,8 +39,10 @@ class Timeouts:
 
 def _default_temp_dir() -> str:
     import platform
+
     if platform.system() == "Windows":
         import tempfile
+
         return tempfile.gettempdir()
     return "/tmp"
 
@@ -140,7 +142,8 @@ def load(app_dict: dict) -> None:
                 setattr(group, k, v)
             else:
                 warnings.warn(
-                    f"Unknown key in [app.{section_key}]: '{k}'", stacklevel=2,
+                    f"Unknown key in [app.{section_key}]: '{k}'",
+                    stacklevel=2,
                 )
 
 

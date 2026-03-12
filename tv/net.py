@@ -23,7 +23,9 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(cmd, **kwargs)
     except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(args=cmd, returncode=-1, stdout="", stderr="timeout")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=-1, stdout="", stderr="timeout"
+        )
 
 
 class NetManager(ABC):
@@ -49,7 +51,9 @@ class NetManager(ABC):
 
     @abstractmethod
     def setup_dns_resolver(
-        self, domains: list[str], nameservers: list[str],
+        self,
+        domains: list[str],
+        nameservers: list[str],
         interface: str = "",
     ) -> dict[str, bool]: ...
 
@@ -154,6 +158,7 @@ class NetManager(ABC):
 # Darwin (macOS)
 # ---------------------------------------------------------------------------
 
+
 class DarwinNet(NetManager):
     def default_gateway(self) -> Optional[str]:
         r = _run(["route", "-n", "get", "default"])
@@ -200,13 +205,19 @@ class DarwinNet(NetManager):
         return r.returncode == 0
 
     def setup_dns_resolver(
-        self, domains: list[str], nameservers: list[str],
+        self,
+        domains: list[str],
+        nameservers: list[str],
         interface: str = "",
     ) -> dict[str, bool]:
         # macOS uses /etc/resolver/ files - interface is not needed
         resolver_dir = cfg.paths.resolver_dir
         _run(["sudo", "mkdir", "-p", resolver_dir])
-        content = "# tunnelvault\n" + "\n".join(f"nameserver {ns}" for ns in nameservers) + "\n"
+        content = (
+            "# tunnelvault\n"
+            + "\n".join(f"nameserver {ns}" for ns in nameservers)
+            + "\n"
+        )
         results: dict[str, bool] = {}
         for domain in domains:
             r = _run(
@@ -316,6 +327,7 @@ class DarwinNet(NetManager):
 # Linux
 # ---------------------------------------------------------------------------
 
+
 class LinuxNet(NetManager):
     def default_gateway(self) -> Optional[str]:
         r = _run(["ip", "route", "show", "default"])
@@ -358,7 +370,9 @@ class LinuxNet(NetManager):
         return r.returncode == 0
 
     def setup_dns_resolver(
-        self, domains: list[str], nameservers: list[str],
+        self,
+        domains: list[str],
+        nameservers: list[str],
         interface: str = "",
     ) -> dict[str, bool]:
         results: dict[str, bool] = {}
@@ -440,6 +454,7 @@ class LinuxNet(NetManager):
 # Windows
 # ---------------------------------------------------------------------------
 
+
 def _cidr_to_mask(prefix_len: int) -> str:
     """Convert CIDR prefix length to dotted subnet mask (e.g. 24 -> 255.255.255.0)."""
     bits = (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF
@@ -480,7 +495,7 @@ class WindowsNet(NetManager):
                 # Extract adapter name after "adapter "
                 idx = line.find("adapter ")
                 if idx >= 0:
-                    current = line[idx + 8:].rstrip(": \t")
+                    current = line[idx + 8 :].rstrip(": \t")
             elif current and current not in result:
                 # "   IPv4 Address. . . . . . . . . . . : 192.168.1.5"
                 if "IPv4 Address" in line and ":" in line:
@@ -518,14 +533,23 @@ class WindowsNet(NetManager):
         else:
             prefix = target if "/" in target else f"{target}/32"
         # netsh takes interface name directly (no index lookup needed)
-        r = _run([
-            "netsh", "interface", "ipv4", "add", "route",
-            prefix, f"interface={iface}",
-        ])
+        r = _run(
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                prefix,
+                f"interface={iface}",
+            ]
+        )
         return r.returncode == 0
 
     def setup_dns_resolver(
-        self, domains: list[str], nameservers: list[str],
+        self,
+        domains: list[str],
+        nameservers: list[str],
         interface: str = "",
     ) -> dict[str, bool]:
         results: dict[str, bool] = {}
@@ -552,36 +576,48 @@ class WindowsNet(NetManager):
 
     def cleanup_local_dns_resolvers(self) -> list[str]:
         """Remove all NRPT rules created by tunnelvault."""
-        r = _run([
-            "powershell", "-Command",
-            "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
-            "ForEach-Object { $_.Namespace }",
-        ])
+        r = _run(
+            [
+                "powershell",
+                "-Command",
+                "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+                "ForEach-Object { $_.Namespace }",
+            ]
+        )
         if r.returncode != 0 or not r.stdout.strip():
             return []
         zones = [z.lstrip(".") for z in r.stdout.strip().splitlines() if z.strip()]
         if zones:
-            _run([
-                "powershell", "-Command",
-                "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
-                "Remove-DnsClientNrptRule -Force",
-            ])
+            _run(
+                [
+                    "powershell",
+                    "-Command",
+                    "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+                    "Remove-DnsClientNrptRule -Force",
+                ]
+            )
         return zones
 
     def disable_ipv6(self) -> bool:
-        r = _run([
-            "powershell", "-Command",
-            "Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | "
-            "Disable-NetAdapterBinding -ComponentID ms_tcpip6 -Confirm:$false",
-        ])
+        r = _run(
+            [
+                "powershell",
+                "-Command",
+                "Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | "
+                "Disable-NetAdapterBinding -ComponentID ms_tcpip6 -Confirm:$false",
+            ]
+        )
         return r.returncode == 0
 
     def restore_ipv6(self) -> bool:
-        r = _run([
-            "powershell", "-Command",
-            "Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | "
-            "Enable-NetAdapterBinding -ComponentID ms_tcpip6 -Confirm:$false",
-        ])
+        r = _run(
+            [
+                "powershell",
+                "-Command",
+                "Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | "
+                "Enable-NetAdapterBinding -ComponentID ms_tcpip6 -Confirm:$false",
+            ]
+        )
         return r.returncode == 0
 
     def delete_host_route(self, ip: str) -> bool:
@@ -627,6 +663,7 @@ class WindowsNet(NetManager):
 # Factory
 # ---------------------------------------------------------------------------
 
+
 def create() -> NetManager:
     system = platform.system()
     if system == "Darwin":
@@ -635,6 +672,7 @@ def create() -> NetManager:
         return WindowsNet()
     if system != "Linux":
         import warnings
+
         warnings.warn(
             f"Unsupported OS '{system}', using Linux networking as fallback",
             stacklevel=2,

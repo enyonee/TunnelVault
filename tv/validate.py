@@ -50,7 +50,9 @@ def run(defs: dict, script_dir: Path) -> bool:
             plugin_cls = get_plugin(ttype)
             if not plugin_cls.check_binary():
                 binary = plugin_cls.binary or ttype
-                warnings.append(f"{prefix}: {t('validate.binary_not_found', binary=binary)}")
+                warnings.append(
+                    f"{prefix}: {t('validate.binary_not_found', binary=binary)}"
+                )
 
         # config_file
         cf = raw.get("config_file", "")
@@ -60,7 +62,9 @@ def run(defs: dict, script_dir: Path) -> bool:
             else:
                 full = script_dir / cf
                 if not full.exists():
-                    warnings.append(f"{prefix}: {t('validate.config_not_found', cf=cf)}")
+                    warnings.append(
+                        f"{prefix}: {t('validate.config_not_found', cf=cf)}"
+                    )
 
             # Duplicate detection within same type
             by_type = config_files_by_type.setdefault(ttype, {})
@@ -84,7 +88,9 @@ def run(defs: dict, script_dir: Path) -> bool:
             try:
                 ipaddress.ip_network(n, strict=False)
             except ValueError:
-                errors.append(f"{prefix}: routes.networks: {t('validate.invalid_cidr', n=n)}")
+                errors.append(
+                    f"{prefix}: routes.networks: {t('validate.invalid_cidr', n=n)}"
+                )
             else:
                 if "/" not in n:
                     errors.append(
@@ -145,13 +151,17 @@ def run(defs: dict, script_dir: Path) -> bool:
 def _print_results(errors: list[str], warnings: list[str]) -> None:
     """Print validation results."""
     if errors:
-        print(f"  {ui.RED}{ui.BOLD}{t('validate.errors_title', count=len(errors))}{ui.NC}")
+        print(
+            f"  {ui.RED}{ui.BOLD}{t('validate.errors_title', count=len(errors))}{ui.NC}"
+        )
         for e in errors:
             print(f"    {ui.RED}✗{ui.NC} {e}")
         print()
 
     if warnings:
-        print(f"  {ui.YELLOW}{ui.BOLD}{t('validate.warnings_title', count=len(warnings))}{ui.NC}")
+        print(
+            f"  {ui.YELLOW}{ui.BOLD}{t('validate.warnings_title', count=len(warnings))}{ui.NC}"
+        )
         for w in warnings:
             print(f"    {ui.YELLOW}⚠{ui.NC} {w}")
         print()

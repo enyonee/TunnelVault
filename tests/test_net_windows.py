@@ -20,6 +20,7 @@ def win_net():
 # Factory
 # =========================================================================
 
+
 class TestFactory:
     @patch("platform.system", return_value="Windows")
     def test_creates_windows(self, _):
@@ -29,6 +30,7 @@ class TestFactory:
 # =========================================================================
 # _cidr_to_mask helper
 # =========================================================================
+
 
 class TestCidrToMask:
     def test_slash_32(self):
@@ -54,11 +56,13 @@ class TestCidrToMask:
 # Positive: WindowsNet
 # =========================================================================
 
+
 class TestWindowsNet:
     @patch("subprocess.run")
     def test_default_gateway_parses(self, mock_run, win_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "===========================================================================\n"
             "Interface List\n"
             " 12 ...08 00 27 5c 97 41 ...... Intel(R) Adapter\n"
@@ -78,7 +82,8 @@ class TestWindowsNet:
     @patch("subprocess.run")
     def test_interfaces_parses_ipconfig(self, mock_run, win_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "\n"
             "Ethernet adapter Local Area Connection:\n"
             "\n"
@@ -104,7 +109,14 @@ class TestWindowsNet:
         ok = win_net.add_host_route("1.2.3.4", "192.168.1.1")
         assert ok is True
         args = mock_run.call_args[0][0]
-        assert args == ["route", "ADD", "1.2.3.4", "MASK", "255.255.255.255", "192.168.1.1"]
+        assert args == [
+            "route",
+            "ADD",
+            "1.2.3.4",
+            "MASK",
+            "255.255.255.255",
+            "192.168.1.1",
+        ]
 
     @patch("subprocess.run")
     def test_add_net_route(self, mock_run, win_net):
@@ -143,7 +155,8 @@ class TestWindowsNet:
     @patch("subprocess.run")
     def test_route_table(self, mock_run, win_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "IPv4 Route Table\nActive Routes:\n0.0.0.0  0.0.0.0  192.168.1.1\n",
             "",
         )
@@ -188,7 +201,8 @@ class TestWindowsNet:
     @patch("subprocess.run")
     def test_ppp_peer_from_ipconfig(self, mock_run, win_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "\n"
             "PPP adapter VPN:\n"
             "\n"
@@ -218,6 +232,7 @@ class TestWindowsNet:
 # Negative / inverse: WindowsNet failures
 # =========================================================================
 
+
 class TestWindowsNetInverse:
     @patch("subprocess.run")
     def test_no_gateway_returns_none(self, mock_run, win_net):
@@ -228,7 +243,10 @@ class TestWindowsNetInverse:
     def test_gateway_no_active_routes(self, mock_run, win_net):
         """route PRINT succeeds but no 0.0.0.0 route."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, "IPv4 Route Table\nActive Routes:\n127.0.0.0  255.0.0.0  On-link\n", ""
+            [],
+            0,
+            "IPv4 Route Table\nActive Routes:\n127.0.0.0  255.0.0.0  On-link\n",
+            "",
         )
         assert win_net.default_gateway() is None
 
@@ -239,7 +257,9 @@ class TestWindowsNetInverse:
 
     @patch("subprocess.run")
     def test_add_route_fails(self, mock_run, win_net):
-        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "The route addition failed")
+        mock_run.return_value = subprocess.CompletedProcess(
+            [], 1, "", "The route addition failed"
+        )
         assert win_net.add_host_route("1.2.3.4", "192.168.1.1") is False
 
     @patch("subprocess.run")
@@ -262,7 +282,8 @@ class TestWindowsNetInverse:
     @patch("subprocess.run")
     def test_ppp_peer_no_gateway(self, mock_run, win_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "\nPPP adapter VPN:\n\n"
             "   IPv4 Address. . . . . . . . . . . : 10.0.0.2\n"
             "   Default Gateway . . . . . . . . . :\n",
@@ -273,7 +294,8 @@ class TestWindowsNetInverse:
     @patch("subprocess.run")
     def test_ppp_peer_wrong_adapter(self, mock_run, win_net):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "\nEthernet adapter LAN:\n\n"
             "   Default Gateway . . . . . . . . . : 192.168.1.1\n",
             "",
@@ -300,31 +322,38 @@ class TestWindowsNetInverse:
 # resolve_host fallbacks (nslookup + socket)
 # =========================================================================
 
+
 class TestResolveHostFallbacks:
     @patch("shutil.which", return_value=None)
     @patch("socket.getaddrinfo")
     def test_socket_fallback(self, mock_gai, mock_which, win_net):
         """No CLI tools -> socket.getaddrinfo fallback."""
         mock_gai.return_value = [
-            (2, 1, 6, '', ('1.2.3.4', 0)),
-            (2, 1, 6, '', ('5.6.7.8', 0)),
+            (2, 1, 6, "", ("1.2.3.4", 0)),
+            (2, 1, 6, "", ("5.6.7.8", 0)),
         ]
         ips = win_net.resolve_host("test.com")
         assert ips == ["1.2.3.4", "5.6.7.8"]
 
     @patch("shutil.which", return_value=None)
-    @patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known"))
+    @patch(
+        "socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")
+    )
     def test_socket_fallback_fails(self, mock_gai, mock_which, win_net):
         """socket.getaddrinfo fails -> empty list."""
         ips = win_net.resolve_host("nonexistent.invalid")
         assert ips == []
 
-    @patch("shutil.which", side_effect=lambda cmd: "/usr/bin/nslookup" if cmd == "nslookup" else None)
+    @patch(
+        "shutil.which",
+        side_effect=lambda cmd: "/usr/bin/nslookup" if cmd == "nslookup" else None,
+    )
     @patch("subprocess.run")
     def test_nslookup_fallback(self, mock_run, mock_which, win_net):
         """nslookup available -> parse output."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "Server:  dns.local\nAddress:  10.0.0.1\n\n"
             "Name:    test.com\nAddress:  1.2.3.4\n",
             "",
@@ -332,7 +361,10 @@ class TestResolveHostFallbacks:
         ips = win_net.resolve_host("test.com")
         assert ips == ["1.2.3.4"]
 
-    @patch("shutil.which", side_effect=lambda cmd: "/usr/bin/nslookup" if cmd == "nslookup" else None)
+    @patch(
+        "shutil.which",
+        side_effect=lambda cmd: "/usr/bin/nslookup" if cmd == "nslookup" else None,
+    )
     @patch("subprocess.run")
     def test_nslookup_no_answer(self, mock_run, mock_which, win_net):
         """nslookup fails -> falls through to socket."""

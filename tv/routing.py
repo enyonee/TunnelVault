@@ -58,7 +58,10 @@ def validate_target(target: str) -> tuple[str, str]:
         return "host", ""
 
     # Bare hostname - basic validation
-    if re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$", target):
+    if re.match(
+        r"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$",
+        target,
+    ):
         return "hostname", ""
 
     return "", t("routing.unrecognized", target=target)

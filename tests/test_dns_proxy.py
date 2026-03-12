@@ -14,6 +14,7 @@ from tv.dns_proxy import BypassDNSProxy
 # Fixtures
 # =========================================================================
 
+
 @pytest.fixture
 def proxy(mock_net, logger):
     """BypassDNSProxy with mocked deps, not started."""
@@ -50,6 +51,7 @@ def _make_dns_query(qname: str) -> bytes:
 # Lifecycle
 # =========================================================================
 
+
 class TestLifecycle:
     def test_start_and_stop_no_crash(self, proxy):
         """Proxy starts and stops without errors."""
@@ -80,6 +82,7 @@ class TestLifecycle:
 # =========================================================================
 # Suffix matching
 # =========================================================================
+
 
 class TestSuffixMatching:
     def test_matches_exact_tld(self, proxy):
@@ -119,6 +122,7 @@ class TestSuffixMatching:
 # Route injection
 # =========================================================================
 
+
 class TestRouteInjection:
     def test_inject_route_adds_to_set(self, proxy, mock_net):
         """Injecting a route tracks the IP."""
@@ -152,6 +156,7 @@ class TestRouteInjection:
 # =========================================================================
 # Handle + forward
 # =========================================================================
+
 
 class TestHandle:
     def test_handle_matching_query_injects_route(self, proxy, mock_net):

@@ -48,9 +48,11 @@ def init(lang: str = "") -> None:
     code = lang.strip().lower() if lang else _detect_locale()
     if code == "ru":
         from tv.lang import ru
+
         _strings = ru.STRINGS
     else:
         from tv.lang import en
+
         _strings = en.STRINGS
     _current_lang = code
 

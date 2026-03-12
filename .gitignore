@@ -7,6 +7,7 @@ defaults.toml
 
 # VPN configs (contain keys/certs)
 *.ovpn
+!k8s/test-vpn/pki/client.ovpn
 piklema.json
 
 # Legacy bash scripts (contain hardcoded infrastructure)

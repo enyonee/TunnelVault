@@ -13,13 +13,17 @@ from tv import proc
 # Windows: find_pids via PowerShell (primary) + wmic (fallback)
 # =========================================================================
 
+
 class TestFindPidsWindows:
     @patch("tv.proc.IS_WINDOWS", True)
     @patch("subprocess.run")
     def test_finds_pids_via_powershell(self, mock_run):
         """PowerShell Get-CimInstance is tried first."""
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, "1234\n5678\n", "",
+            [],
+            0,
+            "1234\n5678\n",
+            "",
         )
         pids = proc.find_pids("openvpn")
         assert 1234 in pids
@@ -37,7 +41,8 @@ class TestFindPidsWindows:
             subprocess.CompletedProcess([], 1, "", "error"),
             # wmic succeeds
             subprocess.CompletedProcess(
-                [], 0,
+                [],
+                0,
                 "\r\nProcessId=1234\r\n\r\nProcessId=5678\r\n\r\n",
                 "",
             ),
@@ -55,7 +60,10 @@ class TestFindPidsWindows:
         mock_run.side_effect = [
             subprocess.TimeoutExpired(cmd="powershell", timeout=5),
             subprocess.CompletedProcess(
-                [], 0, "\r\nProcessId=9999\r\n", "",
+                [],
+                0,
+                "\r\nProcessId=9999\r\n",
+                "",
             ),
         ]
         pids = proc.find_pids("openvpn")
@@ -65,9 +73,13 @@ class TestFindPidsWindows:
     @patch("subprocess.run")
     def test_filters_own_pid(self, mock_run):
         import os
+
         own = os.getpid()
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0, f"{own}\n9999\n", "",
+            [],
+            0,
+            f"{own}\n9999\n",
+            "",
         )
         pids = proc.find_pids("python")
         assert own not in pids
@@ -102,6 +114,7 @@ class TestFindPidsWindows:
 # Windows: kill_pattern via taskkill
 # =========================================================================
 
+
 class TestKillPatternWindows:
     @patch("tv.proc.IS_WINDOWS", True)
     @patch("tv.proc.find_pids", return_value=[1234, 5678])
@@ -134,6 +147,7 @@ class TestKillPatternWindows:
 # Windows: killall via taskkill /IM
 # =========================================================================
 
+
 class TestKillallWindows:
     @patch("tv.proc.IS_WINDOWS", True)
     @patch("subprocess.run")
@@ -147,6 +161,7 @@ class TestKillallWindows:
 # =========================================================================
 # Windows: kill_by_pid via taskkill /PID
 # =========================================================================
+
 
 class TestKillByPidWindows:
     @patch("tv.proc.IS_WINDOWS", True)
@@ -169,12 +184,14 @@ class TestKillByPidWindows:
 # Windows: is_alive via tasklist
 # =========================================================================
 
+
 class TestIsAliveWindows:
     @patch("tv.proc.IS_WINDOWS", True)
     @patch("subprocess.run")
     def test_alive_process(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "Image Name                     PID Session Name\n"
             "========================= ======== ===============\n"
             "python.exe                    1234 Console\n",
@@ -186,7 +203,8 @@ class TestIsAliveWindows:
     @patch("subprocess.run")
     def test_dead_process(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
-            [], 0,
+            [],
+            0,
             "INFO: No tasks are running which match the specified criteria.\n",
             "",
         )
@@ -202,6 +220,7 @@ class TestIsAliveWindows:
 # =========================================================================
 # Windows: sudo skipped in run/run_background
 # =========================================================================
+
 
 class TestSudoSkipWindows:
     @patch("tv.proc.IS_WINDOWS", True)

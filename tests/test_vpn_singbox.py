@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import contextlib
+import platform
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from tv.vpn.base import TunnelConfig
 from tv.vpn.singbox import SingBoxPlugin
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows", reason="sing-box plugin is Unix-only"
+)
 
 
 @contextlib.contextmanager
@@ -62,6 +67,7 @@ def plugin(singbox_cfg, mock_net, logger, tmp_dir):
 # Meta
 # =========================================================================
 
+
 class TestMeta:
     def test_process_name(self, plugin):
         assert plugin.process_name == "sing-box"
@@ -71,12 +77,14 @@ class TestMeta:
 
     def test_registered(self):
         from tv.vpn.registry import get_plugin
+
         assert get_plugin("singbox") is SingBoxPlugin
 
 
 # =========================================================================
 # Positive: successful connection
 # =========================================================================
+
 
 class TestConnectSuccess:
     def test_normal_connection(self, plugin):
@@ -104,7 +112,9 @@ class TestConnectSuccess:
             plugin.connect()
 
         plugin.net.setup_dns_resolver.assert_called_once_with(
-            ["alpha.local"], ["10.0.1.1"], "utun99",
+            ["alpha.local"],
+            ["10.0.1.1"],
+            "utun99",
         )
 
     def test_no_dns_when_not_configured(self, plugin):
@@ -127,6 +137,7 @@ class TestConnectSuccess:
 # =========================================================================
 # Negative / inverse: connection failures
 # =========================================================================
+
 
 class TestConnectFailure:
     def test_interface_timeout(self, plugin, capsys):
@@ -168,6 +179,7 @@ class TestConnectFailure:
 # Disconnect
 # =========================================================================
 
+
 class TestDisconnect:
     def test_disconnect_by_pid(self, plugin):
         """With PID set, disconnect kills by PID first."""
@@ -194,9 +206,11 @@ class TestDisconnect:
     def test_disconnect_pid_timeout_warns_and_falls_through(self, plugin):
         """PID kill timeout -> warning logged + pattern fallback."""
         plugin._pid = 5555
-        with patch("tv.vpn.base.proc") as base_proc, \
-             patch("tv.vpn.base.time.sleep"), \
-             patch("tv.vpn.singbox.proc") as sb_proc:
+        with (
+            patch("tv.vpn.base.proc") as base_proc,
+            patch("tv.vpn.base.time.sleep"),
+            patch("tv.vpn.singbox.proc") as sb_proc,
+        ):
             base_proc.is_alive.return_value = True  # never dies
             base_proc.kill_by_pid.return_value = True
 
@@ -225,6 +239,7 @@ class TestDisconnect:
 # =========================================================================
 # Resolved defaults: connect uses cfg directly
 # =========================================================================
+
 
 class TestResolvedDefaults:
     def test_connect_uses_resolved_interface(self, plugin):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import platform
+
 from tv import validate
 
 
@@ -58,17 +60,23 @@ class TestValidate:
                 },
             },
         }
-        result = validate.run(defs, tmp_dir)
+        validate.run(defs, tmp_dir)
         out = capsys.readouterr().out
         # Missing file is a warning, not error
         assert "nonexistent.ovpn" in out
 
     def test_absolute_config_file(self, tmp_dir, capsys):
+        # Use platform-appropriate absolute path
+        abs_path = (
+            "C:\\openvpn\\client.ovpn"
+            if platform.system() == "Windows"
+            else "/etc/openvpn/client.ovpn"
+        )
         defs = {
             "tunnels": {
                 "vpn1": {
                     "type": "openvpn",
-                    "config_file": "/etc/openvpn/client.ovpn",
+                    "config_file": abs_path,
                 },
             },
         }
@@ -127,7 +135,7 @@ class TestValidate:
 
     def test_empty_tunnels(self, tmp_dir, capsys):
         defs = {"tunnels": {}}
-        result = validate.run(defs, tmp_dir)
+        validate.run(defs, tmp_dir)
         out = capsys.readouterr().out
         assert "No [tunnels.*]" in out
 

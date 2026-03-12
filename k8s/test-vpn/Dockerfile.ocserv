@@ -1,0 +1,38 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache ocserv gnutls-utils
+
+# Pre-generated test certs
+COPY k8s/test-vpn/pki/ocserv-ca.pem /etc/ocserv/ca.pem
+COPY k8s/test-vpn/pki/ocserv-ca-key.pem /etc/ocserv/ca-key.pem
+COPY k8s/test-vpn/pki/ocserv-server.pem /etc/ocserv/server.pem
+COPY k8s/test-vpn/pki/ocserv-server-key.pem /etc/ocserv/server-key.pem
+
+# NS_PLACEHOLDER replaced by sed at deploy time
+RUN cat > /etc/ocserv/ocserv.conf <<'CONF'
+auth = "plain[passwd=/etc/ocserv/passwd]"
+tcp-port = 4443
+run-as-user = nobody
+run-as-group = nogroup
+socket-file = /var/run/ocserv-socket
+server-cert = /etc/ocserv/server.pem
+server-key = /etc/ocserv/server-key.pem
+ca-cert = /etc/ocserv/ca.pem
+isolate-workers = false
+max-clients = 4
+max-same-clients = 2
+try-mtu-discovery = false
+cisco-client-compat = true
+dtls-legacy = true
+device = vpns
+default-domain = test.local
+ipv4-network = 10.9.0.0/24
+dns = 10.9.0.1
+route = 10.99.0.0/255.255.255.0
+no-route = 0.0.0.0/128.0.0.0
+no-route = 128.0.0.0/128.0.0.0
+CONF
+
+RUN echo "testuser:testpass" > /etc/ocserv/passwd
+
+CMD ["ocserv", "-f", "-c", "/etc/ocserv/ocserv.conf"]

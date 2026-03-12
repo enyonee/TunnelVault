@@ -14,9 +14,11 @@ from tv.net import NetManager
 @pytest.fixture(autouse=True)
 def _pin_locale_and_reset():
     from tv import i18n
+
     i18n.init("en")
     yield
     from tv.app_config import reset
+
     reset()
     i18n.reset()
 
@@ -25,6 +27,7 @@ def _pin_locale_and_reset():
 def _assume_binaries_installed(monkeypatch):
     """Default: all VPN binaries available. Override in specific tests."""
     from tv.vpn.base import TunnelPlugin
+
     monkeypatch.setattr(TunnelPlugin, "check_binary", classmethod(lambda cls: True))
 
 

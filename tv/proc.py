@@ -100,11 +100,17 @@ def find_pids(pattern: str) -> list[int]:
         # Try PowerShell Get-CimInstance first (WMIC deprecated in Win 11)
         try:
             r = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 f"Get-CimInstance Win32_Process | "
-                 f"Where-Object {{ $_.CommandLine -like '*{pattern}*' }} | "
-                 f"Select-Object -ExpandProperty ProcessId"],
-                capture_output=True, text=True, timeout=cfg.timeouts.process,
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"Get-CimInstance Win32_Process | "
+                    f"Where-Object {{ $_.CommandLine -like '*{pattern}*' }} | "
+                    f"Select-Object -ExpandProperty ProcessId",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=cfg.timeouts.process,
             )
             if r.returncode == 0 and r.stdout.strip():
                 pids = []
@@ -126,10 +132,18 @@ def find_pids(pattern: str) -> list[int]:
         # Fallback: WMIC (still works on older Windows)
         try:
             r = subprocess.run(
-                ["wmic", "process", "where",
-                 f"CommandLine like '%{pattern}%'",
-                 "get", "ProcessId", "/format:list"],
-                capture_output=True, text=True, timeout=cfg.timeouts.process,
+                [
+                    "wmic",
+                    "process",
+                    "where",
+                    f"CommandLine like '%{pattern}%'",
+                    "get",
+                    "ProcessId",
+                    "/format:list",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=cfg.timeouts.process,
             )
         except (OSError, subprocess.TimeoutExpired):
             return []
@@ -149,7 +163,9 @@ def find_pids(pattern: str) -> list[int]:
 
     r = subprocess.run(
         ["pgrep", "-f", pattern],
-        capture_output=True, text=True, timeout=cfg.timeouts.process,
+        capture_output=True,
+        text=True,
+        timeout=cfg.timeouts.process,
     )
     if r.returncode == 0 and r.stdout.strip():
         pids = []
@@ -178,7 +194,8 @@ def kill_pattern(pattern: str, sudo: bool = False) -> None:
         for pid in pids:
             subprocess.run(
                 ["taskkill", "/F", "/PID", str(pid)],
-                capture_output=True, timeout=cfg.timeouts.process,
+                capture_output=True,
+                timeout=cfg.timeouts.process,
             )
         return
 
@@ -218,7 +235,9 @@ def is_alive(pid: int) -> bool:
         # os.kill(pid, 0) on Windows only works for own processes
         r = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return r.returncode == 0 and str(pid) in r.stdout
     try:

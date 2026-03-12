@@ -28,13 +28,13 @@ def openvpn_project(tmp_path: Path, openvpn_client_config: Path) -> Path:
     dst.write_text(openvpn_client_config.read_text())
 
     (tmp_path / "defaults.toml").write_text(
-        '[tunnels.openvpn]\n'
+        "[tunnels.openvpn]\n"
         'type = "openvpn"\n'
-        'order = 1\n'
+        "order = 1\n"
         'config_file = "client.ovpn"\n'
         f'log = "{tmp_path}/openvpn.log"\n'
-        '\n'
-        '[tunnels.openvpn.checks]\n'
+        "\n"
+        "[tunnels.openvpn.checks]\n"
         'ping = [{host = "10.8.0.1"}]\n'
     )
 
@@ -46,22 +46,24 @@ def openvpn_project(tmp_path: Path, openvpn_client_config: Path) -> Path:
 
 @pytest.fixture
 def singbox_project(
-    tmp_path: Path, singbox_client_config: Path,
-    singbox_server: str, singbox_ss_port: str
+    tmp_path: Path,
+    singbox_client_config: Path,
+    singbox_server: str,
+    singbox_ss_port: str,
 ) -> Path:
     """Project dir with defaults.toml for sing-box tunnel."""
     dst = tmp_path / "singbox-client.json"
     dst.write_text(singbox_client_config.read_text())
 
     (tmp_path / "defaults.toml").write_text(
-        '[tunnels.singbox]\n'
+        "[tunnels.singbox]\n"
         'type = "singbox"\n'
-        'order = 1\n'
+        "order = 1\n"
         'config_file = "singbox-client.json"\n'
         'interface = "tun-test"\n'
         f'log = "{tmp_path}/singbox.log"\n'
-        '\n'
-        '[tunnels.singbox.checks]\n'
+        "\n"
+        "[tunnels.singbox.checks]\n"
         f'ports = [{{host = "{singbox_server}", port = {singbox_ss_port}}}]\n'
     )
 
@@ -78,9 +80,10 @@ class TestEngineOpenVPN:
         self, openvpn_project: Path, real_net: NetManager, test_logger: Logger
     ):
         """Engine can prepare, connect OpenVPN, and disconnect cleanly."""
-        import tomli
+        import tomllib
+
         with open(openvpn_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(openvpn_project, defs, net=real_net, log=test_logger)
 
@@ -101,7 +104,9 @@ class TestEngineOpenVPN:
         ifaces_after = set(real_net.interfaces().keys())
         new_ifaces = ifaces_after - ifaces_before
         tun_ifaces = [i for i in new_ifaces if i.startswith(("tun", "utun"))]
-        assert len(tun_ifaces) > 0, f"No tun interface after connect. Ifaces: {ifaces_after}"
+        assert len(tun_ifaces) > 0, (
+            f"No tun interface after connect. Ifaces: {ifaces_after}"
+        )
 
         # Disconnect
         engine.disconnect_all()
@@ -109,16 +114,19 @@ class TestEngineOpenVPN:
 
         # Verify cleanup
         ifaces_final = set(real_net.interfaces().keys())
-        leftover = [i for i in (ifaces_final - ifaces_before) if i.startswith(("tun", "utun"))]
+        leftover = [
+            i for i in (ifaces_final - ifaces_before) if i.startswith(("tun", "utun"))
+        ]
         assert len(leftover) == 0, f"Leftover tun interfaces: {leftover}"
 
     def test_check_after_connect(
         self, openvpn_project: Path, real_net: NetManager, test_logger: Logger
     ):
         """Health checks pass after successful OpenVPN connection."""
-        import tomli
+        import tomllib
+
         with open(openvpn_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(openvpn_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
@@ -144,9 +152,10 @@ class TestEngineSingBox:
         self, singbox_project: Path, real_net: NetManager, test_logger: Logger
     ):
         """Engine can prepare, connect sing-box, and disconnect cleanly."""
-        import tomli
+        import tomllib
+
         with open(singbox_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(singbox_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
@@ -158,7 +167,9 @@ class TestEngineSingBox:
 
         ifaces_after = set(real_net.interfaces().keys())
         new_ifaces = ifaces_after - ifaces_before
-        assert len(new_ifaces) > 0, f"No new interface after connect. Ifaces: {ifaces_after}"
+        assert len(new_ifaces) > 0, (
+            f"No new interface after connect. Ifaces: {ifaces_after}"
+        )
 
         engine.disconnect_all()
         time.sleep(1)

@@ -37,6 +37,7 @@ def plugin(forti_cfg, mock_net, logger, tmp_dir):
 # Windows: unsupported - early return
 # =========================================================================
 
+
 class TestWindowsUnsupported:
     @patch("tv.vpn.fortivpn.IS_WINDOWS", True)
     def test_returns_fail_on_windows(self, plugin):
@@ -74,6 +75,7 @@ class TestWindowsUnsupported:
 # Ping warmup: Windows uses -n and -w (milliseconds)
 # =========================================================================
 
+
 class TestWindowsPing:
     def _connect_with_ping(self, plugin, platform_name):
         """Helper: run connect with managed mode (DNS configured) on a given platform."""
@@ -99,12 +101,15 @@ class TestWindowsPing:
 
         mock_popen = MagicMock()
         mock_popen.pid = 9999
-        with patch("tv.vpn.fortivpn.os.open", return_value=99), \
-             patch("tv.vpn.fortivpn.os.write"), \
-             patch("tv.vpn.fortivpn.os.close"), \
-             patch("tv.vpn.fortivpn.os.unlink"), \
-             patch("tv.vpn.fortivpn.proc") as mock_proc, \
-             patch("tv.vpn.fortivpn.platform.system", return_value=platform_name):
+        with (
+            patch("tv.vpn.fortivpn.os.open", return_value=99),
+            patch("tv.vpn.fortivpn.os.write"),
+            patch("tv.vpn.fortivpn.os.close"),
+            patch("tv.vpn.fortivpn.os.unlink"),
+            patch("tv.vpn.fortivpn.proc") as mock_proc,
+            patch("tv.vpn.fortivpn.IS_WINDOWS", False),
+            patch("tv.vpn.fortivpn.platform.system", return_value=platform_name),
+        ):
             mock_proc.run_background.return_value = mock_popen
             mock_proc.wait_for.side_effect = lambda desc, fn, *a, **kw: fn() or fn()
             plugin.connect()
@@ -114,8 +119,7 @@ class TestWindowsPing:
         """On Windows, ping uses -n (count) and -w (timeout in ms)."""
         mock_proc = self._connect_with_ping(plugin, "Windows")
         ping_calls = [
-            c for c in mock_proc.run_background.call_args_list
-            if c[0][0][0] == "ping"
+            c for c in mock_proc.run_background.call_args_list if c[0][0][0] == "ping"
         ]
         assert len(ping_calls) == 1
         ping_cmd = ping_calls[0][0][0]
@@ -131,8 +135,7 @@ class TestWindowsPing:
         """On Darwin, ping uses -c (count) and -t (timeout in seconds)."""
         mock_proc = self._connect_with_ping(plugin, "Darwin")
         ping_calls = [
-            c for c in mock_proc.run_background.call_args_list
-            if c[0][0][0] == "ping"
+            c for c in mock_proc.run_background.call_args_list if c[0][0][0] == "ping"
         ]
         assert len(ping_calls) == 1
         ping_cmd = ping_calls[0][0][0]
@@ -144,8 +147,7 @@ class TestWindowsPing:
         """On Linux, ping uses -c (count) and -W (timeout in seconds)."""
         mock_proc = self._connect_with_ping(plugin, "Linux")
         ping_calls = [
-            c for c in mock_proc.run_background.call_args_list
-            if c[0][0][0] == "ping"
+            c for c in mock_proc.run_background.call_args_list if c[0][0][0] == "ping"
         ]
         assert len(ping_calls) == 1
         ping_cmd = ping_calls[0][0][0]
@@ -158,10 +160,12 @@ class TestWindowsPing:
 # kill_patterns uses dynamic temp_dir
 # =========================================================================
 
+
 class TestKillPatterns:
     def test_kill_patterns_use_cfg_temp_dir(self):
         """kill_patterns should reference cfg.paths.temp_dir, not hardcoded /tmp."""
         from tv.app_config import cfg
+
         pattern = FortiVPNPlugin.kill_patterns[0]
         assert cfg.paths.temp_dir in pattern
         assert "openfortivpn" in pattern

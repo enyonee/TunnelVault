@@ -27,6 +27,7 @@ class TestShowProcesses:
 
 
 class TestShowInterfaces:
+    @patch("tv.status.IS_WINDOWS", False)
     def test_tunnel_interfaces(self, mock_net, capsys):
         mock_net.interfaces.return_value = {
             "en0": "192.168.1.5",
@@ -40,6 +41,7 @@ class TestShowInterfaces:
         assert "ppp0" in out
         assert "en0" not in out  # not a tunnel interface
 
+    @patch("tv.status.IS_WINDOWS", False)
     def test_no_tunnel_interfaces(self, mock_net, capsys):
         mock_net.interfaces.return_value = {"en0": "192.168.1.5"}
         status._show_interfaces(mock_net)
@@ -48,6 +50,7 @@ class TestShowInterfaces:
 
 
 class TestShowResolvers:
+    @patch("tv.status.IS_WINDOWS", False)
     def test_resolver_files_found(self, tmp_path, capsys):
         resolver_dir = tmp_path / "resolver"
         resolver_dir.mkdir()
@@ -61,6 +64,7 @@ class TestShowResolvers:
         assert "test.local" in out
         assert "10.0.0.1" in out
 
+    @patch("tv.status.IS_WINDOWS", False)
     def test_no_resolver_files(self, tmp_path, capsys):
         resolver_dir = tmp_path / "resolver"
         resolver_dir.mkdir()
@@ -72,6 +76,7 @@ class TestShowResolvers:
         out = capsys.readouterr().out
         assert "no tunnelvault resolver" in out
 
+    @patch("tv.status.IS_WINDOWS", False)
     def test_resolver_dir_missing(self, tmp_path, capsys):
         with patch("tv.status.cfg") as mock_cfg:
             mock_cfg.paths.resolver_dir = str(tmp_path / "nonexistent")
@@ -80,6 +85,7 @@ class TestShowResolvers:
         out = capsys.readouterr().out
         assert "does not exist" in out
 
+    @patch("tv.status.IS_WINDOWS", False)
     def test_non_tunnelvault_files_ignored(self, tmp_path, capsys):
         resolver_dir = tmp_path / "resolver"
         resolver_dir.mkdir()
@@ -123,8 +129,10 @@ class TestShowExternalIp:
 
 class TestRun:
     def test_full_run(self, mock_net, capsys):
-        with patch("tv.status.proc") as mock_proc, \
-             patch("tv.status.get_external_ip", return_value="5.5.5.5"):
+        with (
+            patch("tv.status.proc") as mock_proc,
+            patch("tv.status.get_external_ip", return_value="5.5.5.5"),
+        ):
             mock_proc.find_pids.return_value = []
             mock_net.interfaces.return_value = {"en0": "192.168.1.5"}
             status.run(net=mock_net)
@@ -136,9 +144,11 @@ class TestRun:
         mock_net_instance = MagicMock()
         mock_net_instance.interfaces.return_value = {}
         mock_net_instance.default_gateway.return_value = None
-        with patch("tv.net.create", return_value=mock_net_instance), \
-             patch("tv.status.proc") as mock_proc, \
-             patch("tv.status.get_external_ip", return_value=None):
+        with (
+            patch("tv.net.create", return_value=mock_net_instance),
+            patch("tv.status.proc") as mock_proc,
+            patch("tv.status.get_external_ip", return_value=None),
+        ):
             mock_proc.find_pids.return_value = []
             status.run()
 

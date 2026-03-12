@@ -28,7 +28,8 @@ class TestSingBoxConnect:
 
         proc = subprocess.Popen(
             ["sing-box", "run", "-c", str(singbox_client_config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -58,7 +59,8 @@ class TestSingBoxConnect:
 
         proc = subprocess.Popen(
             ["sing-box", "run", "-c", str(singbox_client_config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         for _ in range(20):
@@ -75,13 +77,12 @@ class TestSingBoxConnect:
         new_ifaces = ifaces_after - ifaces_before
         assert len(new_ifaces) == 0, f"Leftover interfaces: {new_ifaces}"
 
-    def test_proxy_connectivity(
-        self, singbox_server: str, singbox_ss_port: str
-    ):
+    def test_proxy_connectivity(self, singbox_server: str, singbox_ss_port: str):
         """sing-box server responds on Shadowsocks port."""
         result = subprocess.run(
             ["nc", "-z", "-w", "3", singbox_server, singbox_ss_port],
-            capture_output=True, timeout=5,
+            capture_output=True,
+            timeout=5,
         )
         assert result.returncode == 0, (
             f"Cannot connect to sing-box SS port {singbox_server}:{singbox_ss_port}"

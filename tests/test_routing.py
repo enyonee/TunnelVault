@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from tv.routing import parse_targets, merge_targets_into_config, validate_target, ParsedTargets
+from tv.routing import (
+    parse_targets,
+    merge_targets_into_config,
+    validate_target,
+    ParsedTargets,
+)
 from tv.vpn.base import TunnelConfig
 
 
@@ -12,21 +17,40 @@ from tv.vpn.base import TunnelConfig
 # parse_targets
 # =========================================================================
 
+
 class TestParseTargets:
-    @pytest.mark.parametrize("inputs,domains,networks,hosts", [
-        (["*.alpha.local"], ["alpha.local"], [], []),
-        (["10.0.0.0/8"], [], ["10.0.0.0/8"], []),
-        (["192.168.1.1"], [], [], ["192.168.1.1"]),
-        (["git.test.local"], [], [], ["git.test.local"]),
-        ([], [], [], []),
-        (["  *.alpha.local  ", "  10.0.0.0/8  "], ["alpha.local"], ["10.0.0.0/8"], []),
-        (["", "  ", "10.0.0.0/8"], [], ["10.0.0.0/8"], []),
-        (["999.999.999.999/99"], [], [], []),
-        (["*.a.local", "*.b.local", "*.c.local"], ["a.local", "b.local", "c.local"], [], []),
-        (["10.0.0.1/8"], [], ["10.0.0.1/8"], []),
-        (["999.999.999.999"], [], [], []),
-        (["999.0.0.1", "10.0.0.1", "*.alpha.local"], ["alpha.local"], [], ["10.0.0.1"]),
-    ])
+    @pytest.mark.parametrize(
+        "inputs,domains,networks,hosts",
+        [
+            (["*.alpha.local"], ["alpha.local"], [], []),
+            (["10.0.0.0/8"], [], ["10.0.0.0/8"], []),
+            (["192.168.1.1"], [], [], ["192.168.1.1"]),
+            (["git.test.local"], [], [], ["git.test.local"]),
+            ([], [], [], []),
+            (
+                ["  *.alpha.local  ", "  10.0.0.0/8  "],
+                ["alpha.local"],
+                ["10.0.0.0/8"],
+                [],
+            ),
+            (["", "  ", "10.0.0.0/8"], [], ["10.0.0.0/8"], []),
+            (["999.999.999.999/99"], [], [], []),
+            (
+                ["*.a.local", "*.b.local", "*.c.local"],
+                ["a.local", "b.local", "c.local"],
+                [],
+                [],
+            ),
+            (["10.0.0.1/8"], [], ["10.0.0.1/8"], []),
+            (["999.999.999.999"], [], [], []),
+            (
+                ["999.0.0.1", "10.0.0.1", "*.alpha.local"],
+                ["alpha.local"],
+                [],
+                ["10.0.0.1"],
+            ),
+        ],
+    )
     def test_parse(self, inputs, domains, networks, hosts):
         result = parse_targets(inputs)
         assert result.domains == domains
@@ -34,13 +58,15 @@ class TestParseTargets:
         assert result.hosts == hosts
 
     def test_mixed_input(self):
-        result = parse_targets([
-            "*.asup.local",
-            "10.0.0.0/8",
-            "192.168.77.0/24",
-            "192.168.1.1",
-            "git.test.local",
-        ])
+        result = parse_targets(
+            [
+                "*.asup.local",
+                "10.0.0.0/8",
+                "192.168.77.0/24",
+                "192.168.1.1",
+                "git.test.local",
+            ]
+        )
         assert result.domains == ["asup.local"]
         assert result.networks == ["10.0.0.0/8", "192.168.77.0/24"]
         assert result.hosts == ["192.168.1.1", "git.test.local"]
@@ -50,20 +76,24 @@ class TestParseTargets:
 # validate_target
 # =========================================================================
 
+
 class TestValidateTarget:
-    @pytest.mark.parametrize("target,expected_kind,err_contains", [
-        ("10.0.0.0/8", "network", ""),
-        ("192.168.1.1", "host", ""),
-        ("*.alpha.local", "domain", ""),
-        ("git.test.local", "hostname", ""),
-        ("999.999.999.999/99", "", "invalid CIDR"),
-        ("999.0.0.1", "", "invalid IP"),
-        ("*.localhost", "", "must contain a dot"),
-        ("!!!not-valid!!!", "", "unrecognized format"),
-        ("", "", ""),
-        ("  10.0.0.0/8  ", "network", ""),
-        ("myserver", "hostname", ""),
-    ])
+    @pytest.mark.parametrize(
+        "target,expected_kind,err_contains",
+        [
+            ("10.0.0.0/8", "network", ""),
+            ("192.168.1.1", "host", ""),
+            ("*.alpha.local", "domain", ""),
+            ("git.test.local", "hostname", ""),
+            ("999.999.999.999/99", "", "invalid CIDR"),
+            ("999.0.0.1", "", "invalid IP"),
+            ("*.localhost", "", "must contain a dot"),
+            ("!!!not-valid!!!", "", "unrecognized format"),
+            ("", "", ""),
+            ("  10.0.0.0/8  ", "network", ""),
+            ("myserver", "hostname", ""),
+        ],
+    )
     def test_validate(self, target, expected_kind, err_contains):
         kind, err = validate_target(target)
         assert kind == expected_kind
@@ -76,6 +106,7 @@ class TestValidateTarget:
 # =========================================================================
 # merge_targets_into_config
 # =========================================================================
+
 
 class TestMergeTargets:
     def test_merge_into_empty(self):

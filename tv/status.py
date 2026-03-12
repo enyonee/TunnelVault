@@ -63,11 +63,17 @@ def _show_resolvers() -> None:
     if IS_WINDOWS:
         # Show NRPT rules created by tunnelvault
         import subprocess
+
         r = subprocess.run(
-            ["powershell", "-Command",
-             "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
-             "Format-Table Namespace, NameServers -AutoSize"],
-            capture_output=True, text=True, timeout=10,
+            [
+                "powershell",
+                "-Command",
+                "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+                "Format-Table Namespace, NameServers -AutoSize",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if r.returncode == 0 and r.stdout.strip():
             for line in r.stdout.strip().splitlines():
@@ -99,8 +105,11 @@ def _show_resolvers() -> None:
         if "# tunnelvault" in content:
             found = True
             # Extract nameservers
-            ns = [l.split()[-1] for l in content.splitlines()
-                  if l.strip().startswith("nameserver")]
+            ns = [
+                line.split()[-1]
+                for line in content.splitlines()
+                if line.strip().startswith("nameserver")
+            ]
             ns_str = ", ".join(ns) if ns else "?"
             print(f"    {ui.GREEN}●{ui.NC} {name} -> {ns_str}")
 
@@ -132,6 +141,7 @@ def run(net: Optional[NetManager] = None) -> None:
     """Show current VPN state. Does not require defaults.toml."""
     if net is None:
         from tv.net import create
+
         net = create()
 
     # Ensure plugins are registered

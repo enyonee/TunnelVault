@@ -26,7 +26,6 @@ STRINGS: dict[str, str] = {
     "ui.tunnels": "ТУННЕЛИ",
     "ui.checks_header": "ПРОВЕРКИ  {passed}/{total}",
     "ui.logs": "ЛОГИ",
-
     # --- tunnelvault.py (main) ---
     "main.one_command": "Можно указать только одну команду",
     "main.interrupted": "Прервано ({name})",
@@ -55,7 +54,6 @@ STRINGS: dict[str, str] = {
     "main.daemon_stopped": "Демон остановлен (PID={pid})",
     "main.no_pidfile": "Запущенный демон не найден (PID-файл отсутствует)",
     "main.stale_pidfile": "Устаревший PID-файл (процесс {pid} не запущен), очистка",
-
     # --- config.py ---
     "config.settings_loaded": "Настройки: загружены",
     "config.settings_error": "Настройки: ошибка чтения",
@@ -70,12 +68,11 @@ STRINGS: dict[str, str] = {
     "config.cert_connect_failed": "Не удалось подключиться к {host}:{port}",
     "config.cert_not_generated": "Сертификат не сгенерирован для {host}:{port}. Запустите с --setup.",
     "config.cert_unreachable": "{host}:{port} недоступен - пропускаю генерацию сертификата",
-    "config.cert_hint": "Прописать позже: ${env} или \"{file}\" -> fortivpn.trusted_cert",
+    "config.cert_hint": 'Прописать позже: ${env} или "{file}" -> fortivpn.trusted_cert',
     "config.param_not_set": "Параметр '{label}' не задан. Запустите с --setup для настройки.",
     "config.routes_label": "Маршруты ({name})",
     "config.routes_native": "нативный роутинг",
     "config.routes_count": "{nets} сетей, {hosts} хостов",
-
     # --- defaults.py ---
     "defaults.not_found": "Не найден {file}",
     "defaults.expected_at": "Ожидается в: {path}",
@@ -89,7 +86,6 @@ STRINGS: dict[str, str] = {
     "defaults.config_conflict": "Туннели '{a}' и '{b}' (type={type}) используют один config_file '{cf}'. Укажите разные config_file в [tunnels.*]",
     "defaults.unknown_tunnels": "Неизвестные туннели: {unknown}. Доступные: {available}",
     "defaults.no_tunnels_available": "(нет туннелей)",
-
     # --- checks.py ---
     "check.skip": "пропуск",
     "check.port_open": "порт открыт",
@@ -101,7 +97,6 @@ STRINGS: dict[str, str] = {
     "check.no_ping": "не пингуется",
     "check.external_ip": "Внешний IP",
     "check.checks_title": "Проверка подключений",
-
     # --- engine.py ---
     "engine.clearing": "Отключаю предыдущие подключения...",
     "engine.disable_ipv6": "Отключаю IPv6...",
@@ -115,7 +110,6 @@ STRINGS: dict[str, str] = {
     "engine.settings_incomplete": "Настройки неполные, запускаю wizard...",
     "engine.binary_not_found": "'{binary}' не найден, пропускаю профиль '{name}' (установите пакет для использования)",
     "engine.no_available_tunnels": "Нет доступных туннелей - все необходимые VPN-пакеты отсутствуют",
-
     # --- disconnect.py ---
     "disc.deleting_routes": "Удаляю маршруты...",
     "disc.deleting_bypass": "Удаляю bypass-маршруты...",
@@ -124,7 +118,6 @@ STRINGS: dict[str, str] = {
     "disc.restore_ipv6": "Восстанавливаю IPv6...",
     "disc.all_disconnected": "Всё отключено",
     "disc.disconnecting": "Отключаю {name}...",
-
     # --- status.py ---
     "status.title": "tunnelvault - статус",
     "status.vpn_processes": "VPN-процессы",
@@ -138,7 +131,6 @@ STRINGS: dict[str, str] = {
     "status.gateway_unknown": "не определён",
     "status.external_ip": "Внешний IP",
     "status.external_ip_fail": "не удалось определить",
-
     # --- validate.py ---
     "validate.title": "tunnelvault - валидация конфигурации",
     "validate.no_tunnels": "Нет секций [tunnels.*]",
@@ -160,7 +152,6 @@ STRINGS: dict[str, str] = {
     "validate.warnings_title": "Предупреждения ({count}):",
     "validate.config_valid": "Конфигурация валидна",
     "validate.no_critical_errors": "Критических ошибок нет",
-
     # --- watch.py ---
     "watch.loading": "Сбор данных",
     "watch.no_active_vpn": "нет активных VPN",
@@ -168,7 +159,6 @@ STRINGS: dict[str, str] = {
     "watch.no_connections": "нет соединений",
     "watch.more_connections": "... ещё {count}",
     "watch.exit_hint": "Ctrl+C для выхода",
-
     # --- vpn/openvpn.py ---
     "vpn.ovpn.not_connected": "OpenVPN не подключился за {timeout}с",
     "vpn.ovpn.alive_no_iface": "Процесс жив (PID={pid}), но интерфейс не появился",
@@ -179,7 +169,6 @@ STRINGS: dict[str, str] = {
     "vpn.ovpn.connected": "OpenVPN подключен ({iface})",
     "vpn.ovpn.using_tunnelblick": "OpenVPN подключен (Tunnelblick)",
     "vpn.ovpn.config_not_found": "Файл конфига не найден: {path}",
-
     # --- vpn/fortivpn.py ---
     "vpn.forti.not_connected": "FortiVPN не поднялся за {timeout}с",
     "vpn.forti.alive_no_iface": "Процесс жив (PID={pid}), но {label} не появился",
@@ -189,7 +178,6 @@ STRINGS: dict[str, str] = {
     "vpn.forti.no_gw_fallback": "Не удалось определить PPP gateway, используем fallback: {gw}",
     "vpn.forti.no_gw": "Не удалось определить PPP gateway, маршруты могут не работать",
     "vpn.forti.unsupported_windows": "openfortivpn недоступен на Windows",
-
     # --- vpn/singbox.py ---
     "vpn.sb.not_connected": "sing-box не поднялся за {timeout}с",
     "vpn.sb.alive_no_iface": "Процесс жив (PID={pid}), но интерфейс не появился",
@@ -197,7 +185,6 @@ STRINGS: dict[str, str] = {
     "vpn.sb.log_hint": "Лог: {path}",
     "vpn.sb.connected": "sing-box подключен ({iface})",
     "vpn.sb.config_not_found": "Файл конфига не найден: {path}",
-
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN конфиг",
     "param.sb_config": "sing-box конфиг",
@@ -208,7 +195,6 @@ STRINGS: dict[str, str] = {
     "param.cert_mode": "Сертификат (auto/manual)",
     "param.cert_sha256": "SHA256 сертификата",
     "param.fallback_gw": "Fallback GW",
-
     # --- daemon.py ---
     "daemon.log_hint": "Лог: tail -f {path}",
     "daemon.enabled": "Автозапуск включён",
@@ -216,19 +202,15 @@ STRINGS: dict[str, str] = {
     "daemon.disabled": "Автозапуск отключён",
     "daemon.already_disabled": "Автозапуск не настроен",
     "daemon.systemd_unit_written": "Systemd unit записан: {path}",
-
     # --- routing.py ---
     "routing.wildcard_no_dot": "*.{domain} - домен должен содержать точку (*.example.local)",
     "routing.invalid_cidr": "{target} - невалидный CIDR",
     "routing.invalid_ip": "{target} - невалидный IP-адрес",
     "routing.unrecognized": "{target} - нераспознанный формат",
-
     # --- proc.py ---
     "proc.waiting": "Ожидание {desc}...",
-
     # --- status.py ---
     "status.gateway_title": "Default gateway",
-
     # --- CLI help strings ---
     "cli.desc": "tunnelvault - менеджер мульти-VPN подключений",
     "cli.disconnect": "Отключить все VPN",

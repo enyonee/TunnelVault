@@ -14,11 +14,13 @@ def register(type_name: str):
         @register("openvpn")
         class OpenVPNPlugin(TunnelPlugin): ...
     """
+
     def decorator(cls):
         if type_name in _registry:
             raise ValueError(f"Tunnel type '{type_name}' already registered")
         _registry[type_name] = cls
         return cls
+
     return decorator
 
 
@@ -28,9 +30,7 @@ def get_plugin(type_name: str) -> Type:
         return _registry[type_name]
     except KeyError:
         available = ", ".join(sorted(_registry)) or "(none)"
-        raise KeyError(
-            f"Unknown tunnel type '{type_name}'. Available: {available}"
-        )
+        raise KeyError(f"Unknown tunnel type '{type_name}'. Available: {available}")
 
 
 def available_types() -> list[str]:

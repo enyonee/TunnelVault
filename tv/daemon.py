@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-import fcntl
 import os
 import platform
-import plistlib
 import subprocess
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore[assignment]
+
+try:
+    import plistlib
+except ImportError:
+    plistlib = None  # type: ignore[assignment]
 import sys
 from pathlib import Path
 

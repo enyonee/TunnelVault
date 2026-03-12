@@ -6,15 +6,16 @@ metadata:
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
-  activeDeadlineSeconds: 600
+  activeDeadlineSeconds: 900
   template:
     spec:
       restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: test-runner
           image: ghcr.io/enyonee/tunnelvault-test:latest
           securityContext:
-            # NET_ADMIN для TUN/VPN, MKNOD для создания /dev/net/tun
             capabilities:
               add: [NET_ADMIN, MKNOD]
           env:
@@ -27,23 +28,24 @@ spec:
             - name: OCSERV_USER
               value: "testuser"
             - name: OCSERV_PASS
-              value: "testpass"  # test-only
+              value: "testpass"
             - name: SINGBOX_SERVER
               value: "singbox-server.test-vpn.svc.cluster.local"
             - name: SINGBOX_SS_PORT
               value: "8388"
             - name: SINGBOX_SS_PASSWORD
-              value: "test-password-12345"  # test-only
+              value: "test-password-12345"
+          volumeMounts:
+            - name: client-configs
+              mountPath: /shared
           command:
             - sh
             - -c
             - |
-              # TUN device (MKNOD cap для mknod, NET_ADMIN для VPN)
               mkdir -p /dev/net
               [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
               chmod 600 /dev/net/tun
 
-              # Ждём VPN серверы
               echo "Waiting for VPN servers..."
               for svc in "openvpn-server 1194" "ocserv 4443" "singbox-server 8388"; do
                 host=$(echo $svc | cut -d' ' -f1)
@@ -56,7 +58,7 @@ spec:
 
               echo "Running tests..."
               cd /app
-              uv run pytest tests/integration/k8s/ -x -v --tb=short 2>&1
+              uv run pytest tests/integration/k8s/ -x -v --tb=short -o "addopts=" -p no:xdist 2>&1
               exit $?
           resources:
             requests:
@@ -65,3 +67,7 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      volumes:
+        - name: client-configs
+          configMap:
+            name: vpn-client-configs

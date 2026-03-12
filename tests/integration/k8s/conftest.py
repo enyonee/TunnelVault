@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from tv.logger import Logger
-from tv.net import NetManager
+from tv.net import NetManager, create as create_net
 
 
 def _require_env(name: str) -> str:
@@ -68,7 +68,7 @@ def singbox_ss_password() -> str:
 @pytest.fixture
 def real_net() -> NetManager:
     """Real NetManager for the current platform (Linux in K8s)."""
-    return NetManager.create()
+    return create_net()
 
 
 @pytest.fixture
@@ -83,13 +83,15 @@ def openvpn_client_config(tmp_path: Path, openvpn_server: str) -> Path:
     In K8s, the openvpn-server pod generates a client.ovpn at /shared/client.ovpn.
     For the test runner, we generate a minimal config or use the shared one.
     """
+    # ConfigMap mounted at /shared with client.ovpn (includes certs)
     shared_config = Path("/shared/client.ovpn")
     if shared_config.exists():
         return shared_config
 
-    # Fallback: minimal config (won't have certs, tests should handle this)
+    # Fallback: minimal config without certs (connect will fail)
     config_path = tmp_path / "client.ovpn"
-    config_path.write_text(textwrap.dedent(f"""\
+    config_path.write_text(
+        textwrap.dedent(f"""\
         client
         dev tun
         proto udp
@@ -100,17 +102,23 @@ def openvpn_client_config(tmp_path: Path, openvpn_server: str) -> Path:
         persist-tun
         cipher AES-256-GCM
         verb 3
-    """))
+    """)
+    )
     return config_path
 
 
 @pytest.fixture
-def fortivpn_config(tmp_path: Path, ocserv_host: str, ocserv_port: str,
-                     ocserv_user: str, ocserv_pass: str) -> dict:
+def fortivpn_config(
+    tmp_path: Path,
+    ocserv_host: str,
+    ocserv_port: str,
+    ocserv_user: str,
+    ocserv_pass: str,
+) -> dict:
     """FortiVPN tunnel config dict for the ocserv test server."""
     # Get server certificate fingerprint
     fingerprint = ""
-    fp_file = Path("/shared/server-fingerprint.txt")
+    fp_file = Path("/shared/ocserv-fingerprint")
     if fp_file.exists():
         fingerprint = fp_file.read_text().strip()
 
@@ -124,12 +132,13 @@ def fortivpn_config(tmp_path: Path, ocserv_host: str, ocserv_port: str,
 
 
 @pytest.fixture
-def singbox_client_config(tmp_path: Path, singbox_server: str,
-                           singbox_ss_port: str,
-                           singbox_ss_password: str) -> Path:
+def singbox_client_config(
+    tmp_path: Path, singbox_server: str, singbox_ss_port: str, singbox_ss_password: str
+) -> Path:
     """Generate sing-box client config for Shadowsocks proxy."""
     config_path = tmp_path / "singbox-client.json"
-    config_path.write_text(textwrap.dedent(f"""\
+    config_path.write_text(
+        textwrap.dedent(f"""\
         {{
           "log": {{"level": "info"}},
           "inbounds": [
@@ -166,7 +175,8 @@ def singbox_client_config(tmp_path: Path, singbox_server: str,
             "final": "direct"
           }}
         }}
-    """))
+    """)
+    )
     return config_path
 
 
@@ -176,10 +186,14 @@ def _ensure_tun_device():
     tun_path = Path("/dev/net/tun")
     if not tun_path.exists():
         Path("/dev/net").mkdir(parents=True, exist_ok=True)
-        subprocess.run(["mknod", "/dev/net/tun", "c", "10", "200"],
-                       check=False, capture_output=True)
-        subprocess.run(["chmod", "600", "/dev/net/tun"],
-                       check=False, capture_output=True)
+        subprocess.run(
+            ["mknod", "/dev/net/tun", "c", "10", "200"],
+            check=False,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["chmod", "600", "/dev/net/tun"], check=False, capture_output=True
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -187,8 +201,8 @@ def _cleanup_after_test():
     """Kill any leftover VPN processes after each test."""
     yield
     for proc_name in ("openvpn", "openfortivpn", "sing-box"):
-        subprocess.run(["pkill", "-f", proc_name],
-                       check=False, capture_output=True)
+        subprocess.run(["pkill", "-f", proc_name], check=False, capture_output=True)
     # Small delay for interfaces to disappear
     import time
+
     time.sleep(0.5)

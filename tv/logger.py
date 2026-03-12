@@ -122,7 +122,8 @@ class Logger:
             user = os.getlogin()
         except OSError:
             user = os.environ.get("USER", "?")
-        self.log("ENV", f"whoami: {user}, EUID={os.geteuid()}")
+        euid = getattr(os, "geteuid", lambda: "N/A")()
+        self.log("ENV", f"whoami: {user}, EUID={euid}")
         self.log("ENV", f"SCRIPT_DIR={script_dir}")
         self.log("ENV", f"PATH={os.environ.get('PATH', '')}")
 
@@ -135,12 +136,15 @@ class Logger:
 
         self.log("ENV", "--- VPN processes ---")
         from tv.vpn.registry import available_types, get_plugin
+
         vpn_keywords = []
         for t in available_types():
             vpn_keywords.extend(get_plugin(t).process_names)
 
         r = subprocess.run(
-            ["ps", "aux"], capture_output=True, text=True,
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
             timeout=cfg.timeouts.ps_aux,
         )
         for line in r.stdout.splitlines():
