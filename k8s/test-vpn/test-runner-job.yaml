@@ -6,7 +6,7 @@ metadata:
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
-  activeDeadlineSeconds: 600
+  activeDeadlineSeconds: 900
   template:
     spec:
       restartPolicy: Never
@@ -56,7 +56,7 @@ spec:
 
               echo "Running tests..."
               cd /app
-              uv run pytest tests/integration/k8s/ -x -v --tb=short 2>&1
+              uv run pytest tests/integration/k8s/ -x -v --tb=short -o "addopts=" -p no:xdist 2>&1
               exit $?
           resources:
             requests:

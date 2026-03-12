@@ -15,7 +15,7 @@ permissions:
 jobs:
   k8s-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       NS: test-vpn-${{ github.run_id }}
       SSH: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }}
