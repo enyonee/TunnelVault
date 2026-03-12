@@ -1,6 +1,8 @@
-FROM alpine:3.21
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ocserv gnutls-utils
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ocserv gnutls-bin \
+    && rm -rf /var/lib/apt/lists/*
 
 # Pre-generated test certs
 COPY k8s/test-vpn/pki/ocserv-ca.pem /etc/ocserv/ca.pem
@@ -8,7 +10,6 @@ COPY k8s/test-vpn/pki/ocserv-ca-key.pem /etc/ocserv/ca-key.pem
 COPY k8s/test-vpn/pki/ocserv-server.pem /etc/ocserv/server.pem
 COPY k8s/test-vpn/pki/ocserv-server-key.pem /etc/ocserv/server-key.pem
 
-# NS_PLACEHOLDER replaced by sed at deploy time
 RUN cat > /etc/ocserv/ocserv.conf <<'CONF'
 auth = "plain[passwd=/etc/ocserv/passwd]"
 tcp-port = 4443
