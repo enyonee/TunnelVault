@@ -2,33 +2,12 @@ FROM alpine:3.21
 
 RUN apk add --no-cache openvpn
 
-# Pre-generated test PKI
 COPY k8s/test-vpn/pki/openvpn-ca.crt /etc/openvpn/pki/ca.crt
 COPY k8s/test-vpn/pki/openvpn-server.crt /etc/openvpn/pki/server.crt
 COPY k8s/test-vpn/pki/openvpn-server.key /etc/openvpn/pki/server.key
 COPY k8s/test-vpn/pki/openvpn-dh.pem /etc/openvpn/pki/dh.pem
 COPY k8s/test-vpn/pki/openvpn-ta.key /etc/openvpn/ta.key
-
-# NS_PLACEHOLDER replaced by sed at deploy time
 COPY k8s/test-vpn/pki/client.ovpn /etc/openvpn/client.ovpn
+COPY k8s/test-vpn/openvpn-server.conf /etc/openvpn/server.conf
 
-RUN cat > /etc/openvpn/server.conf <<'CONF'
-port 1194
-proto udp
-dev tun
-ca /etc/openvpn/pki/ca.crt
-cert /etc/openvpn/pki/server.crt
-key /etc/openvpn/pki/server.key
-dh /etc/openvpn/pki/dh.pem
-tls-auth /etc/openvpn/ta.key 0
-server 10.8.0.0 255.255.255.0
-push "route 10.99.0.0 255.255.255.0"
-push "dhcp-option DNS 10.8.0.1"
-keepalive 10 120
-cipher AES-256-GCM
-persist-key
-persist-tun
-verb 3
-CONF
-
-CMD ["openvpn", "--config", "/etc/openvpn/server.conf"]
+CMD ["sh", "-c", "mkdir -p /dev/net && [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200 && exec openvpn --config /etc/openvpn/server.conf"]
