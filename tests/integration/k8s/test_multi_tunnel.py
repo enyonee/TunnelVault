@@ -73,10 +73,10 @@ class TestMultiTunnel:
         test_logger: Logger,
     ):
         """OpenVPN + sing-box both create interfaces when connected together."""
-        import tomli
+        import tomllib
 
         with open(multi_tunnel_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(multi_tunnel_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
@@ -118,10 +118,10 @@ class TestMultiTunnel:
         test_logger: Logger,
     ):
         """Health checks pass for both tunnels when connected simultaneously."""
-        import tomli
+        import tomllib
 
         with open(multi_tunnel_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(multi_tunnel_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
@@ -150,10 +150,10 @@ class TestMultiTunnel:
         test_logger: Logger,
     ):
         """disconnect_all removes all tunnel interfaces."""
-        import tomli
+        import tomllib
 
         with open(multi_tunnel_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(multi_tunnel_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)

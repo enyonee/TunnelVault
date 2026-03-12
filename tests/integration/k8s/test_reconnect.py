@@ -75,10 +75,10 @@ class TestReconnectCycle:
         test_logger: Logger,
     ):
         """reconnect_all() disconnects and reconnects, health checks pass after."""
-        import tomli
+        import tomllib
 
         with open(openvpn_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(openvpn_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
@@ -112,10 +112,10 @@ class TestReconnectCycle:
         test_logger: Logger,
     ):
         """disconnect_all -> connect_all works (simulates user --disconnect + --connect)."""
-        import tomli
+        import tomllib
 
         with open(openvpn_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(openvpn_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)

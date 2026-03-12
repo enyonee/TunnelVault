@@ -80,10 +80,10 @@ class TestEngineOpenVPN:
         self, openvpn_project: Path, real_net: NetManager, test_logger: Logger
     ):
         """Engine can prepare, connect OpenVPN, and disconnect cleanly."""
-        import tomli
+        import tomllib
 
         with open(openvpn_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(openvpn_project, defs, net=real_net, log=test_logger)
 
@@ -123,10 +123,10 @@ class TestEngineOpenVPN:
         self, openvpn_project: Path, real_net: NetManager, test_logger: Logger
     ):
         """Health checks pass after successful OpenVPN connection."""
-        import tomli
+        import tomllib
 
         with open(openvpn_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(openvpn_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
@@ -152,10 +152,10 @@ class TestEngineSingBox:
         self, singbox_project: Path, real_net: NetManager, test_logger: Logger
     ):
         """Engine can prepare, connect sing-box, and disconnect cleanly."""
-        import tomli
+        import tomllib
 
         with open(singbox_project / "defaults.toml", "rb") as f:
-            defs = tomli.load(f)
+            defs = tomllib.load(f)
 
         engine = Engine(singbox_project, defs, net=real_net, log=test_logger)
         engine.prepare(setup=False)
