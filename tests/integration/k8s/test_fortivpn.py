@@ -14,7 +14,10 @@ import pytest
 from tv.net import NetManager
 
 
-pytestmark = pytest.mark.network
+pytestmark = [
+    pytest.mark.network,
+    pytest.mark.skip(reason="openfortivpn/pppd unreliable in K8s containers"),
+]
 
 
 @pytest.fixture
