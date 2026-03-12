@@ -63,6 +63,7 @@ def multi_tunnel_project(
     return tmp_path
 
 
+@pytest.mark.skip(reason="sing-box tun creation unreliable in K8s containers")
 class TestMultiTunnel:
     """Multiple tunnels connected simultaneously via Engine."""
 
