@@ -27,4 +27,4 @@ RUN pip install uv && uv sync --group dev --no-install-project
 COPY . .
 RUN uv sync --group dev
 
-CMD ["uv", "run", "pytest", "tests/integration/k8s/", "-x", "-v", "--tb=short"]
+CMD ["uv", "run", "pytest", "tests/integration/k8s/", "-x", "-v", "--tb=short", "-o", "addopts=", "-p", "no:xdist"]

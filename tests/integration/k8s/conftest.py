@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from tv.logger import Logger
-from tv.net import NetManager
+from tv.net import NetManager, create as create_net
 
 
 def _require_env(name: str) -> str:
@@ -68,7 +68,7 @@ def singbox_ss_password() -> str:
 @pytest.fixture
 def real_net() -> NetManager:
     """Real NetManager for the current platform (Linux in K8s)."""
-    return NetManager.create()
+    return create_net()
 
 
 @pytest.fixture
