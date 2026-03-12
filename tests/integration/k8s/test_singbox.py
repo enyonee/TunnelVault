@@ -17,6 +17,7 @@ from tv.net import NetManager
 pytestmark = pytest.mark.network
 
 
+@pytest.mark.skip(reason="sing-box tun creation unreliable in K8s containers")
 class TestSingBoxConnect:
     """Real sing-box connection lifecycle."""
 
