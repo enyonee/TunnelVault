@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 15
     env:
       NS: test-vpn-${{ github.run_id }}
-      SSH: ssh -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }}
+      SSH: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }}
     steps:
       - uses: actions/checkout@v4
         with:
