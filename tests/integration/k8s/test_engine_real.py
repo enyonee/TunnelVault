@@ -138,7 +138,7 @@ class TestEngineOpenVPN:
             results, ext_ip = engine.check_all()
 
             # Проверяем что ping check к 10.8.0.1 прошёл
-            passed = [r for r in results if r.ok]
+            passed = [r for r in results if r.status == "ok"]
             assert len(passed) > 0, f"No health checks passed: {results}"
 
         finally:
