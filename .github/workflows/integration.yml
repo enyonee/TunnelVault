@@ -82,11 +82,15 @@ jobs:
       - name: Deploy VPN servers
         run: |
           TAG=${{ github.run_id }}
-          for f in k8s/test-vpn/openvpn-server.yaml k8s/test-vpn/ocserv.yaml k8s/test-vpn/singbox-server.yaml; do
-            sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g; s|:latest|:$TAG|g" "$f" | \
+          # Custom images (openvpn, ocserv) - replace tag
+          for f in k8s/test-vpn/openvpn-server.yaml k8s/test-vpn/ocserv.yaml; do
+            sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g; s|ghcr.io/enyonee/\(.*\):latest|ghcr.io/enyonee/\1:$TAG|g" "$f" | \
               $SSH "sudo kubectl apply -f -"
           done
-          # Patch imagePullSecrets
+          # sing-box uses upstream image, no tag replacement
+          sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g" k8s/test-vpn/singbox-server.yaml | \
+            $SSH "sudo kubectl apply -f -"
+          # Patch imagePullSecrets for custom images
           for deploy in openvpn-server ocserv; do
             $SSH "sudo kubectl patch deploy $deploy -n $NS -p '{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"ghcr-pull\"}]}}}}'"
           done
