@@ -69,12 +69,21 @@ jobs:
               k8s/test-vpn/test-runner-job.yaml | \
             $SSH "sudo kubectl apply -f -"
 
-      - name: Wait and collect logs
+      - name: Wait for test completion
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$($SSH "sudo kubectl get job tunnelvault-integration-test -n $NS -o jsonpath='{.status.conditions[0].type}' 2>/dev/null" || echo "")
+            if [ "$STATUS" = "Complete" ] || [ "$STATUS" = "Failed" ]; then
+              echo "Job finished: $STATUS"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 15
+          done
+
+      - name: Collect logs
         id: test-results
         run: |
-          $SSH "sudo kubectl wait --for=condition=Complete job/tunnelvault-integration-test -n $NS --timeout=300s 2>/dev/null || \
-                sudo kubectl wait --for=condition=Failed job/tunnelvault-integration-test -n $NS --timeout=300s 2>/dev/null || true"
-
           $SSH "sudo kubectl logs -n $NS job/tunnelvault-integration-test 2>&1" || echo "Failed to get logs"
 
           EXIT=$($SSH "sudo kubectl get pod -n $NS -l job-name=tunnelvault-integration-test \
