@@ -17,7 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
+      # Все настройки - в одном месте. Canonical source: k8s/test-vpn/config.env
       NS: test-vpn-${{ github.run_id }}
+      TAG: ${{ github.run_id }}
+      IMAGE_REGISTRY: ghcr.io/enyonee
+      OPENVPN_IMAGE: tunnelvault-openvpn-server
+      OCSERV_IMAGE: tunnelvault-ocserv
+      TEST_IMAGE: tunnelvault-test
+      SINGBOX_IMAGE: ghcr.io/sagernet/sing-box:latest
+      OPENVPN_PORT: "1194"
+      OCSERV_PORT: "4443"
+      SINGBOX_SS_PORT: "8388"
+      OCSERV_USER: testuser
+      OCSERV_PASS: testpass
+      SINGBOX_SS_PASSWORD: test-password-12345
       SSH: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/deploy_key deploy@${{ secrets.VDS_HOST }}
     steps:
       - uses: actions/checkout@v4
@@ -34,18 +47,17 @@ jobs:
       - name: Build and push images
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          TAG=${{ github.run_id }}
 
-          docker build -t ghcr.io/enyonee/tunnelvault-openvpn-server:$TAG \
-            -f k8s/test-vpn/Dockerfile.openvpn-server .
-          docker build -t ghcr.io/enyonee/tunnelvault-ocserv:$TAG \
-            -f k8s/test-vpn/Dockerfile.ocserv .
-          docker build -t ghcr.io/enyonee/tunnelvault-test:$TAG \
-            -f k8s/test-vpn/Dockerfile.test-runner .
-
-          docker push ghcr.io/enyonee/tunnelvault-openvpn-server:$TAG
-          docker push ghcr.io/enyonee/tunnelvault-ocserv:$TAG
-          docker push ghcr.io/enyonee/tunnelvault-test:$TAG
+          declare -A IMAGES=(
+            [$OPENVPN_IMAGE]=Dockerfile.openvpn-server
+            [$OCSERV_IMAGE]=Dockerfile.ocserv
+            [$TEST_IMAGE]=Dockerfile.test-runner
+          )
+          for img in "${!IMAGES[@]}"; do
+            docker build -t $IMAGE_REGISTRY/$img:$TAG \
+              -f k8s/test-vpn/${IMAGES[$img]} .
+            docker push $IMAGE_REGISTRY/$img:$TAG
+          done
 
       - name: Create ephemeral namespace
         run: |
@@ -69,10 +81,8 @@ jobs:
 
       - name: Create client configs
         run: |
-          # OpenVPN client config with correct namespace
           sed "s/NS_PLACEHOLDER/$NS/g" k8s/test-vpn/pki/client.ovpn > /tmp/client.ovpn
 
-          # ocserv fingerprint
           FINGERPRINT=$(cat k8s/test-vpn/pki/ocserv-fingerprint.txt)
 
           $SSH "sudo kubectl create configmap vpn-client-configs -n $NS \
@@ -81,10 +91,9 @@ jobs:
 
       - name: Deploy VPN servers
         run: |
-          TAG=${{ github.run_id }}
-          # Custom images (openvpn, ocserv) - replace tag
+          # Custom images (openvpn, ocserv) - replace namespace + tag
           for f in k8s/test-vpn/openvpn-server.yaml k8s/test-vpn/ocserv.yaml; do
-            sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g; s|ghcr.io/enyonee/\(.*\):latest|ghcr.io/enyonee/\1:$TAG|g" "$f" | \
+            sed "s/namespace: test-vpn/namespace: $NS/g; s/\.test-vpn/.$NS/g; s|$IMAGE_REGISTRY/\(.*\):latest|$IMAGE_REGISTRY/\1:$TAG|g" "$f" | \
               $SSH "sudo kubectl apply -f -"
           done
           # sing-box uses upstream image, no tag replacement
@@ -109,10 +118,9 @@ jobs:
 
       - name: Run test Job
         run: |
-          TAG=${{ github.run_id }}
           sed -e "s/namespace: test-vpn/namespace: $NS/g" \
               -e "s/\.test-vpn/.$NS/g" \
-              -e "s|ghcr.io/enyonee/tunnelvault-test:latest|ghcr.io/enyonee/tunnelvault-test:$TAG|g" \
+              -e "s|$IMAGE_REGISTRY/$TEST_IMAGE:latest|$IMAGE_REGISTRY/$TEST_IMAGE:$TAG|g" \
               k8s/test-vpn/test-runner-job.yaml | \
             $SSH "sudo kubectl apply -f -"
 
