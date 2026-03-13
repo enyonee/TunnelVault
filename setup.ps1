@@ -99,13 +99,13 @@ Test-Tool "curl"  "(built-in on Windows 10+)"
 
 # -- Config --
 Write-Host ""
-if (-not (Test-Path "defaults.toml") -and (Test-Path "defaults.toml.example")) {
-    Copy-Item "defaults.toml.example" "defaults.toml"
-    Write-Ok "defaults.toml copied from example (edit it with your settings)"
-} elseif (Test-Path "defaults.toml") {
-    Write-Ok "defaults.toml"
+if (-not (Test-Path "config.toml") -and (Test-Path "config.toml.example")) {
+    Copy-Item "config.toml.example" "config.toml"
+    Write-Ok "config.toml copied from example (edit it with your settings)"
+} elseif (Test-Path "config.toml") {
+    Write-Ok "config.toml"
 } else {
-    Write-Warn "defaults.toml.example not found"
+    Write-Warn "config.toml.example not found"
 }
 
 # -- Tests --

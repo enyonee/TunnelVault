@@ -1,6 +1,6 @@
 """Centralized application config with sensible defaults.
 
-All hardcoded constants live here. Override via [app] section in defaults.toml.
+All hardcoded constants live here. Override via [app] section in config.toml.
 Singleton ``cfg`` is created at import time with defaults. ``load()`` mutates
 the existing object so every module that imported ``cfg`` sees updates.
 """
@@ -51,8 +51,7 @@ def _default_temp_dir() -> str:
 class Paths:
     log_dir: str = "logs"
     temp_dir: str = ""
-    settings_file: str = ".vpn-settings.json"
-    defaults_file: str = "defaults.toml"
+    defaults_file: str = "config.toml"
     main_log: str = "tunnelvault.log"
     pid_file: str = "tunnelvault.pid"
     resolver_dir: str = "/etc/resolver"

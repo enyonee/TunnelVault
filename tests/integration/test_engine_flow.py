@@ -5,7 +5,6 @@ Real file I/O, real TOML parsing, real Logger. VPN processes and network mocked.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -42,9 +41,9 @@ def mock_net() -> MagicMock:
 
 @pytest.fixture
 def project_dir(tmp_path) -> Path:
-    """Realistic project dir with defaults.toml, config files, and settings."""
-    # defaults.toml
-    (tmp_path / "defaults.toml").write_text(
+    """Realistic project dir with config.toml, config files, and settings."""
+    # config.toml
+    (tmp_path / "config.toml").write_text(
         "[tunnels.openvpn]\n"
         'type = "openvpn"\n'
         "order = 1\n"
@@ -68,13 +67,6 @@ def project_dir(tmp_path) -> Path:
     # VPN config files (content doesn't matter, just needs to exist)
     (tmp_path / "client.ovpn").write_text("remote vpn.test.com 1194")
     (tmp_path / "singbox.json").write_text('{"log":{"level":"info"}}')
-
-    # Saved settings
-    settings = {
-        "openvpn": {"config_file": "client.ovpn", "targets": []},
-        "singbox": {"config_file": "singbox.json", "targets": []},
-    }
-    (tmp_path / ".vpn-settings.json").write_text(json.dumps(settings))
 
     return tmp_path
 
@@ -101,7 +93,7 @@ def engine(project_dir, defs, mock_net) -> Engine:
 
 class TestFullPrepareConnect:
     def test_prepare_populates_tunnels_from_real_toml(self, engine):
-        """prepare() loads tunnels from real defaults.toml file."""
+        """prepare() loads tunnels from real config.toml file."""
         engine.prepare()
 
         assert len(engine.tunnels) == 2
@@ -125,21 +117,21 @@ class TestFullPrepareConnect:
         sb = next(t for t in engine.tunnels if t.name == "singbox")
         assert "172.18.0.0/16" in sb.routes.get("networks", [])
 
-    def test_prepare_saves_settings(self, engine, project_dir):
-        """First prepare (no settings) saves .vpn-settings.json."""
-        settings_path = project_dir / ".vpn-settings.json"
-        settings_path.unlink()
-
+    def test_prepare_saves_to_config_toml(self, engine, project_dir):
+        """First prepare writes resolved params back to config.toml."""
         with (
             patch("tv.ui.wizard_input", return_value=""),
             patch("tv.ui.wizard_targets", return_value=[]),
         ):
             engine.prepare()
 
-        assert settings_path.exists()
-        data = json.loads(settings_path.read_text())
-        assert "openvpn" in data
-        assert "singbox" in data
+        import tomlkit
+
+        config_path = project_dir / "config.toml"
+        assert config_path.exists()
+        doc = tomlkit.parse(config_path.read_text())
+        assert "openvpn" in doc["tunnels"]
+        assert "singbox" in doc["tunnels"]
 
     def test_connect_all_calls_plugins(self, engine):
         """connect_all creates plugins and calls connect() for each tunnel."""
@@ -163,7 +155,7 @@ class TestFullPrepareConnect:
         assert all(r.ok for r in engine.results)
 
     def test_connect_produces_ordered_results(self, engine):
-        """Results match tunnel order from defaults.toml."""
+        """Results match tunnel order from config.toml."""
         engine.prepare()
 
         with (

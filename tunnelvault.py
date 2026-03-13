@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 
 from tv import config, ui, disconnect, checks, proc
+from tv.cli import parse_args
 from tv.config import SetupRequiredError
 from tv import defaults as defaults_mod
 from tv.app_config import cfg
@@ -45,7 +46,7 @@ _log: Logger | None = None  # module-level for crash handler
 
 def main() -> None:
     global _log
-    args = config.parse_args()
+    args = parse_args()
     script_dir = Path(__file__).parent.resolve()
 
     # Mutual exclusion check
@@ -104,11 +105,11 @@ def main() -> None:
         disconnect.run(defs={}, script_dir=script_dir)
         return
 
-    # --- Commands that need defaults.toml ---
+    # --- Commands that need config.toml ---
 
     defs = defaults_mod.load(script_dir, setup=args.setup)
 
-    # Initialize i18n from config (after defaults.toml loaded [app].locale)
+    # Initialize i18n from config (after config.toml loaded [app].locale)
     from tv import i18n
 
     if cfg.locale:
@@ -247,11 +248,7 @@ def main() -> None:
         signal.signal(signal.SIGTERM, on_signal)
 
     # --- Start ---
-    settings_path = script_dir / cfg.paths.settings_file
-    quiet = not args.setup and settings_path.exists()
-
-    if not quiet:
-        ui.logo()
+    ui.logo()
 
     engine.log.log("INFO", "=" * 40)
     engine.log.log("INFO", f"tunnelvault started (PID={os.getpid()})")
@@ -280,12 +277,12 @@ def main() -> None:
             ui.fail(str(e))
         sys.exit(1)
 
-    engine.setup(clear=args.clear, quiet=quiet)
-    engine.connect_all(quiet=quiet)
-    check_results, ext_ip = engine.check_all(quiet=quiet)
+    engine.setup(clear=args.clear, quiet=engine.quiet)
+    engine.connect_all(quiet=engine.quiet)
+    check_results, ext_ip = engine.check_all(quiet=engine.quiet)
 
     # --- Summary ---
-    if not quiet:
+    if not engine.quiet:
         _log_summary(engine, check_results, ext_ip)
     else:
         # Minimal logging only
@@ -351,7 +348,7 @@ def _try_load_tunnel_names(
     script_dir: Path,
     only: str | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Best-effort: load tunnel name mappings from defaults.toml + watch state.
+    """Best-effort: load tunnel name mappings from config.toml + watch state.
 
     Returns:
         (exact_map, prefix_map):
@@ -384,7 +381,7 @@ def _try_load_tunnel_names(
 
         exact: dict[str, str] = load_watch_state(script_dir)
 
-        # Priority 2: configured interface from defaults.toml
+        # Priority 2: configured interface from config.toml
         prefix: dict[str, str] = {}
         for t_ in tunnels:
             if t_.interface and t_.interface not in exact:

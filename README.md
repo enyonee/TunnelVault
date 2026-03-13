@@ -8,7 +8,7 @@
 <a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux_|_Windows-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
 <a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.2.1-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
-<img src="https://img.shields.io/badge/tests-934_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
+<img src="https://img.shields.io/badge/tests-906_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
 
 <kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>+ your plugin</kbd>
 
@@ -23,7 +23,7 @@
 ```bash
 git clone https://github.com/enyonee/tunnelvault.git
 cd tunnelvault
-cp defaults.toml.example defaults.toml   # edit with your infrastructure
+cp config.toml.example config.toml   # edit with your infrastructure
 ./setup.sh                                # creates venv, installs deps
 sudo ./tvpn                               # interactive wizard on first run
 ```
@@ -31,7 +31,7 @@ sudo ./tvpn                               # interactive wizard on first run
 > [!TIP]
 > On first launch, the wizard collects missing parameters and saves them. Subsequent runs are automatic.
 
-Parameters are resolved through: `defaults.toml` ──▸ `ENV` ──▸ `.vpn-settings.json` ──▸ `wizard`
+Parameters are resolved through: `config.toml` ──▸ `ENV` ──▸ `wizard` (results saved back to `config.toml`)
 
 ## <img src="https://img.shields.io/badge/⚙_How_It_Works-2FBFBF?style=for-the-badge" alt="How It Works">
 
@@ -133,7 +133,7 @@ All injected routes are cleaned up on disconnect.
 
 ## <img src="https://img.shields.io/badge/📝_Configuration-FF8C00?style=for-the-badge" alt="Configuration">
 
-Each tunnel is a `[tunnels.<name>]` section in `defaults.toml`:
+Each tunnel is a `[tunnels.<name>]` section in `config.toml`:
 
 <details>
 <summary><strong>Full example</strong></summary>
@@ -197,9 +197,8 @@ ports = [{ host = "203.0.113.30", port = 443 }]
 
 | File | Purpose |
 |------|---------|
-| `defaults.toml.example` | Template - copy and edit |
-| `defaults.toml` | Your config (gitignored) |
-| `.vpn-settings.json` | Wizard-saved credentials (gitignored) |
+| `config.toml.example` | Template - copy and edit |
+| `config.toml` | Your config (gitignored, wizard saves here too) |
 
 <details>
 <summary><strong>Environment Variables</strong></summary>
@@ -303,7 +302,7 @@ class MyVPNPlugin(TunnelPlugin):
 Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) outbound to auto-select the fastest working server from multiple outbounds.
 
 > [!IMPORTANT]
-> Add **all** outbound server IPs to `[global.vpn_server_routes].hosts` in `defaults.toml` - otherwise tunnel traffic loops through itself.
+> Add **all** outbound server IPs to `[global.vpn_server_routes].hosts` in `config.toml` - otherwise tunnel traffic loops through itself.
 
 </details>
 
@@ -337,7 +336,7 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 **Python 3.10+** · **macOS, Linux, or Windows** · **sudo / Run as Administrator** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`)
 
 > [!WARNING]
-> TunnelVault modifies routing tables and DNS configuration. Review your `defaults.toml` before running. Use `--validate` to dry-run.
+> TunnelVault modifies routing tables and DNS configuration. Review your `config.toml` before running. Use `--validate` to dry-run.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Load and validate defaults.toml, parse tunnel configs."""
+"""Load and validate config.toml, parse tunnel configs."""
 
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ from tv.vpn.base import TunnelConfig
 
 
 def load(script_dir: Path, *, setup: bool = False) -> dict:
-    """Load defaults.toml with [tunnels.*] format.
+    """Load config.toml with [tunnels.*] format.
 
     Requires at least one [tunnels.<name>] section.
-    When *setup=True* and file is missing, copies from defaults.toml.example.
+    When *setup=True* and file is missing, copies from config.toml.example.
     """
     defaults_file = cfg.paths.defaults_file
     path = script_dir / defaults_file

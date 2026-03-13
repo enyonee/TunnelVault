@@ -6,6 +6,7 @@ import atexit
 import os
 import platform
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,8 +17,73 @@ from tv.i18n import t
 from tv.logger import Logger
 from tv.net import NetManager
 from tv.proc import IS_WINDOWS
-from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
+from tv.vpn.base import ConfigParam, TunnelConfig, TunnelPlugin, VPNResult
 from tv.vpn.registry import register
+
+_SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+def generate_cert(host: str, port: str) -> str:
+    """Generate SHA256 cert fingerprint via openssl pipe chain."""
+    procs: list[subprocess.Popen] = []
+    try:
+        s_client = subprocess.Popen(
+            ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(s_client)
+        x509 = subprocess.Popen(
+            ["openssl", "x509", "-outform", "DER"],
+            stdin=s_client.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        procs.append(x509)
+        s_client.stdout.close()
+
+        s_client.stdin.write(b"\n")
+        s_client.stdin.close()
+
+        der_out, x509_err = x509.communicate(timeout=cfg.timeouts.cert_generation)
+        s_client.wait(timeout=cfg.timeouts.cert_openssl)
+
+        if not der_out:
+            return ""
+
+        dgst = subprocess.Popen(
+            ["openssl", "dgst", "-sha256"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(dgst)
+        out, _ = dgst.communicate(input=der_out, timeout=cfg.timeouts.cert_openssl)
+
+        if dgst.returncode == 0 and out:
+            text = out.decode().strip()
+            if "= " in text:
+                cert = text.split("= ", 1)[1].strip()
+            else:
+                cert = text
+            if cert == _SHA256_EMPTY:
+                return ""
+            return cert
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    finally:
+        for p in procs:
+            try:
+                p.kill()
+            except OSError:
+                pass
+        for p in procs:
+            try:
+                p.wait(timeout=2)
+            except Exception:
+                pass
+    return ""
 
 
 @dataclass
@@ -111,6 +177,47 @@ class FortiVPNPlugin(TunnelPlugin):
         conf_path = f"{cfg.paths.temp_dir}/forti_{tcfg.name}.conf"
         pids = proc.find_pids(f"openfortivpn -c {conf_path}")
         return pids[0] if pids else None
+
+    @classmethod
+    def post_resolve_params(
+        cls,
+        tcfg: TunnelConfig,
+        *,
+        quiet: bool = False,
+    ) -> None:
+        """Auto-generate FortiVPN trusted cert if cert_mode=auto."""
+        cert_mode = tcfg.auth.get("cert_mode", "")
+        if cert_mode != "auto":
+            return
+        if tcfg.auth.get("trusted_cert"):
+            return
+
+        env_val = os.environ.get("VPN_TRUSTED_CERT", "")
+        if env_val:
+            if not quiet:
+                ui.param_found("param.cert_sha256", env_val, "$VPN_TRUSTED_CERT", False)
+            tcfg.auth["trusted_cert"] = env_val
+            return
+
+        host = tcfg.auth.get("host", "")
+        port = tcfg.auth.get("port", cfg.defaults.fortivpn_port)
+        if not host:
+            return
+
+        if not quiet:
+            print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
+        cert = generate_cert(host, port)
+        if cert:
+            if not quiet:
+                print(
+                    f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=cert[:24])}"
+                )
+            tcfg.auth["trusted_cert"] = cert
+        else:
+            ui.warn(t("config.cert_unreachable", host=host, port=port))
+            ui.info(
+                f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.defaults_file)}{ui.NC}"
+            )
 
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:

@@ -1,9 +1,5 @@
-# Credentials
-.vpn-settings.json
-.vpn-settings
-
-# Real config (use defaults.toml.example as template)
-defaults.toml
+# Real config with credentials (use config.toml.example as template)
+config.toml
 
 # VPN configs (contain keys/certs)
 *.ovpn
