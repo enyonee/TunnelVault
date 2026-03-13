@@ -8,56 +8,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - run: uv sync --group dev
-      - name: Ruff check
-        run: uv run ruff check .
-      - name: Ruff format check
-        run: uv run ruff format --check .
-
-  test:
-    needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
-
-      - run: uv sync --group dev
-
-      - name: Run tests
-        run: uv run pytest tests/ -x -q -o "addopts=" -m "not network" --ignore=tests/integration/k8s
-
-      - name: Notify Telegram - CI failed
-        if: failure() && matrix.os == 'ubuntu-latest'
-        uses: enyonee/telegram-notify-action@v1
-        with:
-          bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
-          status: failure
-          message: |
-            CI failed on <b>${{ matrix.os }}</b>
-
-            Branch: <code>${{ github.head_ref || github.ref_name }}</code>
-            Commit: <code>${{ github.sha }}</code>
-            Author: ${{ github.actor }}
-
-            <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View logs</a>
-
-  # Integration tests: separate workflow (integration.yml)
-  # Trigger: gh workflow run integration.yml -f branch=<branch>
+  ci:
+    uses: enyonee/.github/.github/workflows/python-ci.yml@v1
+    with:
+      project: TunnelVault
+      uv-sync-args: "--group dev"
+      test-command: 'uv run pytest tests/ -x -q -o "addopts=" -m "not network" --ignore=tests/integration/k8s'
+      os-matrix: '["ubuntu-latest", "windows-latest", "macos-latest"]'
+    secrets: inherit
 
   notify-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,15 +42,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Notify Telegram - release
-        uses: enyonee/telegram-notify-action@v1
+        uses: enyonee/telegram-notify-action@v2
         with:
           bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
           status: success
-          message: |
-            <b>TunnelVault</b> <code>${{ github.ref_name }}</code>
-
-            <b>Changes:</b>
-            <code>${{ steps.changelog.outputs.log }}</code>
-
-            <a href="${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}">Release</a>
+          project: TunnelVault
+          version: ${{ github.ref_name }}
+          event: Release
+          branch: ${{ github.ref_name }}
+          changelog: ${{ steps.changelog.outputs.log }}
