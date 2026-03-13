@@ -68,6 +68,14 @@ def main() -> None:
     # --- Read-only commands (no sudo required) ---
 
     if args.status:
+        from tv.ipc_client import try_ipc
+        from tv.ipc_protocol import socket_path as ipc_socket_path
+
+        resp = try_ipc(ipc_socket_path(script_dir), "status")
+        if resp and resp.get("ok"):
+            _print_ipc_status(resp["data"])
+            return
+
         from tv import status
 
         status.run()
@@ -176,6 +184,14 @@ def main() -> None:
         return
 
     if args.check:
+        from tv.ipc_client import try_ipc
+        from tv.ipc_protocol import socket_path as ipc_socket_path
+
+        resp = try_ipc(ipc_socket_path(script_dir), "check")
+        if resp and resp.get("ok"):
+            _print_ipc_check(resp["data"])
+            return
+
         tunnels = defaults_mod.parse_tunnels(defs)
         config.resolve_log_paths(tunnels, script_dir)
         try:
@@ -297,12 +313,19 @@ def main() -> None:
 
     from tv import daemon as daemon_mod
 
+    from tv.ipc_server import start_server_thread
+    from tv.ipc_protocol import socket_path as ipc_socket_path
+
+    ipc_path = ipc_socket_path(script_dir)
+
     if args.foreground or IS_WINDOWS:
         # Stay in foreground (for launchd/systemd or Windows)
         daemon_mod.write_pid(script_dir)
+        ipc_srv, _ = start_server_thread(engine, ipc_path, engine.log, _reconnect_lock)
         try:
             _keepalive_loop(engine, reconnect_lock=_reconnect_lock)
         finally:
+            ipc_srv.shutdown()
             daemon_mod.remove_pid(script_dir)
         return
 
@@ -328,10 +351,69 @@ def main() -> None:
 
     engine.log.log("INFO", f"Daemonized (PID={os.getpid()})")
 
+    ipc_srv, _ = start_server_thread(engine, ipc_path, engine.log, _reconnect_lock)
     try:
         _keepalive_loop(engine, reconnect_lock=_reconnect_lock)
     finally:
+        ipc_srv.shutdown()
         daemon_mod.remove_pid(script_dir)
+
+
+def _print_ipc_status(data: dict) -> None:
+    """Format and print status response from IPC daemon."""
+    pid = data.get("pid", "?")
+    uptime = data.get("uptime", 0)
+    h, m = divmod(uptime // 60, 60)
+    uptime_str = f"{h}h {m}m" if h else f"{m}m"
+
+    print(f"  {ui.BOLD}Daemon{ui.NC} PID={pid}, uptime {uptime_str}")
+    print()
+
+    tunnels = data.get("tunnels", [])
+    if not tunnels:
+        print(f"  {ui.DIM}No tunnels{ui.NC}")
+        return
+
+    for t_info in tunnels:
+        name = t_info.get("name", "?")
+        vtype = t_info.get("type", "?")
+        connected = t_info.get("connected", False)
+        t_pid = t_info.get("pid")
+        iface = t_info.get("interface", "")
+        detail = t_info.get("detail", "")
+
+        if connected:
+            status_str = f"{ui.GREEN}✓{ui.NC}"
+            extras = []
+            if t_pid:
+                extras.append(f"PID={t_pid}")
+            if iface:
+                extras.append(iface)
+            if detail:
+                extras.append(detail)
+            extra = f" ({', '.join(extras)})" if extras else ""
+            print(f"  {status_str} {ui.BOLD}{name}{ui.NC} [{vtype}]{extra}")
+        else:
+            print(f"  {ui.RED}✗{ui.NC} {ui.BOLD}{name}{ui.NC} [{vtype}] {detail}")
+
+
+def _print_ipc_check(data: dict) -> None:
+    """Format and print check response from IPC daemon."""
+    tunnels = data.get("tunnels", [])
+    if not tunnels:
+        print(f"  {ui.DIM}No tunnels{ui.NC}")
+        return
+
+    for t_info in tunnels:
+        name = t_info.get("name", "?")
+        alive = t_info.get("alive", False)
+        t_pid = t_info.get("pid")
+
+        if alive:
+            pid_str = f" (PID={t_pid})" if t_pid else ""
+            print(f"  {ui.GREEN}✓{ui.NC} {name}{pid_str} alive")
+        else:
+            print(f"  {ui.RED}✗{ui.NC} {name} dead")
 
 
 # VPN type -> interface prefixes for dynamic matching.
