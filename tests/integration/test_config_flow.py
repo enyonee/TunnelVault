@@ -95,10 +95,13 @@ class TestDefaultsSetupFlow:
 class TestSettingsRoundTrip:
     def test_save_and_reload(self, tmp_path):
         """save_tunnel_settings writes to config.toml, reload preserves data."""
-        _write_toml(tmp_path, {
-            "openvpn": {"type": "openvpn"},
-            "fortivpn": {"type": "fortivpn"},
-        })
+        _write_toml(
+            tmp_path,
+            {
+                "openvpn": {"type": "openvpn"},
+                "fortivpn": {"type": "fortivpn"},
+            },
+        )
         tunnels = [
             TunnelConfig(
                 name="openvpn",
@@ -152,10 +155,13 @@ class TestFortiCertUnreachable:
     def test_toml_cert_used_without_regeneration(self):
         """Cert in TOML (from previous wizard save) used without regeneration."""
         tc = TunnelConfig(
-            name="fortivpn", type="fortivpn",
+            name="fortivpn",
+            type="fortivpn",
             auth={
-                "host": "vpn.example.com", "port": "443",
-                "cert_mode": "auto", "trusted_cert": "aabbcc112233",
+                "host": "vpn.example.com",
+                "port": "443",
+                "cert_mode": "auto",
+                "trusted_cert": "aabbcc112233",
             },
         )
         with patch("tv.vpn.fortivpn.generate_cert") as mock_gen:
@@ -179,11 +185,15 @@ class TestResolveParamsWithFiles:
     def test_fortivpn_auth_from_toml(self, tmp_path):
         """FortiVPN auth params from TOML used directly."""
         tc = TunnelConfig(
-            name="fortivpn", type="fortivpn",
+            name="fortivpn",
+            type="fortivpn",
             auth={
-                "host": "vpn.corp.com", "port": "10443",
-                "login": "admin", "pass": "secret123",
-                "cert_mode": "manual", "trusted_cert": "deadbeef",
+                "host": "vpn.corp.com",
+                "port": "10443",
+                "login": "admin",
+                "pass": "secret123",
+                "cert_mode": "manual",
+                "trusted_cert": "deadbeef",
             },
         )
         resolve_tunnel_params(tc, FortiVPNPlugin, tmp_path, quiet=True)
@@ -214,7 +224,8 @@ class TestResolveRoutesFlow:
     def test_toml_targets_loaded(self):
         """Targets in TOML (from wizard save) loaded without wizard."""
         tc = TunnelConfig(
-            name="forti", type="fortivpn",
+            name="forti",
+            type="fortivpn",
             routes={"targets": ["172.16.0.0/12"]},
         )
         resolve_tunnel_routes(tc, quiet=True)
@@ -223,7 +234,8 @@ class TestResolveRoutesFlow:
     def test_empty_targets_means_native_routing(self):
         """Empty targets list = native routing (no custom routes)."""
         tc = TunnelConfig(
-            name="openvpn", type="openvpn",
+            name="openvpn",
+            type="openvpn",
             routes={"targets": []},
         )
         resolve_tunnel_routes(tc, quiet=True)

@@ -211,16 +211,22 @@ class TestPrepare:
         defs = {
             "tunnels": {
                 "forti": {
-                    "type": "fortivpn", "order": 1,
+                    "type": "fortivpn",
+                    "order": 1,
                     # No auth = all_required_set=False -> quiet=False -> wizard
                 },
             },
         }
         _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
-        with patch("tv.ui.wizard_targets", return_value=["10.0.0.0/8"]) as mock_wiz, \
-             patch("tv.ui.wizard_input", side_effect=["vpn.com", "443", "user", "pass", "manual", "cert"]), \
-             patch("tv.vpn.fortivpn.FortiVPNPlugin.post_resolve_params"):
+        with (
+            patch("tv.ui.wizard_targets", return_value=["10.0.0.0/8"]) as mock_wiz,
+            patch(
+                "tv.ui.wizard_input",
+                side_effect=["vpn.com", "443", "user", "pass", "manual", "cert"],
+            ),
+            patch("tv.vpn.fortivpn.FortiVPNPlugin.post_resolve_params"),
+        ):
             e.prepare()
         mock_wiz.assert_called_once_with("forti")
         assert "10.0.0.0/8" in e.tunnels[0].routes["networks"]
@@ -230,7 +236,8 @@ class TestPrepare:
         defs = {
             "tunnels": {
                 "openvpn": {
-                    "type": "openvpn", "order": 1,
+                    "type": "openvpn",
+                    "order": 1,
                     "config_file": "client.ovpn",
                     "routes": {"targets": []},
                 },
@@ -253,7 +260,8 @@ class TestPrepare:
         defs = {
             "tunnels": {
                 "openvpn": {
-                    "type": "openvpn", "order": 1,
+                    "type": "openvpn",
+                    "order": 1,
                     "config_file": "client.ovpn",
                 },
             },
@@ -275,15 +283,18 @@ class TestPrepare:
         defs = {
             "tunnels": {
                 "forti": {
-                    "type": "fortivpn", "order": 1,
+                    "type": "fortivpn",
+                    "order": 1,
                     # No auth - host/login/pass missing -> not quiet -> wizard fires
                 },
             },
         }
         _write_toml_for_defs(tmp_dir, defs)
         e = Engine(tmp_dir, defs, net=mock_net, log=logger)
-        with patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz, \
-             patch("tv.config._resolve_param", return_value="dummy"):
+        with (
+            patch("tv.ui.wizard_targets", return_value=[]) as mock_wiz,
+            patch("tv.config._resolve_param", return_value="dummy"),
+        ):
             e.prepare(setup=False)
 
         mock_wiz.assert_called_once()

@@ -126,6 +126,7 @@ class TestFullPrepareConnect:
             engine.prepare()
 
         import tomlkit
+
         config_path = project_dir / "config.toml"
         assert config_path.exists()
         doc = tomlkit.parse(config_path.read_text())
