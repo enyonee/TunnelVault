@@ -583,7 +583,7 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
                 if attempt == max_retries:
                     ui.fail(t("main.keepalive_failed", error=str(e)))
                 else:
-                    backoff = min(2 ** attempt, 30)
+                    backoff = min(2**attempt, 30)
                     engine.log.log("INFO", f"Retrying in {backoff}s...")
                     time.sleep(backoff)
             finally:

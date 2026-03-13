@@ -164,7 +164,8 @@ class TestReconnectAll:
                 engine, "disconnect_all", side_effect=lambda: call_order.append("disc")
             ),
             patch.object(
-                engine, "wait_for_network",
+                engine,
+                "wait_for_network",
                 side_effect=lambda: (call_order.append("net_wait"), True)[-1],
             ),
             patch.object(
@@ -216,7 +217,10 @@ class TestWaitForNetwork:
         engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
         mock_net.default_gateway.side_effect = [None, None, "10.0.0.1"]
 
-        with patch("tv.engine.time.sleep"), patch("tv.engine.time.monotonic") as mock_mono:
+        with (
+            patch("tv.engine.time.sleep"),
+            patch("tv.engine.time.monotonic") as mock_mono,
+        ):
             mock_mono.side_effect = [0.0, 2.0, 4.0, 6.0]
             result = engine.wait_for_network()
 
@@ -227,7 +231,10 @@ class TestWaitForNetwork:
         engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
         mock_net.default_gateway.return_value = None
 
-        with patch("tv.engine.time.sleep"), patch("tv.engine.time.monotonic") as mock_mono:
+        with (
+            patch("tv.engine.time.sleep"),
+            patch("tv.engine.time.monotonic") as mock_mono,
+        ):
             # Сразу за пределами deadline
             mock_mono.side_effect = [0.0, 31.0]
             result = engine.wait_for_network()
