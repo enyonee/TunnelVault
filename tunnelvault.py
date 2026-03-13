@@ -77,6 +77,7 @@ def main() -> None:
             return
 
         from tv import status
+
         status.run()
         return
 
@@ -314,6 +315,7 @@ def main() -> None:
 
     from tv.ipc_server import start_server_thread
     from tv.ipc_protocol import socket_path as ipc_socket_path
+
     ipc_path = ipc_socket_path(script_dir)
 
     if args.foreground or IS_WINDOWS:

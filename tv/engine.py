@@ -314,7 +314,9 @@ class Engine:
         self.log.log("WARN", f"Network not ready after {timeout}s")
         return False
 
-    def _find_tunnel(self, name: str) -> tuple[int, TunnelConfig, "TunnelPlugin", VPNResult] | None:
+    def _find_tunnel(
+        self, name: str
+    ) -> tuple[int, TunnelConfig, "TunnelPlugin", VPNResult] | None:
         """Find tunnel by name. Returns (index, config, plugin, result) or None."""
         for i, (tcfg, plugin, result) in enumerate(
             zip(self.tunnels, self.plugins, self.results)

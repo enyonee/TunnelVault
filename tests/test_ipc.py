@@ -47,6 +47,7 @@ class TestProtocol:
 
     def test_socket_path(self, tmp_dir):
         from tv.app_config import cfg
+
         path = proto.socket_path(tmp_dir)
         assert path.name == cfg.paths.socket_file
         assert path.parent.name == cfg.paths.log_dir
@@ -141,6 +142,7 @@ def ipc_setup(tmp_dir, mock_net, logger):
 
     # Unix socket path limit 104 bytes on macOS - use /tmp
     import tempfile
+
     sock_path = Path(tempfile.mktemp(suffix=".sock", prefix="tv_test_"))
     lock = threading.Lock()
 
@@ -187,6 +189,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch("tv.engine.proc.is_alive", return_value=True):
             resp = client.send("check")
 
@@ -198,6 +201,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch("tv.engine.proc.is_alive", return_value=False):
             resp = client.send("check")
 
@@ -216,6 +220,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with (
             patch.object(engine, "disconnect_all"),
             patch.object(engine, "setup"),
@@ -232,6 +237,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch.object(engine, "disconnect_all"):
             resp = client.send("disconnect")
 
@@ -241,6 +247,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch.object(engine, "reconnect_one", return_value=True) as mock_recon:
             resp = client.send("reconnect", name="vpn1")
 
@@ -252,6 +259,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch.object(engine, "reconnect_one", return_value=False):
             resp = client.send("reconnect", name="nonexistent")
 
@@ -262,6 +270,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch.object(engine, "disconnect_one", return_value=True) as mock_disc:
             resp = client.send("disconnect", name="vpn1")
 
@@ -273,6 +282,7 @@ class TestIPCIntegration:
         engine, client, *_ = ipc_setup
 
         from unittest.mock import patch
+
         with patch.object(engine, "disconnect_one", return_value=False):
             resp = client.send("disconnect", name="nope")
 
@@ -312,6 +322,7 @@ class TestIPCIntegration:
         threading.Thread(target=release_later, daemon=True).start()
 
         from unittest.mock import patch
+
         with (
             patch.object(engine, "disconnect_all"),
             patch.object(engine, "setup"),
@@ -374,6 +385,7 @@ class TestIPCTcpFallback:
         _, client, *_ = tcp_ipc_setup
 
         from unittest.mock import patch
+
         with patch("tv.engine.proc.is_alive", return_value=True):
             resp = client.send("check")
 

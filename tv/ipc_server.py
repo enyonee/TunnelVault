@@ -206,20 +206,25 @@ class IPCServer:
 
         tunnels = []
         for tcfg, plugin, result in zip(snap_tunnels, snap_plugins, snap_results):
-            tunnels.append({
-                "name": tcfg.name,
-                "type": tcfg.type,
-                "connected": result.ok,
-                "pid": plugin._pid,
-                "interface": tcfg.interface or "",
-                "detail": result.detail or "",
-            })
+            tunnels.append(
+                {
+                    "name": tcfg.name,
+                    "type": tcfg.type,
+                    "connected": result.ok,
+                    "pid": plugin._pid,
+                    "interface": tcfg.interface or "",
+                    "detail": result.detail or "",
+                }
+            )
 
-        return proto.make_response(True, data={
-            "pid": os.getpid(),
-            "uptime": int(time.monotonic() - self._started),
-            "tunnels": tunnels,
-        })
+        return proto.make_response(
+            True,
+            data={
+                "pid": os.getpid(),
+                "uptime": int(time.monotonic() - self._started),
+                "tunnels": tunnels,
+            },
+        )
 
     def _cmd_check(self, _request: dict) -> dict:
         engine = self._engine
@@ -232,11 +237,13 @@ class IPCServer:
         tunnels = []
         for tcfg, plugin, result in zip(snap_tunnels, snap_plugins, snap_results):
             is_dead = any(tc.name == tcfg.name for tc, _ in dead)
-            tunnels.append({
-                "name": tcfg.name,
-                "alive": result.ok and not is_dead,
-                "pid": plugin._pid,
-            })
+            tunnels.append(
+                {
+                    "name": tcfg.name,
+                    "alive": result.ok and not is_dead,
+                    "pid": plugin._pid,
+                }
+            )
 
         return proto.make_response(True, data={"tunnels": tunnels})
 
@@ -258,9 +265,11 @@ class IPCServer:
                 return proto.make_response(True, data={"reconnected": [name]})
 
             self._engine.reconnect_all(quiet=True)
-            names = [tc.name for tc, r in zip(
-                self._engine.tunnels, self._engine.results
-            ) if r.ok]
+            names = [
+                tc.name
+                for tc, r in zip(self._engine.tunnels, self._engine.results)
+                if r.ok
+            ]
             return proto.make_response(True, data={"reconnected": names})
         except Exception as e:
             return proto.make_error(f"reconnect failed: {e}")
@@ -302,6 +311,8 @@ def start_server_thread(
 ) -> tuple[IPCServer, threading.Thread]:
     """Start IPC server in a daemon thread. Returns (server, thread)."""
     server = IPCServer(engine, socket_path, log, reconnect_lock)
-    thread = threading.Thread(target=server.serve_forever, daemon=True, name="ipc-server")
+    thread = threading.Thread(
+        target=server.serve_forever, daemon=True, name="ipc-server"
+    )
     thread.start()
     return server, thread
