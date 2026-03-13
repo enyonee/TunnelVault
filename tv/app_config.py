@@ -58,6 +58,7 @@ class Paths:
     defaults_file: str = "config.toml"
     main_log: str = "tunnelvault.log"
     pid_file: str = "tunnelvault.pid"
+    socket_file: str = "tunnelvault.sock"
     resolver_dir: str = "/etc/resolver"
 
     def __post_init__(self):
