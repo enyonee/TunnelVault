@@ -295,12 +295,35 @@ class Engine:
                 dead.append((tcfg, plugin._pid))
         return dead
 
+    def wait_for_network(self) -> bool:
+        """Wait for network to become available (default gateway reachable).
+
+        Returns True if network is ready, False on timeout.
+        """
+        timeout = cfg.timeouts.network_wait_timeout
+        interval = cfg.timeouts.network_wait_interval
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            gw = self.net.default_gateway()
+            if gw:
+                self.log.log("INFO", f"Network ready, gateway={gw}")
+                return True
+            time.sleep(interval)
+
+        self.log.log("WARN", f"Network not ready after {timeout}s")
+        return False
+
     def reconnect_all(
         self, *, quiet: bool = True
     ) -> tuple[list[checks.CheckResult], str]:
-        """Full reconnect cycle: disconnect, setup, connect, check."""
+        """Full reconnect cycle: disconnect, wait for network, setup, connect, check."""
         self.disconnect_all()
         time.sleep(cfg.timeouts.keepalive_reconnect_pause)
+
+        if not self.wait_for_network():
+            raise RuntimeError("Network not available after wake")
+
         self.setup(clear=False, quiet=quiet)
         self.connect_all(quiet=quiet)
         return self.check_all(quiet=quiet)

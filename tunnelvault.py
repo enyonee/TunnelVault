@@ -562,18 +562,33 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
 
         # Hold lock during reconnect to prevent signal handler from
         # calling disconnect_all() concurrently
-        if reconnect_lock:
-            reconnect_lock.acquire()
-        try:
-            check_results, ext_ip = engine.reconnect_all(quiet=True)
-            reconnect_count += 1
-        except Exception as e:
-            engine.log.log("ERROR", f"Keepalive reconnect failed: {e}")
-            ui.fail(t("main.keepalive_failed", error=str(e)))
+        max_retries = cfg.timeouts.keepalive_max_retries
+        success = False
+        for attempt in range(1, max_retries + 1):
+            if reconnect_lock:
+                reconnect_lock.acquire()
+            try:
+                check_results, ext_ip = engine.reconnect_all(quiet=True)
+                reconnect_count += 1
+                success = True
+                break
+            except Exception as e:
+                engine.log.log(
+                    "ERROR",
+                    f"Keepalive reconnect attempt {attempt}/{max_retries} failed: {e}",
+                )
+                if attempt == max_retries:
+                    ui.fail(t("main.keepalive_failed", error=str(e)))
+                else:
+                    backoff = min(2**attempt, 30)
+                    engine.log.log("INFO", f"Retrying in {backoff}s...")
+                    time.sleep(backoff)
+            finally:
+                if reconnect_lock and reconnect_lock.locked():
+                    reconnect_lock.release()
+
+        if not success:
             continue
-        finally:
-            if reconnect_lock and reconnect_lock.locked():
-                reconnect_lock.release()
 
         ok_count = sum(1 for r in engine.results if r.ok)
         total = len(engine.results)

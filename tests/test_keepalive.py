@@ -124,6 +124,7 @@ class TestReconnectAll:
 
         with (
             patch.object(engine, "disconnect_all") as mock_disc,
+            patch.object(engine, "wait_for_network", return_value=True),
             patch.object(engine, "setup") as mock_setup,
             patch.object(engine, "connect_all") as mock_conn,
             patch.object(engine, "check_all", return_value=([], "")) as mock_check,
@@ -142,6 +143,7 @@ class TestReconnectAll:
         fake_results = [CheckResult("test", "ok", "ok")]
         with (
             patch.object(engine, "disconnect_all"),
+            patch.object(engine, "wait_for_network", return_value=True),
             patch.object(engine, "setup"),
             patch.object(engine, "connect_all"),
             patch.object(engine, "check_all", return_value=(fake_results, "1.2.3.4")),
@@ -162,6 +164,11 @@ class TestReconnectAll:
                 engine, "disconnect_all", side_effect=lambda: call_order.append("disc")
             ),
             patch.object(
+                engine,
+                "wait_for_network",
+                side_effect=lambda: (call_order.append("net_wait"), True)[-1],
+            ),
+            patch.object(
                 engine, "setup", side_effect=lambda **kw: call_order.append("setup")
             ),
             patch.object(
@@ -179,8 +186,60 @@ class TestReconnectAll:
 
         assert call_order[0] == "disc"
         assert call_order[1].startswith("sleep:")
-        assert call_order[2] == "setup"
-        assert call_order[3] == "conn"
+        assert call_order[2] == "net_wait"
+        assert call_order[3] == "setup"
+        assert call_order[4] == "conn"
+
+    def test_raises_when_network_unavailable(self, tmp_dir, mock_net, logger):
+        """reconnect_all raises RuntimeError if network doesn't come back."""
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+
+        with (
+            patch.object(engine, "disconnect_all"),
+            patch.object(engine, "wait_for_network", return_value=False),
+            patch("tv.engine.time.sleep"),
+            pytest.raises(RuntimeError, match="Network not available"),
+        ):
+            engine.reconnect_all()
+
+
+class TestWaitForNetwork:
+    def test_returns_true_when_gateway_available(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        mock_net.default_gateway.return_value = "192.168.1.1"
+
+        result = engine.wait_for_network()
+
+        assert result is True
+        mock_net.default_gateway.assert_called_once()
+
+    def test_waits_until_gateway_appears(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        mock_net.default_gateway.side_effect = [None, None, "10.0.0.1"]
+
+        with (
+            patch("tv.engine.time.sleep"),
+            patch("tv.engine.time.monotonic") as mock_mono,
+        ):
+            mock_mono.side_effect = [0.0, 2.0, 4.0, 6.0]
+            result = engine.wait_for_network()
+
+        assert result is True
+        assert mock_net.default_gateway.call_count == 3
+
+    def test_returns_false_on_timeout(self, tmp_dir, mock_net, logger):
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        mock_net.default_gateway.return_value = None
+
+        with (
+            patch("tv.engine.time.sleep"),
+            patch("tv.engine.time.monotonic") as mock_mono,
+        ):
+            # Сразу за пределами deadline
+            mock_mono.side_effect = [0.0, 31.0]
+            result = engine.wait_for_network()
+
+        assert result is False
 
 
 # =========================================================================
@@ -286,9 +345,10 @@ class TestKeepaliveLoop:
 
         mock_recon.assert_called_once()
 
-    def test_reconnect_failure_continues_loop(self, tmp_dir, mock_net, logger):
-        """Reconnect failure doesn't crash the loop."""
+    def test_reconnect_failure_retries_then_continues(self, tmp_dir, mock_net, logger):
+        """Reconnect failure retries with backoff, then continues loop."""
         from tunnelvault import _keepalive_loop
+        from tv.app_config import cfg
 
         engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
         plugin = MagicMock(spec=TunnelPlugin)
@@ -299,27 +359,28 @@ class TestKeepaliveLoop:
         engine.tunnels = [tcfg]
         engine.results = [VPNResult(ok=True, pid=100)]
 
-        call_count = 0
+        sleep_count = 0
+        max_retries = cfg.timeouts.keepalive_max_retries
 
         def fake_sleep(interval):
-            nonlocal call_count
-            call_count += 1
-            if call_count > 2:
+            nonlocal sleep_count
+            sleep_count += 1
+            # Exit after retries exhaust (4 backoff sleeps) + next keepalive sleep
+            if sleep_count > max_retries:
                 raise KeyboardInterrupt
 
-        # Two iterations: first reconnect fails, second exits
+        # Provide enough monotonic values for loop iterations + retries
+        mono_values = [0.0, 30.0] + [30.0] * 20
         with (
             patch("tunnelvault.time.sleep", side_effect=fake_sleep),
             patch("tv.engine.proc.is_alive", return_value=False),
-            patch(
-                "tunnelvault.time.monotonic", side_effect=[0.0, 30.0, 60.0, 90.0, 90.0]
-            ),
+            patch("tunnelvault.time.monotonic", side_effect=mono_values),
             patch.object(
                 engine, "reconnect_all", side_effect=RuntimeError("network down")
-            ),
+            ) as mock_recon,
             pytest.raises(KeyboardInterrupt),
         ):
             _keepalive_loop(engine)
 
-        # Loop survived the error and continued
-        assert call_count == 3  # 2 iterations + 1 that raises
+        # All retries were attempted
+        assert mock_recon.call_count == max_retries
