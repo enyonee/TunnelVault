@@ -34,12 +34,12 @@ class TestValidate:
     def test_unknown_type(self, tmp_dir, capsys):
         defs = {
             "tunnels": {
-                "vpn1": {"type": "wireguard"},
+                "vpn1": {"type": "zerotier"},
             },
         }
         assert validate.run(defs, tmp_dir) is False
         out = capsys.readouterr().out
-        assert "wireguard" in out
+        assert "zerotier" in out
 
     def test_missing_type(self, tmp_dir, capsys):
         defs = {

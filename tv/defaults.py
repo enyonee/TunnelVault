@@ -157,6 +157,7 @@ def _apply_config_defaults(tunnels: list[TunnelConfig]) -> None:
     type_defaults = {
         "singbox": cfg.defaults.singbox_config,
         "openvpn": cfg.defaults.openvpn_config,
+        "wireguard": cfg.defaults.wireguard_config,
     }
     for tc in tunnels:
         if not tc.config_file and tc.type in type_defaults:
