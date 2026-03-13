@@ -43,7 +43,9 @@ def tmp_dir(tmp_path: Path) -> Path:
     """Temp directory with required config files."""
     (tmp_path / "client.ovpn").write_text("[openvpn config]")
     (tmp_path / "singbox.json").write_text('{"log":{"level":"info"}}')
-    (tmp_path / "wg0.conf").write_text("[Interface]\nPrivateKey=test\nAddress=10.0.0.2/24")
+    (tmp_path / "wg0.conf").write_text(
+        "[Interface]\nPrivateKey=test\nAddress=10.0.0.2/24"
+    )
     return tmp_path
 
 

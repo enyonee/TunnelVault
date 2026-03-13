@@ -39,9 +39,11 @@ class WireGuardPlugin(TunnelPlugin):
     def config_schema(cls) -> list[ConfigParam]:
         return [
             ConfigParam(
-                "config_file", "param.wg_config",
+                "config_file",
+                "param.wg_config",
                 default=cfg.defaults.wireguard_config,
-                env_var="VPN_WG_CONFIG", target="config_file",
+                env_var="VPN_WG_CONFIG",
+                target="config_file",
             ),
         ]
 
@@ -103,8 +105,7 @@ class WireGuardPlugin(TunnelPlugin):
                 ifaces_now = set(self.net.interfaces().keys())
                 new_ifaces = list(ifaces_now - ifaces_before)
                 wg_ifaces = [
-                    i for i in new_ifaces
-                    if i.startswith("utun") or i.startswith("wg")
+                    i for i in new_ifaces if i.startswith("utun") or i.startswith("wg")
                 ]
                 if wg_ifaces:
                     detected_iface = sorted(wg_ifaces)[0]
@@ -132,7 +133,9 @@ class WireGuardPlugin(TunnelPlugin):
 
         ui.ok(t("vpn.wg.connected", iface=detected_iface))
         self.log.log("INFO", f"WireGuard connected ({detected_iface})")
-        self.log.log_lines("INFO", f"ifconfig {detected_iface}:\n{self.net.iface_info(detected_iface)}")
+        self.log.log_lines(
+            "INFO", f"ifconfig {detected_iface}:\n{self.net.iface_info(detected_iface)}"
+        )
 
         self.add_routes()
         self.setup_dns()

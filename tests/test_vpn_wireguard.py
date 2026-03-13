@@ -83,6 +83,7 @@ class TestMeta:
 
     def test_registered(self):
         from tv.vpn.registry import get_plugin
+
         assert get_plugin("wireguard") is WireGuardPlugin
 
     def test_binary(self):
@@ -123,7 +124,9 @@ class TestConnectSuccess:
             plugin.connect()
 
         plugin.net.setup_dns_resolver.assert_called_once_with(
-            ["wg.local"], ["10.0.1.1"], "utun97",
+            ["wg.local"],
+            ["10.0.1.1"],
+            "utun97",
         )
 
     def test_no_dns_when_not_configured(self, plugin):
@@ -157,7 +160,9 @@ class TestConnectSuccess:
             def fake_wait_for(desc, check_fn, timeout, log):
                 # Simulate new interface appearing
                 plugin.net.interfaces.return_value = {
-                    "en0": "192.168.1.7", "lo0": "127.0.0.1", "utun42": "10.0.0.2"
+                    "en0": "192.168.1.7",
+                    "lo0": "127.0.0.1",
+                    "utun42": "10.0.0.2",
                 }
                 return check_fn()
 
@@ -202,7 +207,9 @@ class TestConnectFailure:
 
     def test_shows_stderr_on_failure(self, plugin, capsys):
         """On wg-quick failure, shows last line of stderr."""
-        with _wg_connect_fail_setup(plugin, stderr="Line 1\nUnable to access interface"):
+        with _wg_connect_fail_setup(
+            plugin, stderr="Line 1\nUnable to access interface"
+        ):
             plugin.connect()
 
         out = capsys.readouterr().out
