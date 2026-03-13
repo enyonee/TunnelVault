@@ -147,15 +147,11 @@ jobs:
 
       - name: Notify Telegram
         if: always()
-        uses: enyonee/telegram-notify-action@v1
+        uses: enyonee/telegram-notify-action@v2
         with:
           bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
           status: ${{ steps.test-results.outcome }}
-          message: |
-            <b>TunnelVault</b> integration tests
-
-            Branch: <code>${{ inputs.branch }}</code>
-            Status: ${{ steps.test-results.outcome == 'success' && 'PASSED' || 'FAILED' }}
-
-            <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View logs</a>
+          project: TunnelVault
+          event: K8s integration tests
+          branch: ${{ inputs.branch }}
