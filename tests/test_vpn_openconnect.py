@@ -12,7 +12,6 @@ import pytest
 from tv.vpn.base import TunnelConfig
 from tv.vpn.openconnect import (
     OpenConnectPlugin,
-    OpenConnectInfo,
     parse_openconnect_output,
 )
 
