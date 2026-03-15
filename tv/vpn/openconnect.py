@@ -15,7 +15,6 @@ from tv import proc, ui
 from tv.app_config import cfg
 from tv.i18n import t
 from tv.logger import Logger
-from tv.net import NetManager
 from tv.proc import IS_WINDOWS
 from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
 from tv.vpn.registry import register
@@ -225,7 +224,7 @@ class OpenConnectPlugin(TunnelPlugin):
             self.cfg.routes.get("hosts") or self.cfg.routes.get("networks")
         )
         has_custom_dns = bool(
-            self.cfg.dns.get("nameservers") and self.cfg.dns.get("domains")
+            self.cfg.dns.get("nameservers") or self.cfg.dns.get("domains")
         )
         managed = has_custom_routes or has_custom_dns
 
@@ -257,6 +256,9 @@ class OpenConnectPlugin(TunnelPlugin):
         
         # Manually create process with stdin=PIPE to send password
         sudo_cmd = ["sudo"] + cmd if not IS_WINDOWS else cmd
+        
+        # Note: log_file intentionally kept open for subprocess stdout
+        # It will be closed when process exits or by OS on disconnect
         log_file = open(str(log_path), "w")
         
         try:
@@ -323,6 +325,8 @@ class OpenConnectPlugin(TunnelPlugin):
             return VPNResult(ok=True, pid=oc_pid)
 
         # Managed mode: DNS auto-discovery (before routes)
+        # Small delay to ensure openconnect has written DNS info to log
+        time.sleep(0.5)
         self._apply_discovered_dns(log_path)
 
         # Routes via TUN interface (no gateway IP needed for TUN)
