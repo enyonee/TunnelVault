@@ -173,6 +173,13 @@ STRINGS: dict[str, str] = {
     "vpn.forti.no_gw_fallback": "Не удалось определить PPP gateway, используем fallback: {gw}",
     "vpn.forti.no_gw": "Не удалось определить PPP gateway, маршруты могут не работать",
     "vpn.forti.unsupported_windows": "openfortivpn недоступен на Windows",
+    # --- vpn/openconnect.py ---
+    "vpn.openconnect.not_connected": "OpenConnect не поднялся за {timeout}с",
+    "vpn.openconnect.alive_no_iface": "Процесс жив (PID={pid}), но {label} не появился",
+    "vpn.openconnect.exited": "Процесс завершился с кодом: {rc}",
+    "vpn.openconnect.log_hint": "Лог: {path}",
+    "vpn.openconnect.connected": "OpenConnect подключен ({iface})",
+    "vpn.openconnect.unsupported_windows": "openconnect недоступен на Windows",
     # --- vpn/singbox.py ---
     "vpn.sb.not_connected": "sing-box не поднялся за {timeout}с",
     "vpn.sb.alive_no_iface": "Процесс жив (PID={pid}), но интерфейс не появился",
@@ -193,6 +200,7 @@ STRINGS: dict[str, str] = {
     "param.port": "Порт",
     "param.login": "Логин",
     "param.password": "Пароль",
+    "param.protocol": "Протокол",
     "param.cert_mode": "Сертификат (auto/manual)",
     "param.cert_sha256": "SHA256 сертификата",
     "param.fallback_gw": "Fallback GW",
