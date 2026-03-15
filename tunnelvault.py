@@ -598,7 +598,9 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     engine.log.log("INFO", f"Keepalive mode: checking every {interval}s")
 
     last_tick = time.monotonic()
+    last_reconnect = 0.0
     reconnect_count = 0
+    reconnect_cooldown = 5.0  # seconds between reconnect attempts (debounce)
 
     while True:
         time.sleep(interval)
@@ -614,19 +616,27 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
         if not slept and not dead:
             continue
 
+        # Debounce: skip if reconnect was done recently (lid dance protection)
+        if now - last_reconnect < reconnect_cooldown:
+            engine.log.log(
+                "INFO",
+                f"Skipping reconnect (cooldown: {reconnect_cooldown - (now - last_reconnect):.1f}s remaining)",
+            )
+            continue
+
         # Determine reason
         if slept and dead:
             reason = "wake"
             dead_names = ", ".join(tc.name for tc, _ in dead)
             engine.log.log(
                 "INFO",
-                f"Keepalive: wake from sleep detected (elapsed={elapsed:.0f}s), dead: {dead_names}",
+                f"Sleep detected (elapsed={elapsed:.0f}s), dead: {dead_names}",
             )
         elif slept:
             reason = "wake"
             engine.log.log(
                 "INFO",
-                f"Keepalive: wake from sleep detected (elapsed={elapsed:.0f}s), proactive reconnect",
+                f"Sleep detected (elapsed={elapsed:.0f}s), proactive reconnect",
             )
         else:
             reason = "dead"
@@ -644,33 +654,23 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
 
         # Hold lock during reconnect to prevent signal handler from
         # calling disconnect_all() concurrently
-        max_retries = cfg.timeouts.keepalive_max_retries
-        success = False
-        for attempt in range(1, max_retries + 1):
-            if reconnect_lock:
-                reconnect_lock.acquire()
-            try:
-                check_results, ext_ip = engine.reconnect_all(quiet=True)
-                reconnect_count += 1
-                success = True
-                break
-            except Exception as e:
-                engine.log.log(
-                    "ERROR",
-                    f"Keepalive reconnect attempt {attempt}/{max_retries} failed: {e}",
-                )
-                if attempt == max_retries:
-                    ui.fail(t("main.keepalive_failed", error=str(e)))
-                else:
-                    backoff = min(2**attempt, 30)
-                    engine.log.log("INFO", f"Retrying in {backoff}s...")
-                    time.sleep(backoff)
-            finally:
-                if reconnect_lock and reconnect_lock.locked():
-                    reconnect_lock.release()
-
-        if not success:
+        if reconnect_lock:
+            if not reconnect_lock.acquire(timeout=30):
+                engine.log.log("WARN", "Reconnect lock timeout, skipping")
+                continue
+        try:
+            check_results, ext_ip = engine.reconnect_all(quiet=True)
+            reconnect_count += 1
+            last_reconnect = time.monotonic()
+        except Exception as e:
+            engine.log.log("ERROR", f"Keepalive reconnect failed: {e}")
+            ui.fail(t("main.keepalive_failed", error=str(e)))
+            # Update last_reconnect even on failure to prevent retry storm
+            last_reconnect = time.monotonic()
             continue
+        finally:
+            if reconnect_lock:
+                reconnect_lock.release()
 
         ok_count = sum(1 for r in engine.results if r.ok)
         total = len(engine.results)
