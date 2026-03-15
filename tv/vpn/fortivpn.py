@@ -347,7 +347,10 @@ class FortiVPNPlugin(TunnelPlugin):
         # Deprecation warning: recommend openconnect on macOS
         if platform.system() == "Darwin":
             ui.warn(t("vpn.forti.deprecated_macos"))
-            self.log.log("WARN", "FortiVPN on macOS: consider switching to openconnect (type=openconnect)")
+            self.log.log(
+                "WARN",
+                "FortiVPN on macOS: consider switching to openconnect (type=openconnect)",
+            )
 
         auth = self.cfg.auth
         host = auth.get("host", "")

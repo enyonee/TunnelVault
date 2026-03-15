@@ -40,10 +40,10 @@ def parse_openconnect_output(output: str) -> OpenConnectInfo | None:
     """Extract connection info from openconnect stdout/stderr output."""
     addr_m = _RE_OC_ADDRESS.search(output)
     conn_m = _RE_OC_CONNECTED.search(output)
-    
+
     if not addr_m:
         return None
-    
+
     return OpenConnectInfo(
         address=addr_m.group(1),
         nameservers=_RE_OC_DNS.findall(output),
@@ -213,7 +213,9 @@ class OpenConnectPlugin(TunnelPlugin):
 
         log_path = self._default_log_path()
 
-        self.log.log("INFO", f"Host: {host}:{port}  Login: {login}  Protocol: {protocol}")
+        self.log.log(
+            "INFO", f"Host: {host}:{port}  Login: {login}  Protocol: {protocol}"
+        )
         if servercert:
             self.log.log("INFO", f"Cert: {servercert[:24]}...")
 
@@ -233,7 +235,8 @@ class OpenConnectPlugin(TunnelPlugin):
             "openconnect",
             f"{host}:{port}",
             "--protocol=" + protocol,
-            "-u", login,
+            "-u",
+            login,
             "--passwd-on-stdin",
         ]
 
@@ -253,14 +256,14 @@ class OpenConnectPlugin(TunnelPlugin):
 
         # Launch in background with stdin pipe for password
         self.log.log("INFO", f"Launch: sudo {' '.join(cmd)}")
-        
+
         # Manually create process with stdin=PIPE to send password
         sudo_cmd = ["sudo"] + cmd if not IS_WINDOWS else cmd
-        
+
         # Note: log_file intentionally kept open for subprocess stdout
         # It will be closed when process exits or by OS on disconnect
         log_file = open(str(log_path), "w")
-        
+
         try:
             oc_proc = subprocess.Popen(
                 sudo_cmd,
@@ -278,7 +281,7 @@ class OpenConnectPlugin(TunnelPlugin):
             self.log.log("ERROR", f"Failed to launch openconnect: {e}")
             log_file.close()
             return VPNResult(ok=False, detail=str(e))
-        
+
         oc_pid = oc_proc.pid
         self._pid = oc_pid
         self.log.log("INFO", f"OpenConnect PID={oc_pid}")
@@ -291,7 +294,9 @@ class OpenConnectPlugin(TunnelPlugin):
         def _check_new_tun():
             nonlocal detected_iface
             ifaces_now = set(self.net.interfaces().keys())
-            new_tun = [i for i in (ifaces_now - ifaces_before) if i.startswith(tun_prefix)]
+            new_tun = [
+                i for i in (ifaces_now - ifaces_before) if i.startswith(tun_prefix)
+            ]
             if new_tun:
                 detected_iface = sorted(new_tun)[0]
                 return True
@@ -376,14 +381,14 @@ class OpenConnectPlugin(TunnelPlugin):
                 os.kill(self._pid, signal.SIGINT)
             except (OSError, ProcessLookupError):
                 pass
-            
+
             # Wait for graceful shutdown (5 seconds)
             for _ in range(10):
                 if not proc.is_alive(self._pid):
                     self.log.log("INFO", "OpenConnect gracefully stopped")
                     return
                 time.sleep(0.5)
-            
+
             # Fall back to SIGTERM/SIGKILL if still alive
             self.log.log("WARN", "OpenConnect didn't respond to SIGINT, using SIGTERM")
             if not self._kill_by_pid():

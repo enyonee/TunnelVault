@@ -85,11 +85,11 @@ def _oc_connect_ok(plugin):
         "CSTP connected. DPD 60, Keepalive 30\n"
         "Connected as 10.212.1.55, using SSL, with DTLS + LZS\n"
     )
-    
+
     mock_popen = MagicMock()
     mock_popen.pid = 9999
     mock_popen.stdin = MagicMock()
-    
+
     with (
         patch("tv.vpn.openconnect.subprocess.Popen", return_value=mock_popen),
         patch("tv.vpn.openconnect.proc") as mock_proc,
@@ -107,7 +107,7 @@ def _oc_connect_fail(plugin, poll=1, is_alive=False):
     mock_popen.pid = 9999
     mock_popen.poll.return_value = poll
     mock_popen.stdin = MagicMock()
-    
+
     with (
         patch("tv.vpn.openconnect.subprocess.Popen", return_value=mock_popen),
         patch("tv.vpn.openconnect.proc") as mock_proc,
@@ -619,9 +619,7 @@ class TestDnsAutoDiscovery:
     def test_manual_nameservers_not_overwritten(self, tmp_dir, mock_net, logger):
         """Manual nameservers preserved, discovery logged but not applied."""
         log = (
-            "Got address: 10.0.0.1\n"
-            "Got DNS 10.11.1.101\n"
-            "Got search domain corp.local\n"
+            "Got address: 10.0.0.1\nGot DNS 10.11.1.101\nGot search domain corp.local\n"
         )
         dns = {"nameservers": ["1.1.1.1"], "domains": []}
         p, log_path = self._make_plugin_with_log(tmp_dir, mock_net, logger, dns, log)
@@ -681,6 +679,7 @@ class TestDisconnect:
 
         # SIGINT sent
         import signal
+
         mock_kill.assert_called_once_with(12345, signal.SIGINT)
 
     def test_disconnect_fallback_to_sigterm(self, plugin):
