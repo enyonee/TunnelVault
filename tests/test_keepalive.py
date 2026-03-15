@@ -345,10 +345,9 @@ class TestKeepaliveLoop:
 
         mock_recon.assert_called_once()
 
-    def test_reconnect_failure_retries_then_continues(self, tmp_dir, mock_net, logger):
-        """Reconnect failure retries with backoff, then continues loop."""
+    def test_reconnect_failure_continues_loop(self, tmp_dir, mock_net, logger):
+        """Reconnect failure logs error, updates cooldown, and continues loop."""
         from tunnelvault import _keepalive_loop
-        from tv.app_config import cfg
 
         engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
         plugin = MagicMock(spec=TunnelPlugin)
@@ -360,17 +359,18 @@ class TestKeepaliveLoop:
         engine.results = [VPNResult(ok=True, pid=100)]
 
         sleep_count = 0
-        max_retries = cfg.timeouts.keepalive_max_retries
 
         def fake_sleep(interval):
             nonlocal sleep_count
             sleep_count += 1
-            # Exit after retries exhaust (4 backoff sleeps) + next keepalive sleep
-            if sleep_count > max_retries:
+            if sleep_count > 2:
                 raise KeyboardInterrupt
 
-        # Provide enough monotonic values for loop iterations + retries
-        mono_values = [0.0, 30.0] + [30.0] * 20
+        # monotonic: dead detected → reconnect fails → continue loop (cooldown active) → exit
+        # First iteration: 0→30 (dead, reconnect fail)
+        # Second iteration: 30→32 (dead, but cooldown: 5s - 2s = 3s remaining)
+        # Third sleep → exit
+        mono_values = [0.0, 30.0, 30.0, 32.0, 32.0]
         with (
             patch("tunnelvault.time.sleep", side_effect=fake_sleep),
             patch("tv.engine.proc.is_alive", return_value=False),
@@ -382,5 +382,49 @@ class TestKeepaliveLoop:
         ):
             _keepalive_loop(engine)
 
-        # All retries were attempted
-        assert mock_recon.call_count == max_retries
+        # Reconnect attempted once, then blocked by cooldown even after failure
+        assert mock_recon.call_count == 1
+
+    def test_reconnect_debounce(self, tmp_dir, mock_net, logger):
+        """Multiple wake events within cooldown window trigger only one reconnect."""
+        from tunnelvault import _keepalive_loop
+
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        plugin = MagicMock(spec=TunnelPlugin)
+        plugin._pid = 100
+        tcfg = TunnelConfig(name="vpn1", type="openvpn")
+
+        engine.plugins = [plugin]
+        engine.tunnels = [tcfg]
+        engine.results = [VPNResult(ok=True, pid=100)]
+
+        sleep_count = 0
+
+        def fake_sleep(interval):
+            nonlocal sleep_count
+            sleep_count += 1
+            if sleep_count > 3:
+                raise KeyboardInterrupt
+
+        # First sleep gap → reconnect
+        # Second sleep gap 2s later (within 5s cooldown) → skip
+        # Third iteration → exit
+        mono_values = [
+            0.0,
+            300.0,  # first wake (elapsed=300s)
+            300.0,  # after reconnect
+            302.0,  # second wake (elapsed=2s, but gap detected)
+            302.0,  # cooldown skip
+            362.0,  # normal tick
+        ]
+        with (
+            patch("tunnelvault.time.sleep", side_effect=fake_sleep),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch("tunnelvault.time.monotonic", side_effect=mono_values),
+            patch.object(engine, "reconnect_all", return_value=([], "")) as mock_recon,
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _keepalive_loop(engine)
+
+        # Only first reconnect executed, second skipped due to cooldown
+        assert mock_recon.call_count == 1
