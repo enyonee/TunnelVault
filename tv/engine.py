@@ -108,6 +108,15 @@ class Engine:
         self.results = []
         self.tunnels = defaults_mod.parse_tunnels(self.defs)
 
+        # Inject bypass domain_suffix into singbox tunnels so the plugin
+        # can add direct route rules into the sing-box JSON config.
+        bypass_cfg = get_bypass_routes(self.defs)
+        bypass_suffixes = bypass_cfg.get("domain_suffix", [])
+        if bypass_suffixes:
+            for tcfg in self.tunnels:
+                if tcfg.type == "singbox":
+                    tcfg.extra["bypass_domain_suffix"] = bypass_suffixes
+
         # Filter out tunnels whose binary is not installed
         self.tunnels = self._filter_available(self.tunnels)
         if not self.tunnels:
