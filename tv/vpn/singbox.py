@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 from pathlib import Path
 
 from tv import proc, ui
@@ -20,6 +23,10 @@ class SingBoxPlugin(TunnelPlugin):
     type_display_name = "sing-box"
     process_names = ("sing-box",)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._patched_config: str | None = None
+
     @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
         return [f"sing-box run -c {script_dir}"]
@@ -28,6 +35,10 @@ class SingBoxPlugin(TunnelPlugin):
     def discover_pid(cls, tcfg, script_dir) -> int | None:
         config_path = script_dir / tcfg.config_file
         pids = proc.find_pids(f"sing-box run -c {config_path}")
+        if pids:
+            return pids[0]
+        # Also check patched config pattern
+        pids = proc.find_pids(f"sing-box run -c {cfg.paths.temp_dir}/sb_bypass_")
         return pids[0] if pids else None
 
     @classmethod
@@ -60,10 +71,19 @@ class SingBoxPlugin(TunnelPlugin):
         if err := self._check_config_file("vpn.sb.config_not_found"):
             return err
 
+        # Inject bypass domain rules into sing-box config if configured
+        run_config = str(config_path)
+        bypass_suffixes = self.cfg.extra.get("bypass_domain_suffix", [])
+        if bypass_suffixes:
+            patched = _inject_bypass_rules(config_path, bypass_suffixes, self.log)
+            if patched:
+                run_config = patched
+                self._patched_config = patched
+
         # Launch in background
-        self.log.log("INFO", f"Launch: sudo sing-box run -c {config_path}")
+        self.log.log("INFO", f"Launch: sudo sing-box run -c {run_config}")
         sb_proc = proc.run_background(
-            ["sing-box", "run", "-c", str(config_path)],
+            ["sing-box", "run", "-c", run_config],
             sudo=True,
             log_path=str(log_path),
         )
@@ -98,9 +118,74 @@ class SingBoxPlugin(TunnelPlugin):
 
         return VPNResult(ok=True, pid=sb_pid)
 
+    def disconnect(self) -> None:
+        super().disconnect()
+        # Clean up patched config file
+        if self._patched_config:
+            try:
+                os.unlink(self._patched_config)
+            except OSError:
+                pass
+            self._patched_config = None
+
     def _kill_by_pattern(self) -> None:
         config_path = self.script_dir / self.cfg.config_file
         proc.kill_pattern(f"sing-box run -c {config_path}", sudo=True)
+        # Also kill by patched config pattern
+        if self._patched_config:
+            proc.kill_pattern(f"sing-box run -c {self._patched_config}", sudo=True)
+
+
+def _inject_bypass_rules(
+    config_path: Path,
+    suffixes: list[str],
+    log: Logger,
+) -> str | None:
+    """Inject bypass domain_suffix rules into sing-box JSON config.
+
+    Creates a temp file with domain_suffix rules added as the first route
+    rule with outbound "direct". Returns the temp file path, or None on error.
+    """
+    try:
+        data = json.loads(config_path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        log.log("WARN", f"bypass inject: cannot read {config_path}: {e}")
+        return None
+
+    # Normalize suffixes: ".ru" -> "ru", "vk.com" -> "vk.com"
+    normalized = [s.lstrip(".").rstrip(".") for s in suffixes if s.strip()]
+    if not normalized:
+        return None
+
+    # Build bypass rule
+    bypass_rule = {
+        "domain_suffix": normalized,
+        "outbound": "direct",
+    }
+
+    # Inject as first route rule (highest priority)
+    route = data.setdefault("route", {})
+    rules = route.setdefault("rules", [])
+    rules.insert(0, bypass_rule)
+
+    # Write patched config to temp file
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix="sb_bypass_",
+            suffix=".json",
+            dir=cfg.paths.temp_dir,
+        )
+        os.write(fd, json.dumps(data, indent=2).encode())
+        os.close(fd)
+    except OSError as e:
+        log.log("WARN", f"bypass inject: cannot write temp config: {e}")
+        return None
+
+    log.log(
+        "INFO",
+        f"bypass inject: {len(normalized)} domain suffixes -> direct ({tmp_path})",
+    )
+    return tmp_path
 
 
 def _show_error(sb_proc, log_path: Path, log: Logger) -> None:

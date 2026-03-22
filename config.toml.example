@@ -11,6 +11,13 @@
 hosts = ["203.0.113.10", "203.0.113.20"]
 resolve = ["vpn.example.com"]
 
+# Bypass - домены/хосты, которые должны идти мимо VPN (через default GW).
+# domain_suffix инжектится в sing-box route rules как outbound "direct",
+# а также создает DNS proxy для корректного резолва через upstream_dns.
+# [global.bypass]
+# domain_suffix = [".ru", ".su", ".xn--p1ai"]
+# upstream_dns = "77.88.8.8"
+
 # === Туннели ===
 
 [tunnels.openvpn]

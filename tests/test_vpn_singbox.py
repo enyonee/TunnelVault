@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import platform
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from tv.vpn.base import TunnelConfig
-from tv.vpn.singbox import SingBoxPlugin
+from tv.vpn.singbox import SingBoxPlugin, _inject_bypass_rules
 
 pytestmark = pytest.mark.skipif(
     platform.system() == "Windows", reason="sing-box plugin is Unix-only"
@@ -269,3 +271,138 @@ class TestResolvedDefaults:
         r = plugin.connect()
         assert r.ok is False
         assert r.detail == "config not found"
+
+
+# =========================================================================
+# Bypass domain injection
+# =========================================================================
+
+
+class TestBypassInjection:
+    def _make_sb_config(self, tmp_dir: Path) -> Path:
+        """Create a minimal sing-box config with sniff and route rules."""
+        config = {
+            "log": {"level": "info"},
+            "inbounds": [
+                {
+                    "type": "tun",
+                    "tag": "tun-in",
+                    "interface_name": "utun98",
+                    "sniff": True,
+                }
+            ],
+            "outbounds": [
+                {"type": "trojan", "tag": "proxy", "server": "1.2.3.4"},
+                {"type": "direct", "tag": "direct"},
+            ],
+            "route": {
+                "auto_detect_interface": True,
+                "rules": [
+                    {"ip_cidr": ["5.5.5.5/32"], "outbound": "direct"},
+                ],
+                "final": "proxy",
+            },
+        }
+        path = tmp_dir / "test-sb.json"
+        path.write_text(json.dumps(config))
+        return path
+
+    def test_inject_adds_bypass_rule_first(self, tmp_dir, logger):
+        """Bypass rule is inserted as the first route rule."""
+        config_path = self._make_sb_config(tmp_dir)
+        suffixes = [".ru", ".su", ".vk.com"]
+
+        result = _inject_bypass_rules(config_path, suffixes, logger)
+        assert result is not None
+
+        patched = json.loads(Path(result).read_text())
+        rules = patched["route"]["rules"]
+        assert rules[0]["domain_suffix"] == ["ru", "su", "vk.com"]
+        assert rules[0]["outbound"] == "direct"
+        # Original rule still there
+        assert rules[1]["ip_cidr"] == ["5.5.5.5/32"]
+
+        Path(result).unlink()
+
+    def test_inject_normalizes_suffixes(self, tmp_dir, logger):
+        """Leading dots are stripped from suffixes."""
+        config_path = self._make_sb_config(tmp_dir)
+        suffixes = [".ru", "su", ".xn--p1ai."]
+
+        result = _inject_bypass_rules(config_path, suffixes, logger)
+        patched = json.loads(Path(result).read_text())
+        assert patched["route"]["rules"][0]["domain_suffix"] == [
+            "ru",
+            "su",
+            "xn--p1ai",
+        ]
+
+        Path(result).unlink()
+
+    def test_inject_empty_suffixes_returns_none(self, tmp_dir, logger):
+        """Empty suffix list returns None (no patching needed)."""
+        config_path = self._make_sb_config(tmp_dir)
+        assert _inject_bypass_rules(config_path, [], logger) is None
+
+    def test_inject_bad_json_returns_none(self, tmp_dir, logger):
+        """Invalid JSON config returns None without crashing."""
+        bad_path = tmp_dir / "bad.json"
+        bad_path.write_text("not json")
+        assert _inject_bypass_rules(bad_path, [".ru"], logger) is None
+
+    def test_inject_missing_route_section(self, tmp_dir, logger):
+        """Config without route section gets one created."""
+        config_path = tmp_dir / "no-route.json"
+        config_path.write_text('{"log":{"level":"info"}}')
+
+        result = _inject_bypass_rules(config_path, [".ru"], logger)
+        assert result is not None
+
+        patched = json.loads(Path(result).read_text())
+        assert patched["route"]["rules"][0]["domain_suffix"] == ["ru"]
+        assert patched["route"]["rules"][0]["outbound"] == "direct"
+
+        Path(result).unlink()
+
+    def test_connect_uses_patched_config(self, plugin, tmp_dir):
+        """connect() launches sing-box with patched config when bypass is set."""
+        # Create a proper sing-box config
+        sb_config = {
+            "log": {"level": "info"},
+            "route": {"rules": [], "final": "proxy"},
+            "outbounds": [{"type": "direct", "tag": "direct"}],
+        }
+        (tmp_dir / "singbox.json").write_text(json.dumps(sb_config))
+        plugin.cfg.extra["bypass_domain_suffix"] = [".ru"]
+
+        with _singbox_connect_ok(plugin) as mock_proc:
+            r = plugin.connect()
+
+        assert r.ok is True
+        # Check that run_background was called with patched config path
+        bg_call = mock_proc.run_background.call_args[0][0]
+        config_arg = bg_call[3]  # ["sing-box", "run", "-c", PATH]
+        assert "sb_bypass_" in config_arg
+
+    def test_disconnect_cleans_patched_config(self, plugin, tmp_dir):
+        """disconnect() removes the patched config file."""
+        sb_config = {
+            "log": {"level": "info"},
+            "route": {"rules": [], "final": "proxy"},
+            "outbounds": [{"type": "direct", "tag": "direct"}],
+        }
+        (tmp_dir / "singbox.json").write_text(json.dumps(sb_config))
+        plugin.cfg.extra["bypass_domain_suffix"] = [".ru"]
+
+        with _singbox_connect_ok(plugin):
+            plugin.connect()
+
+        patched_path = plugin._patched_config
+        assert patched_path is not None
+        assert Path(patched_path).exists()
+
+        with patch("tv.vpn.base.proc") as mock_proc:
+            mock_proc.is_alive.return_value = False
+            plugin.disconnect()
+
+        assert not Path(patched_path).exists()
