@@ -36,3 +36,11 @@ tasks/
 
 # OS
 .DS_Store
+
+# Worktrees
+.worktrees/
+
+# VPN client configs (contain passwords)
+.vpn-settings.json
+relay-hysteria2.json
+timeweb-trojan*.json
