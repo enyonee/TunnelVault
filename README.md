@@ -7,10 +7,10 @@
 <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
 <a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux_|_Windows-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
-<a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.2.1-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
-<img src="https://img.shields.io/badge/tests-906_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
+<a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.3.0-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
+<img src="https://img.shields.io/badge/tests-934_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
 
-<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>+ your plugin</kbd>
+<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>OpenConnect</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>+ your plugin</kbd>
 
 <a href="#-quick-start">Quick Start</a> · <a href="#-how-it-works">How It Works</a> · <a href="#-configuration">Configuration</a> · <a href="#-cli">CLI</a> · <a href="#-plugin-system">Plugins</a>
 
@@ -294,7 +294,9 @@ class MyVPNPlugin(TunnelPlugin):
 |--------|---------|-----------|------------|
 | **OpenVPN** | `openvpn` | `tun0` | Tunnelblick detection, `.ovpn` config, external IP |
 | **FortiVPN** | `openfortivpn` | `ppp0` | Auto cert trust, PPP gateway discovery, split routing |
+| **OpenConnect** | `openconnect` | `tun1` | FortiGate via TUN (replaces PPP), SAML/cert auth |
 | **sing-box** | `sing-box` | `utun99` | JSON config, custom interface |
+| **WireGuard** | `wg-quick` | `wg0` | Client mode, config via `wg0.conf` |
 
 <details>
 <summary><strong>sing-box: multiple outbounds with auto-failover</strong></summary>
@@ -323,8 +325,13 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 
 ## <img src="https://img.shields.io/badge/🗺_Roadmap-2FBFBF?style=for-the-badge" alt="Roadmap">
 
-- [ ] WireGuard plugin - client mode via `wg-quick` (in progress)
+- [x] WireGuard plugin - client mode via `wg-quick`
+- [x] OpenConnect plugin - FortiGate via TUN interface
+- [x] IPC daemon - unix socket between daemon and CLI
+- [x] Auto-reconnect - network wait with debounce after sleep/wake
+- [x] Single `config.toml` for all settings
 - [ ] `--check` rerun - re-run health checks with retry/loop until all pass
+- [ ] Kill switch - block non-VPN traffic
 - [ ] Plugin-defined checks - each VPN plugin declares default checks in code, no manual TOML needed
 - [ ] Configurable check list - override/extend plugin checks via external file
 - [x] Windows support - routing, DNS, process management for Windows
