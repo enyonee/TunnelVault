@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ocserv gnutls-bin \
+    ocserv gnutls-bin netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tests/e2e/pki/ocserv-ca.pem /etc/ocserv/ca.pem
