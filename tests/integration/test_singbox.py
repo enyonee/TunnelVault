@@ -17,12 +17,11 @@ from tv.net import NetManager
 pytestmark = pytest.mark.network
 
 
-@pytest.mark.skip(reason="sing-box tun creation unreliable in K8s containers")
 class TestSingBoxConnect:
     """Real sing-box connection lifecycle."""
 
     def test_connect_creates_tun_interface(
-        self, singbox_client_config: Path, real_net: NetManager
+        self, singbox_client_config: Path, real_net: NetManager, requires_tun
     ):
         """sing-box creates a tun interface after connect."""
         ifaces_before = set(real_net.interfaces().keys())
@@ -53,7 +52,7 @@ class TestSingBoxConnect:
             proc.wait(timeout=5)
 
     def test_connect_and_disconnect_cleans_up(
-        self, singbox_client_config: Path, real_net: NetManager
+        self, singbox_client_config: Path, real_net: NetManager, requires_tun
     ):
         """After disconnect, interface disappears."""
         ifaces_before = set(real_net.interfaces().keys())

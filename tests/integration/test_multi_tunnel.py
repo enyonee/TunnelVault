@@ -63,7 +63,6 @@ def multi_tunnel_project(
     return tmp_path
 
 
-@pytest.mark.skip(reason="sing-box tun creation unreliable in K8s containers")
 class TestMultiTunnel:
     """Multiple tunnels connected simultaneously via Engine."""
 
@@ -72,6 +71,7 @@ class TestMultiTunnel:
         multi_tunnel_project: Path,
         real_net: NetManager,
         test_logger: Logger,
+        requires_tun,
     ):
         """OpenVPN + sing-box both create interfaces when connected together."""
         import tomllib
@@ -117,6 +117,7 @@ class TestMultiTunnel:
         multi_tunnel_project: Path,
         real_net: NetManager,
         test_logger: Logger,
+        requires_tun,
     ):
         """Health checks pass for both tunnels when connected simultaneously."""
         import tomllib
@@ -149,6 +150,7 @@ class TestMultiTunnel:
         multi_tunnel_project: Path,
         real_net: NetManager,
         test_logger: Logger,
+        requires_tun,
     ):
         """disconnect_all removes all tunnel interfaces."""
         import tomllib
