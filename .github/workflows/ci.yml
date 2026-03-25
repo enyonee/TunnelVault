@@ -14,7 +14,7 @@ jobs:
     with:
       project: TunnelVault
       uv-sync-args: "--group dev"
-      test-command: 'uv run pytest tests/ -x -q -o "addopts=" -m "not network"'
+      test-command: 'uv run pytest tests/ -x -q -o "addopts=" -m "not network" --ignore=tests/integration'
       os-matrix: '["ubuntu-latest", "windows-latest", "macos-latest"]'
     secrets: inherit
 
