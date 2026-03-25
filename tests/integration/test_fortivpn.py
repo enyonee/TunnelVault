@@ -16,7 +16,7 @@ from tv.net import NetManager
 
 pytestmark = [
     pytest.mark.network,
-    pytest.mark.skip(reason="openfortivpn/pppd unreliable in K8s containers"),
+    pytest.mark.skip(reason="openfortivpn requires FortiGate server, ocserv is AnyConnect only"),
 ]
 
 
@@ -41,7 +41,7 @@ class TestFortiVPNConnect:
     """Real openfortivpn connection to ocserv."""
 
     def test_connect_creates_ppp_interface(
-        self, forti_config_file: Path, real_net: NetManager
+        self, forti_config_file: Path, real_net: NetManager, requires_tun
     ):
         """openfortivpn creates a ppp interface after connect."""
         ifaces_before = set(real_net.interfaces().keys())
@@ -76,7 +76,7 @@ class TestFortiVPNConnect:
             proc.wait(timeout=5)
 
     def test_connect_and_disconnect_cleans_up(
-        self, forti_config_file: Path, real_net: NetManager
+        self, forti_config_file: Path, real_net: NetManager, requires_tun
     ):
         """After disconnect, ppp interface disappears."""
         ifaces_before = set(real_net.interfaces().keys())
@@ -103,7 +103,7 @@ class TestFortiVPNConnect:
         ppp_ifaces = [i for i in new_ifaces if i.startswith("ppp")]
         assert len(ppp_ifaces) == 0, f"Leftover ppp interfaces: {ppp_ifaces}"
 
-    def test_ping_through_vpn(self, forti_config_file: Path, real_net: NetManager):
+    def test_ping_through_vpn(self, forti_config_file: Path, real_net: NetManager, requires_tun):
         """Can ping VPN gateway through PPP tunnel."""
         ifaces_before = set(real_net.interfaces().keys())
 

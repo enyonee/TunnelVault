@@ -131,6 +131,22 @@ def fortivpn_config(
     }
 
 
+@pytest.fixture(scope="session")
+def ocserv_cert_pin(ocserv_host: str, ocserv_port: str) -> str:
+    """Get ocserv server certificate pin-sha256 for openconnect --servercert."""
+    result = subprocess.run(
+        ["openconnect", f"--server={ocserv_host}:{ocserv_port}",
+         "--authenticate", "--servercert=invalid", "--user=x", "--passwd-on-stdin"],
+        input="x\n", capture_output=True, text=True, timeout=10,
+    )
+    # Parse pin from error: "server's certificate: pin-sha256:xxx"
+    for line in result.stderr.splitlines():
+        if "pin-sha256:" in line:
+            pin = line.split("pin-sha256:")[-1].strip()
+            return f"pin-sha256:{pin}"
+    return ""
+
+
 @pytest.fixture
 def singbox_client_config(
     tmp_path: Path, singbox_server: str, singbox_ss_port: str, singbox_ss_password: str
@@ -146,7 +162,7 @@ def singbox_client_config(
               "type": "tun",
               "tag": "tun-in",
               "interface_name": "tun-test",
-              "inet4_address": "172.19.0.1/30",
+              "address": ["172.19.0.1/30"],
               "auto_route": false,
               "stack": "system"
             }}
@@ -181,8 +197,8 @@ def singbox_client_config(
 
 
 @pytest.fixture(autouse=True)
-def _ensure_tun_device():
-    """Ensure /dev/net/tun exists (needed in containers)."""
+def _ensure_devices():
+    """Ensure /dev/net/tun and /dev/ppp exist (needed in containers)."""
     tun_path = Path("/dev/net/tun")
     if not tun_path.exists():
         Path("/dev/net").mkdir(parents=True, exist_ok=True)
@@ -194,15 +210,83 @@ def _ensure_tun_device():
         subprocess.run(
             ["chmod", "600", "/dev/net/tun"], check=False, capture_output=True
         )
+    ppp_path = Path("/dev/ppp")
+    if not ppp_path.exists():
+        subprocess.run(
+            ["mknod", "/dev/ppp", "c", "108", "0"],
+            check=False,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["chmod", "600", "/dev/ppp"], check=False, capture_output=True
+        )
+
+
+def _can_create_tun() -> bool:
+    """Check if real VPN tun/ppp creation works.
+
+    Docker Desktop macOS passes /dev/net/tun ioctl but VPN clients still
+    can't create interfaces (kernel namespace limitation).
+    Use explicit env var TUN_AVAILABLE=1 set only on real Linux hosts.
+    """
+    return os.environ.get("TUN_AVAILABLE", "") == "1"
+
+
+_tun_works: bool | None = None
+
+
+@pytest.fixture
+def requires_tun():
+    """Skip test if tun creation is not available (Docker Desktop macOS)."""
+    global _tun_works
+    if _tun_works is None:
+        _tun_works = _can_create_tun()
+    if not _tun_works:
+        pytest.skip("TUN creation not available (Docker Desktop macOS?)")
 
 
 @pytest.fixture(autouse=True)
 def _cleanup_after_test():
-    """Kill any leftover VPN processes after each test."""
-    yield
-    for proc_name in ("openvpn", "openfortivpn", "sing-box"):
-        subprocess.run(["pkill", "-f", proc_name], check=False, capture_output=True)
-    # Small delay for interfaces to disappear
+    """Kill leftover VPN processes, clean interfaces, restore routing."""
     import time
+
+    # Capture default gateway before test
+    gw_result = subprocess.run(
+        ["ip", "route", "show", "default"], capture_output=True, text=True,
+    )
+    default_gw = gw_result.stdout.strip()
+
+    yield
+
+    # Kill all VPN processes
+    for proc_name in ("openvpn", "openfortivpn", "openconnect", "sing-box"):
+        subprocess.run(["pkill", "-9", "-f", proc_name], check=False, capture_output=True)
+    time.sleep(1)
+
+    # Remove leftover tun/ppp interfaces
+    result = subprocess.run(["ip", "-br", "link"], capture_output=True, text=True)
+    for line in result.stdout.splitlines():
+        iface = line.split()[0]
+        if iface.startswith(("tun", "ppp")) or iface in ("tun-test", "vpns0"):
+            subprocess.run(
+                ["ip", "link", "delete", iface], check=False, capture_output=True,
+            )
+
+    # Restore default route if it was changed by VPN client
+    gw_now = subprocess.run(
+        ["ip", "route", "show", "default"], capture_output=True, text=True,
+    )
+    if gw_now.stdout.strip() != default_gw and default_gw:
+        # Flush non-default routes added by VPN and restore original
+        subprocess.run(["ip", "route", "flush", "table", "main"], check=False, capture_output=True)
+        subprocess.run(
+            ["ip", "route", "add"] + default_gw.split(),
+            check=False, capture_output=True,
+        )
+        # Re-add container network route
+        subprocess.run(
+            ["ip", "route", "add", "172.28.0.0/24", "dev", "eth0"],
+            check=False, capture_output=True,
+        )
 
     time.sleep(0.5)
