@@ -1,0 +1,37 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openvpn \
+    openfortivpn \
+    openconnect \
+    iproute2 \
+    iptables \
+    dnsutils \
+    net-tools \
+    iputils-ping \
+    curl \
+    netcat-openbsd \
+    procps \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# sing-box
+RUN curl -Lo /tmp/sing-box.tar.gz \
+    "https://github.com/SagerNet/sing-box/releases/download/v1.11.0/sing-box-1.11.0-linux-amd64.tar.gz" \
+    && tar -xzf /tmp/sing-box.tar.gz -C /tmp \
+    && mv /tmp/sing-box-*/sing-box /usr/local/bin/ \
+    && rm -rf /tmp/sing-box*
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN pip install uv && uv sync --group dev --no-install-project
+
+COPY . .
+RUN uv sync --group dev
+
+# Bake shared configs for integration tests
+RUN mkdir -p /shared \
+    && cp tests/e2e/pki/client.ovpn /shared/client.ovpn \
+    && cp tests/e2e/pki/ocserv-fingerprint.txt /shared/ocserv-fingerprint
+
+CMD ["uv", "run", "pytest", "tests/integration/", "-x", "-v", "--tb=short", "-o", "addopts=", "-p", "no:xdist"]

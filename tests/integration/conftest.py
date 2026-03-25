@@ -135,9 +135,18 @@ def fortivpn_config(
 def ocserv_cert_pin(ocserv_host: str, ocserv_port: str) -> str:
     """Get ocserv server certificate pin-sha256 for openconnect --servercert."""
     result = subprocess.run(
-        ["openconnect", f"--server={ocserv_host}:{ocserv_port}",
-         "--authenticate", "--servercert=invalid", "--user=x", "--passwd-on-stdin"],
-        input="x\n", capture_output=True, text=True, timeout=10,
+        [
+            "openconnect",
+            f"--server={ocserv_host}:{ocserv_port}",
+            "--authenticate",
+            "--servercert=invalid",
+            "--user=x",
+            "--passwd-on-stdin",
+        ],
+        input="x\n",
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     # Parse pin from error: "server's certificate: pin-sha256:xxx"
     for line in result.stderr.splitlines():
@@ -217,9 +226,7 @@ def _ensure_devices():
             check=False,
             capture_output=True,
         )
-        subprocess.run(
-            ["chmod", "600", "/dev/ppp"], check=False, capture_output=True
-        )
+        subprocess.run(["chmod", "600", "/dev/ppp"], check=False, capture_output=True)
 
 
 def _can_create_tun() -> bool:
@@ -252,7 +259,9 @@ def _cleanup_after_test():
 
     # Capture default gateway before test
     gw_result = subprocess.run(
-        ["ip", "route", "show", "default"], capture_output=True, text=True,
+        ["ip", "route", "show", "default"],
+        capture_output=True,
+        text=True,
     )
     default_gw = gw_result.stdout.strip()
 
@@ -260,7 +269,9 @@ def _cleanup_after_test():
 
     # Kill all VPN processes
     for proc_name in ("openvpn", "openfortivpn", "openconnect", "sing-box"):
-        subprocess.run(["pkill", "-9", "-f", proc_name], check=False, capture_output=True)
+        subprocess.run(
+            ["pkill", "-9", "-f", proc_name], check=False, capture_output=True
+        )
     time.sleep(1)
 
     # Remove leftover tun/ppp interfaces
@@ -269,24 +280,32 @@ def _cleanup_after_test():
         iface = line.split()[0]
         if iface.startswith(("tun", "ppp")) or iface in ("tun-test", "vpns0"):
             subprocess.run(
-                ["ip", "link", "delete", iface], check=False, capture_output=True,
+                ["ip", "link", "delete", iface],
+                check=False,
+                capture_output=True,
             )
 
     # Restore default route if it was changed by VPN client
     gw_now = subprocess.run(
-        ["ip", "route", "show", "default"], capture_output=True, text=True,
+        ["ip", "route", "show", "default"],
+        capture_output=True,
+        text=True,
     )
     if gw_now.stdout.strip() != default_gw and default_gw:
         # Flush non-default routes added by VPN and restore original
-        subprocess.run(["ip", "route", "flush", "table", "main"], check=False, capture_output=True)
+        subprocess.run(
+            ["ip", "route", "flush", "table", "main"], check=False, capture_output=True
+        )
         subprocess.run(
             ["ip", "route", "add"] + default_gw.split(),
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
         )
         # Re-add container network route
         subprocess.run(
             ["ip", "route", "add", "172.28.0.0/24", "dev", "eth0"],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
         )
 
     time.sleep(0.5)

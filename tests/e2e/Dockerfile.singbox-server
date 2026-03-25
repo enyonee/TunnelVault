@@ -1,0 +1,21 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache curl netcat-openbsd \
+    && curl -Lo /tmp/sing-box.tar.gz \
+       "https://github.com/SagerNet/sing-box/releases/download/v1.11.0/sing-box-1.11.0-linux-amd64.tar.gz" \
+    && tar -xzf /tmp/sing-box.tar.gz -C /tmp \
+    && mv /tmp/sing-box-*/sing-box /usr/local/bin/ \
+    && rm -rf /tmp/sing-box*
+
+RUN echo '{ \
+  "inbounds": [{ \
+    "type": "shadowsocks", \
+    "listen": "::", \
+    "listen_port": 8388, \
+    "method": "aes-256-gcm", \
+    "password": "test-password-12345" \
+  }], \
+  "outbounds": [{"type": "direct"}] \
+}' > /etc/sing-box.json
+
+CMD ["sing-box", "run", "-c", "/etc/sing-box.json"]

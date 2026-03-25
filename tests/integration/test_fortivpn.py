@@ -16,7 +16,9 @@ from tv.net import NetManager
 
 pytestmark = [
     pytest.mark.network,
-    pytest.mark.skip(reason="openfortivpn requires FortiGate server, ocserv is AnyConnect only"),
+    pytest.mark.skip(
+        reason="openfortivpn requires FortiGate server, ocserv is AnyConnect only"
+    ),
 ]
 
 
@@ -103,7 +105,9 @@ class TestFortiVPNConnect:
         ppp_ifaces = [i for i in new_ifaces if i.startswith("ppp")]
         assert len(ppp_ifaces) == 0, f"Leftover ppp interfaces: {ppp_ifaces}"
 
-    def test_ping_through_vpn(self, forti_config_file: Path, real_net: NetManager, requires_tun):
+    def test_ping_through_vpn(
+        self, forti_config_file: Path, real_net: NetManager, requires_tun
+    ):
         """Can ping VPN gateway through PPP tunnel."""
         ifaces_before = set(real_net.interfaces().keys())
 

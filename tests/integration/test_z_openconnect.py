@@ -18,7 +18,11 @@ pytestmark = pytest.mark.network
 
 
 def _start_openconnect(
-    host: str, port: str, user: str, password: str, cert_pin: str,
+    host: str,
+    port: str,
+    user: str,
+    password: str,
+    cert_pin: str,
 ) -> subprocess.Popen | None:
     """Start openconnect in background, return process or None on failure."""
     proc = subprocess.Popen(
@@ -44,7 +48,9 @@ def _start_openconnect(
     return proc
 
 
-def _wait_for_tun(net: NetManager, ifaces_before: set, timeout: float = 10) -> str | None:
+def _wait_for_tun(
+    net: NetManager, ifaces_before: set, timeout: float = 10
+) -> str | None:
     """Wait for a new tun interface to appear."""
     for _ in range(int(timeout / 0.5)):
         time.sleep(0.5)
@@ -74,7 +80,9 @@ class TestOpenConnectConnect:
             pytest.skip("Could not obtain ocserv certificate pin")
 
         ifaces_before = set(real_net.interfaces().keys())
-        _start_openconnect(ocserv_host, ocserv_port, ocserv_user, ocserv_pass, ocserv_cert_pin)
+        _start_openconnect(
+            ocserv_host, ocserv_port, ocserv_user, ocserv_pass, ocserv_cert_pin
+        )
 
         try:
             new_iface = _wait_for_tun(real_net, ifaces_before)
@@ -82,7 +90,9 @@ class TestOpenConnectConnect:
                 f"No tun interface appeared. Ifaces: {real_net.interfaces()}"
             )
         finally:
-            subprocess.run(["pkill", "-f", "openconnect"], check=False, capture_output=True)
+            subprocess.run(
+                ["pkill", "-f", "openconnect"], check=False, capture_output=True
+            )
             time.sleep(1)
 
     def test_connect_and_disconnect_cleans_up(
@@ -100,7 +110,9 @@ class TestOpenConnectConnect:
             pytest.skip("Could not obtain ocserv certificate pin")
 
         ifaces_before = set(real_net.interfaces().keys())
-        _start_openconnect(ocserv_host, ocserv_port, ocserv_user, ocserv_pass, ocserv_cert_pin)
+        _start_openconnect(
+            ocserv_host, ocserv_port, ocserv_user, ocserv_pass, ocserv_cert_pin
+        )
 
         _wait_for_tun(real_net, ifaces_before)
 
@@ -127,7 +139,9 @@ class TestOpenConnectConnect:
             pytest.skip("Could not obtain ocserv certificate pin")
 
         ifaces_before = set(real_net.interfaces().keys())
-        _start_openconnect(ocserv_host, ocserv_port, ocserv_user, ocserv_pass, ocserv_cert_pin)
+        _start_openconnect(
+            ocserv_host, ocserv_port, ocserv_user, ocserv_pass, ocserv_cert_pin
+        )
 
         try:
             new_iface = _wait_for_tun(real_net, ifaces_before)
@@ -144,5 +158,7 @@ class TestOpenConnectConnect:
                 f"Ping to {ocserv_host} failed:\n{result.stdout}\n{result.stderr}"
             )
         finally:
-            subprocess.run(["pkill", "-f", "openconnect"], check=False, capture_output=True)
+            subprocess.run(
+                ["pkill", "-f", "openconnect"], check=False, capture_output=True
+            )
             time.sleep(1)
