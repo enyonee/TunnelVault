@@ -74,6 +74,133 @@ class TestPidFile:
 
 
 # =========================================================================
+# Stale PID lock recovery
+# =========================================================================
+
+
+class TestStalePidRecovery:
+    def test_dead_process_lock_recovered(self, tmp_dir):
+        """write_pid recovers lock held by a dead process."""
+        import fcntl
+
+        # Simulate stale lock: write PID file with a dead PID, hold flock
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stale_fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fcntl.flock(stale_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.write(stale_fd, b"999999")
+        # Release the lock (simulates process death releasing flock)
+        os.close(stale_fd)
+
+        # Now write_pid should succeed
+        daemon.write_pid(tmp_dir, pid=42)
+        assert daemon.read_pid(tmp_dir) == 42
+        daemon.remove_pid(tmp_dir)
+
+    def test_nonexistent_pid_in_file(self, tmp_dir):
+        """write_pid recovers when PID file contains a non-existent PID."""
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("999999")
+
+        daemon.write_pid(tmp_dir, pid=42)
+        assert daemon.read_pid(tmp_dir) == 42
+        daemon.remove_pid(tmp_dir)
+
+    def test_corrupt_pid_file_recovered(self, tmp_dir):
+        """write_pid recovers when PID file has invalid content."""
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("not-a-number")
+
+        daemon.write_pid(tmp_dir, pid=42)
+        assert daemon.read_pid(tmp_dir) == 42
+        daemon.remove_pid(tmp_dir)
+
+    def test_stale_lock_from_non_tunnelvault_process(self, tmp_dir):
+        """write_pid recovers lock from a live but non-tunnelvault process."""
+        with (
+            patch("tv.daemon.is_pid_alive", return_value=True),
+            patch("tv.daemon.is_tunnelvault_process", return_value=False),
+        ):
+            daemon.write_pid(tmp_dir, pid=42)
+            assert daemon.read_pid(tmp_dir) == 42
+        daemon.remove_pid(tmp_dir)
+
+    def test_stale_lock_kills_live_tunnelvault(self, tmp_dir):
+        """_recover_stale_lock sends SIGTERM to live tunnelvault."""
+        import signal
+
+        kill_calls = []
+
+        def mock_kill(pid, sig):
+            kill_calls.append((pid, sig))
+
+        alive_count = [0]
+
+        def mock_is_alive(pid):
+            alive_count[0] += 1
+            return alive_count[0] <= 2  # dies after 2 checks
+
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("12345")
+
+        with (
+            patch("tv.daemon.is_pid_alive", side_effect=mock_is_alive),
+            patch("tv.daemon.is_tunnelvault_process", return_value=True),
+            patch("tv.daemon.os.kill", side_effect=mock_kill),
+        ):
+            fd = daemon._recover_stale_lock(path, 42)
+            os.close(fd)
+
+        assert any(sig == signal.SIGTERM for _, sig in kill_calls)
+        path.unlink(missing_ok=True)
+
+    def test_read_pid_from_path(self, tmp_dir):
+        """read_pid_from_path reads PID from arbitrary path."""
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("12345")
+        assert daemon.read_pid_from_path(path) == 12345
+
+    def test_read_pid_from_path_missing(self, tmp_dir):
+        path = daemon.pid_file_path(tmp_dir)
+        assert daemon.read_pid_from_path(path) is None
+
+    def test_read_pid_from_path_corrupt(self, tmp_dir):
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("garbage")
+        assert daemon.read_pid_from_path(path) is None
+
+    def test_force_relock_after_failed_recovery_raises(self, tmp_dir):
+        """If lock can't be acquired even after cleanup, raise."""
+        import fcntl
+
+        path = daemon.pid_file_path(tmp_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Hold the lock from this process
+        hold_fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fcntl.flock(hold_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.write(hold_fd, str(os.getpid()).encode())
+
+        # _force_relock deletes the file but we re-create the lock immediately
+        # This tests the case where another process grabs the lock between
+        # unlink and re-open (unlikely but defensive)
+        with (
+            patch("tv.daemon.is_pid_alive", return_value=False),
+            patch.object(daemon, "_force_relock", side_effect=BlockingIOError("test")),
+        ):
+            with pytest.raises(BlockingIOError):
+                daemon.write_pid(tmp_dir, pid=42)
+
+        fcntl.flock(hold_fd, fcntl.LOCK_UN)
+        os.close(hold_fd)
+
+
+# =========================================================================
 # is_tunnelvault_process
 # =========================================================================
 

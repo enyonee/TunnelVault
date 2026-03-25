@@ -50,6 +50,10 @@ def write_pid(script_dir: Path, pid: int | None = None) -> Path:
 
     The file descriptor is kept open (module-level _pid_fd) so the lock
     persists for the lifetime of the process.
+
+    If the lock is held by a stale (dead or non-tunnelvault) process,
+    the lock file is removed and re-created. If held by a live tunnelvault
+    process, it is terminated first.
     """
     global _pid_fd
     path = pid_file_path(script_dir)
@@ -61,7 +65,14 @@ def write_pid(script_dir: Path, pid: int | None = None) -> Path:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         os.close(fd)
-        raise
+        # Lock held by another process - attempt recovery
+        fd = _recover_stale_lock(path, actual_pid)
+
+    try:
+        os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
+    except OSError:
+        pass  # fd from mock or already truncated by O_TRUNC
     os.write(fd, str(actual_pid).encode())
 
     # Close previous fd if any
@@ -72,6 +83,69 @@ def write_pid(script_dir: Path, pid: int | None = None) -> Path:
             pass
     _pid_fd = fd
     return path
+
+
+def _recover_stale_lock(path: Path, new_pid: int) -> int:
+    """Attempt to recover a stale PID lock. Returns new locked fd.
+
+    Raises BlockingIOError if recovery fails (live tunnelvault process
+    that won't die).
+    """
+    import signal
+    import time
+
+    old_pid = read_pid_from_path(path)
+    if old_pid is None:
+        # Can't read PID - just nuke the file
+        return _force_relock(path)
+
+    if not is_pid_alive(old_pid):
+        ui.warn(f"Stale PID lock from dead process {old_pid}, taking over")
+        return _force_relock(path)
+
+    if not is_tunnelvault_process(old_pid):
+        ui.warn(f"PID {old_pid} is not tunnelvault, removing stale lock")
+        return _force_relock(path)
+
+    # Live tunnelvault process - terminate it
+    ui.warn(f"Killing stale tunnelvault process {old_pid}")
+    try:
+        os.kill(old_pid, signal.SIGTERM)
+    except OSError:
+        return _force_relock(path)
+
+    for _ in range(20):  # 10 seconds
+        if not is_pid_alive(old_pid):
+            break
+        time.sleep(0.5)
+    else:
+        try:
+            os.kill(old_pid, signal.SIGKILL)
+            time.sleep(0.5)
+        except OSError:
+            pass
+
+    return _force_relock(path)
+
+
+def _force_relock(path: Path) -> int:
+    """Remove and re-create PID file with a fresh lock. Returns locked fd."""
+    path.unlink(missing_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        raise BlockingIOError("Failed to acquire PID lock after recovery")
+    return fd
+
+
+def read_pid_from_path(path: Path) -> int | None:
+    """Read PID from a specific path. Returns None if missing or invalid."""
+    try:
+        return int(path.read_text().strip())
+    except (FileNotFoundError, ValueError, OSError):
+        return None
 
 
 def read_pid(script_dir: Path) -> int | None:
