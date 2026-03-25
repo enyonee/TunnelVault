@@ -1,0 +1,15 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ocserv gnutls-bin \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tests/e2e/pki/ocserv-ca.pem /etc/ocserv/ca.pem
+COPY tests/e2e/pki/ocserv-ca-key.pem /etc/ocserv/ca-key.pem
+COPY tests/e2e/pki/ocserv-server.pem /etc/ocserv/server.pem
+COPY tests/e2e/pki/ocserv-server-key.pem /etc/ocserv/server-key.pem
+COPY tests/e2e/ocserv.conf /etc/ocserv/ocserv.conf
+
+RUN echo "testuser:testpass" > /etc/ocserv/passwd
+
+CMD ["ocserv", "-f", "-c", "/etc/ocserv/ocserv.conf"]

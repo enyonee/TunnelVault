@@ -2,7 +2,7 @@ services:
   openvpn-server:
     build:
       context: .
-      dockerfile: k8s/test-vpn/Dockerfile.openvpn-server
+      dockerfile: tests/e2e/Dockerfile.openvpn-server
     cap_add:
       - NET_ADMIN
     devices:
@@ -20,7 +20,7 @@ services:
   ocserv:
     build:
       context: .
-      dockerfile: k8s/test-vpn/Dockerfile.ocserv
+      dockerfile: tests/e2e/Dockerfile.ocserv
     cap_add:
       - NET_ADMIN
     devices:
@@ -38,7 +38,7 @@ services:
   singbox-server:
     build:
       context: .
-      dockerfile: k8s/test-vpn/Dockerfile.singbox-server
+      dockerfile: tests/e2e/Dockerfile.singbox-server
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "8388"]
       interval: 5s
@@ -52,7 +52,7 @@ services:
   test-runner:
     build:
       context: .
-      dockerfile: k8s/test-vpn/Dockerfile.test-runner
+      dockerfile: tests/e2e/Dockerfile.test-runner
     cap_add:
       - NET_ADMIN
     devices:
