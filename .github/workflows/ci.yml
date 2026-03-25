@@ -67,13 +67,14 @@ jobs:
             dist/*
 
       - name: Publish to PyPI
-        if: ${{ secrets.PYPI_API_TOKEN != '' }}
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          pip install twine
-          twine upload dist/*
+          if [ -n "$TWINE_PASSWORD" ]; then
+            pip install twine
+            twine upload dist/*
+          fi
 
       - name: Notify Telegram
         if: always()
