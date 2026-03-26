@@ -97,6 +97,8 @@ class AppConfig:
     display: Display
     logging: Logging
     locale: str = ""
+    mode: str = "tun"  # "tun" or "proxy"
+    proxy_port: int = 1080
 
 
 def _make_default() -> AppConfig:
@@ -125,10 +127,12 @@ def load(app_dict: dict) -> None:
     if not app_dict:
         return
     # Top-level scalar keys (not nested sections)
-    _TOP_LEVEL = {"locale"}
+    _TOP_LEVEL = {"locale", "mode", "proxy_port"}
     for tk in _TOP_LEVEL:
         if tk in app_dict:
             setattr(cfg, tk, app_dict[tk])
+    if cfg.mode not in ("tun", "proxy"):
+        raise ValueError(f"Invalid mode '{cfg.mode}', expected 'tun' or 'proxy'")
 
     known_sections = set(_SECTION_MAP)
     for k in app_dict:

@@ -111,6 +111,14 @@ class NetManager(ABC):
         """Get PPP peer (gateway) address for a point-to-point interface."""
         ...
 
+    def setup_system_proxy(self, port: int) -> bool:
+        """Set system-wide HTTP/SOCKS proxy. Default no-op (Linux)."""
+        return False
+
+    def cleanup_system_proxy(self) -> bool:
+        """Remove system-wide proxy settings. Default no-op (Linux)."""
+        return True
+
     def resolve_host(self, hostname: str) -> list[str]:
         """Resolve hostname to IPs (dig -> host -> getent fallback)."""
         if shutil.which("dig"):
@@ -365,6 +373,34 @@ class DarwinNet(NetManager):
                     if idx + 1 < len(parts):
                         return parts[idx + 1]
         return ""
+
+    def setup_system_proxy(self, port: int) -> bool:
+        """Set macOS system HTTP/HTTPS/SOCKS proxy on all active network services."""
+        ok = True
+        for svc in self._active_network_services():
+            for cmd in [
+                ["networksetup", "-setwebproxy", svc, "127.0.0.1", str(port)],
+                ["networksetup", "-setsecurewebproxy", svc, "127.0.0.1", str(port)],
+                ["networksetup", "-setsocksfirewallproxy", svc, "127.0.0.1", str(port)],
+            ]:
+                r = _run(cmd)
+                if r.returncode != 0:
+                    ok = False
+        return ok
+
+    def cleanup_system_proxy(self) -> bool:
+        """Disable macOS system HTTP/HTTPS/SOCKS proxy on all active network services."""
+        ok = True
+        for svc in self._active_network_services():
+            for cmd in [
+                ["networksetup", "-setwebproxystate", svc, "off"],
+                ["networksetup", "-setsecurewebproxystate", svc, "off"],
+                ["networksetup", "-setsocksfirewallproxystate", svc, "off"],
+            ]:
+                r = _run(cmd)
+                if r.returncode != 0:
+                    ok = False
+        return ok
 
 
 # ---------------------------------------------------------------------------

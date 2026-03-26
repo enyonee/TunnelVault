@@ -104,9 +104,9 @@ def main() -> None:
             daemon.disable(script_dir)
         return
 
-    # --- Commands that need root ---
+    # --- Commands that need root (TUN mode only) ---
 
-    if not _is_admin():
+    if not _is_admin() and cfg.mode != "proxy":
         ui.warn(t("main.needs_sudo"))
 
     if args.reset:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from tv import proc, ui
@@ -21,6 +24,10 @@ class SingBoxPlugin(TunnelPlugin):
     type_display_name = "sing-box"
     process_names = ("sing-box",)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._patched_config: str | None = None
+
     @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
         return [f"sing-box run -c {script_dir}"]
@@ -29,6 +36,10 @@ class SingBoxPlugin(TunnelPlugin):
     def discover_pid(cls, tcfg, script_dir) -> int | None:
         config_path = script_dir / tcfg.config_file
         pids = proc.find_pids(f"sing-box run -c {config_path}")
+        if pids:
+            return pids[0]
+        # Also check patched config pattern (proxy mode)
+        pids = proc.find_pids(f"sing-box run -c {cfg.paths.temp_dir}/sb_proxy_")
         return pids[0] if pids else None
 
     @classmethod
@@ -52,6 +63,58 @@ class SingBoxPlugin(TunnelPlugin):
         return "sing-box"
 
     def connect(self) -> VPNResult:
+        if cfg.mode == "proxy":
+            return self._connect_proxy()
+        return self._connect_tun()
+
+    def _connect_proxy(self) -> VPNResult:
+        """Connect in proxy mode: mixed inbound, no TUN, no routes, no sudo."""
+        config_path = self.script_dir / self.cfg.config_file
+        log_path = self._default_log_path()
+        port = cfg.proxy_port
+
+        self.log.log("INFO", f"Proxy mode: config={config_path}, port={port}")
+
+        if err := self._check_config_file("vpn.sb.config_not_found"):
+            return err
+
+        # Patch config: replace tun inbound with mixed inbound
+        patched = _patch_for_proxy(config_path, port, self.log)
+        if not patched:
+            ui.fail("Failed to generate proxy config")
+            return VPNResult(ok=False)
+
+        run_config = patched
+        self._patched_config = patched
+
+        # Launch without sudo (no TUN = no root needed)
+        self.log.log("INFO", f"Launch: sing-box run -c {run_config}")
+        sb_proc = proc.run_background(
+            ["sing-box", "run", "-c", run_config],
+            sudo=False,
+            log_path=str(log_path),
+        )
+        sb_pid = sb_proc.pid
+        self._pid = sb_pid
+        self.log.log("INFO", f"sing-box proxy PID={sb_pid}")
+
+        # Wait for proxy port to be listening
+        if not proc.wait_for(
+            f"sing-box proxy (:{port})",
+            lambda: _check_port_listening(port),
+            cfg.timeouts.singbox_iface,
+            self.log,
+        ):
+            _show_error(sb_proc, log_path, self.log)
+            return VPNResult(ok=False, pid=sb_pid)
+
+        ui.ok(f"sing-box proxy listening on 127.0.0.1:{port}")
+        self.log.log("INFO", f"sing-box proxy connected (:{port})")
+
+        return VPNResult(ok=True, pid=sb_pid)
+
+    def _connect_tun(self) -> VPNResult:
+        """Connect in TUN mode (original behavior)."""
         config_path = self.script_dir / self.cfg.config_file
         log_path = self._default_log_path()
         interface = self.cfg.interface
@@ -110,6 +173,16 @@ class SingBoxPlugin(TunnelPlugin):
 
         return VPNResult(ok=True, pid=sb_pid)
 
+    def disconnect(self) -> None:
+        super().disconnect()
+        # Clean up patched config file
+        if self._patched_config:
+            try:
+                os.unlink(self._patched_config)
+            except OSError:
+                pass
+            self._patched_config = None
+
     def _probe_connectivity(self, interface: str) -> None:
         """Quick connectivity probe through tunnel, results logged."""
         try:
@@ -140,6 +213,69 @@ class SingBoxPlugin(TunnelPlugin):
     def _kill_by_pattern(self) -> None:
         config_path = self.script_dir / self.cfg.config_file
         proc.kill_pattern(f"sing-box run -c {config_path}", sudo=True)
+        # Also kill by patched config pattern (proxy mode)
+        if self._patched_config:
+            proc.kill_pattern(f"sing-box run -c {self._patched_config}", sudo=True)
+
+
+def _patch_for_proxy(
+    config_path: Path,
+    port: int,
+    log: Logger,
+) -> str | None:
+    """Replace TUN inbound with mixed (HTTP+SOCKS5) inbound for proxy mode.
+
+    Reads user's sing-box config, removes all tun/mixed inbounds, adds a single
+    mixed inbound on 127.0.0.1:port. Returns temp file path, or None on error.
+    """
+    try:
+        data = json.loads(config_path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        log.log("WARN", f"proxy patch: cannot read {config_path}: {e}")
+        return None
+
+    # Replace inbounds: remove tun, add mixed
+    mixed_inbound = {
+        "type": "mixed",
+        "tag": "proxy-in",
+        "listen": "127.0.0.1",
+        "listen_port": port,
+    }
+    # Keep non-tun inbounds (e.g. dns), replace/add mixed
+    old_inbounds = data.get("inbounds", [])
+    new_inbounds = [ib for ib in old_inbounds if ib.get("type") not in ("tun", "mixed")]
+    new_inbounds.insert(0, mixed_inbound)
+    data["inbounds"] = new_inbounds
+
+    # Remove auto_route and strict_route from route (TUN-specific)
+    route = data.get("route", {})
+    route.pop("auto_detect_interface", None)
+
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix="sb_proxy_",
+            suffix=".json",
+            dir=cfg.paths.temp_dir,
+        )
+        os.write(fd, json.dumps(data, indent=2).encode())
+        os.close(fd)
+    except OSError as e:
+        log.log("WARN", f"proxy patch: cannot write temp config: {e}")
+        return None
+
+    log.log("INFO", f"proxy patch: mixed inbound on :{port} ({tmp_path})")
+    return tmp_path
+
+
+def _check_port_listening(port: int) -> bool:
+    """Check if a port is listening on localhost."""
+    import socket
+
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except (ConnectionRefusedError, TimeoutError, OSError):
+        return False
 
 
 def _show_error(sb_proc, log_path: Path, log: Logger) -> None:
