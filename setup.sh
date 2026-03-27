@@ -133,7 +133,6 @@ install_or_hint() {
 #               binary          brew                apt                     dnf                     windows hint
 install_or_hint openvpn         "openvpn"           "openvpn"               "openvpn"               "choco install openvpn"
 install_or_hint openfortivpn    "openfortivpn"      "openfortivpn"          "openfortivpn"          "https://github.com/adrienverge/openfortivpn#windows"
-install_or_hint sing-box        "sing-box"          ""                      ""                      "https://sing-box.sagernet.org/installation/package-manager/"
 install_or_hint curl            "curl"              "curl"                  "curl"                  "(built-in on Windows 10+)"
 install_or_hint openssl         "openssl"           "openssl"               "openssl"               "choco install openssl"
 install_or_hint wg              "wireguard-tools"   "wireguard-tools"       "wireguard-tools"       "https://www.wireguard.com/install/"
@@ -149,17 +148,14 @@ else
     ok "nc"
 fi
 
-# ── sing-box auto-install (Linux: official apt repo) ─────────
-if ! command -v sing-box &>/dev/null && [ "$PLATFORM" = "linux" ] && command -v apt-get &>/dev/null; then
-    warn "sing-box not found — adding sagernet apt repo..."
-    sudo curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc 2>/dev/null
-    echo "deb [signed-by=/etc/apt/keyrings/sagernet.asc] https://deb.sagernet.org/ * *" | sudo tee /etc/apt/sources.list.d/sagernet.list >/dev/null
-    sudo apt-get update -qq 2>/dev/null
-    sudo apt-get install -y -qq sing-box 2>/dev/null && install_tool "sing-box" || {
-        fail "sing-box auto-install failed"
-        echo -e "    ${D}# see https://sing-box.sagernet.org/installation/package-manager/${N}"
-        MISSING=$((MISSING + 1))
-    }
+# ── Bundled sing-box ──────────────────────────────────────────
+if [ -f bin/sing-box ]; then
+    chmod +x bin/sing-box 2>/dev/null
+    SB_VER=$(bin/sing-box version 2>/dev/null | head -1 | awk '{print $NF}')
+    ok "sing-box $SB_VER (bundled)"
+else
+    warn "bin/sing-box not found"
+    MISSING=$((MISSING + 1))
 fi
 
 # ── Config ────────────────────────────────────────────────────

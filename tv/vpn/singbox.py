@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 from tv import proc, ui
@@ -24,10 +21,6 @@ class SingBoxPlugin(TunnelPlugin):
     type_display_name = "sing-box"
     process_names = ("sing-box",)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._patched_config: str | None = None
-
     @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
         return [f"sing-box run -c {script_dir}"]
@@ -36,9 +29,6 @@ class SingBoxPlugin(TunnelPlugin):
     def discover_pid(cls, tcfg, script_dir) -> int | None:
         config_path = script_dir / tcfg.config_file
         pids = proc.find_pids(f"sing-box run -c {config_path}")
-        if pids:
-            return pids[0]
-        pids = proc.find_pids(f"sing-box run -c {cfg.paths.temp_dir}/sb_iface_")
         return pids[0] if pids else None
 
     @classmethod
@@ -61,28 +51,31 @@ class SingBoxPlugin(TunnelPlugin):
     def display_name(self) -> str:
         return "sing-box"
 
+    def _singbox_bin(self) -> str:
+        """Return path to sing-box binary: local bin/ first, then PATH."""
+        local = self.script_dir / "bin" / "sing-box"
+        if local.exists():
+            return str(local)
+        return "sing-box"
+
     def connect(self) -> VPNResult:
         config_path = self.script_dir / self.cfg.config_file
         log_path = self._default_log_path()
         interface = self.cfg.interface
+        sb_bin = self._singbox_bin()
 
         self.log.log("INFO", f"Config: {config_path}")
+        self.log.log("INFO", f"Binary: {sb_bin}")
 
         if err := self._check_config_file("vpn.sb.config_not_found"):
             return err
 
-        # Sync interface_name in JSON config with the resolved interface.
-        # JSON may have "utun98" (macOS) but on Linux interface is "tun0".
         run_config = str(config_path)
-        patched = _sync_interface(config_path, interface, self.log)
-        if patched:
-            run_config = patched
-            self._patched_config = patched
 
         # Launch in background
-        self.log.log("INFO", f"Launch: sudo sing-box run -c {run_config}")
+        self.log.log("INFO", f"Launch: sudo {sb_bin} run -c {run_config}")
         sb_proc = proc.run_background(
-            ["sing-box", "run", "-c", run_config],
+            [sb_bin, "run", "-c", run_config],
             sudo=True,
             log_path=str(log_path),
         )
@@ -126,17 +119,11 @@ class SingBoxPlugin(TunnelPlugin):
         try:
             r = subprocess.run(
                 [
-                    "curl",
-                    "-sS",
-                    "--max-time",
-                    "5",
-                    "--interface",
-                    interface,
+                    "curl", "-sS", "--max-time", "5",
+                    "--interface", interface,
                     "https://ifconfig.me",
                 ],
-                capture_output=True,
-                text=True,
-                timeout=8,
+                capture_output=True, text=True, timeout=8,
             )
             exit_ip = r.stdout.strip()
             self.log.log(
@@ -148,62 +135,9 @@ class SingBoxPlugin(TunnelPlugin):
         except Exception as e:
             self.log.log("WARN", f"probe exit-ip: {e}")
 
-    def disconnect(self) -> None:
-        super().disconnect()
-        if self._patched_config:
-            try:
-                os.unlink(self._patched_config)
-            except OSError:
-                pass
-            self._patched_config = None
-
     def _kill_by_pattern(self) -> None:
         config_path = self.script_dir / self.cfg.config_file
         proc.kill_pattern(f"sing-box run -c {config_path}", sudo=True)
-        if self._patched_config:
-            proc.kill_pattern(f"sing-box run -c {self._patched_config}", sudo=True)
-
-
-def _sync_interface(
-    config_path: Path,
-    interface: str,
-    log: "Logger",
-) -> str | None:
-    """Patch interface_name in sing-box JSON if it differs from resolved interface.
-
-    Returns temp file path if patched, None if no change needed.
-    """
-    try:
-        data = json.loads(config_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return None
-
-    changed = False
-    for inb in data.get("inbounds", []):
-        if inb.get("type") == "tun" and inb.get("interface_name") != interface:
-            log.log(
-                "INFO",
-                f"interface sync: {inb.get('interface_name')} -> {interface}",
-            )
-            inb["interface_name"] = interface
-            changed = True
-
-    if not changed:
-        return None
-
-    try:
-        fd, tmp_path = tempfile.mkstemp(
-            prefix="sb_iface_",
-            suffix=".json",
-            dir=cfg.paths.temp_dir,
-        )
-        os.write(fd, json.dumps(data, indent=2).encode())
-        os.close(fd)
-    except OSError as e:
-        log.log("WARN", f"interface sync: cannot write temp config: {e}")
-        return None
-
-    return tmp_path
 
 
 def _show_error(sb_proc, log_path: Path, log: Logger) -> None:
