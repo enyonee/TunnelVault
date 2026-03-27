@@ -166,13 +166,18 @@ def _apply_config_defaults(tunnels: list[TunnelConfig]) -> None:
 
 
 def _assign_singbox_interfaces(tunnels: list[TunnelConfig]) -> None:
-    """Auto-assign unique interfaces to singbox tunnels without one."""
-    used = {tc.interface for tc in tunnels if tc.interface}
-    base = cfg.defaults.singbox_interface  # "utun99"
+    """Auto-assign platform-correct interfaces to all singbox tunnels.
+
+    Always overwrites interface from config.toml - the TUN interface name
+    is platform-dependent (utun* on macOS, tun* on Linux) and must not
+    be hardcoded in config.
+    """
+    base = cfg.defaults.singbox_interface  # "utun99" on macOS, "tun0" on Linux
     prefix, counter = _parse_iface_name(base)
+    used: set[str] = set()
 
     for tc in tunnels:
-        if tc.type != "singbox" or tc.interface:
+        if tc.type != "singbox":
             continue
         while f"{prefix}{counter}" in used:
             counter += 1

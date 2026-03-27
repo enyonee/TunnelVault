@@ -51,27 +51,31 @@ class SingBoxPlugin(TunnelPlugin):
     def display_name(self) -> str:
         return "sing-box"
 
+    def _singbox_bin(self) -> str:
+        """Return path to sing-box binary: local bin/ first, then PATH."""
+        local = self.script_dir / "bin" / "sing-box"
+        if local.exists():
+            return str(local)
+        return "sing-box"
+
     def connect(self) -> VPNResult:
         config_path = self.script_dir / self.cfg.config_file
         log_path = self._default_log_path()
         interface = self.cfg.interface
+        sb_bin = self._singbox_bin()
 
         self.log.log("INFO", f"Config: {config_path}")
+        self.log.log("INFO", f"Binary: {sb_bin}")
 
         if err := self._check_config_file("vpn.sb.config_not_found"):
             return err
 
-        # Use original config as-is.
-        # Domain-based route rules break TUN routing in sing-box 1.12+ on macOS
-        # (any domain_suffix/domain rule triggers sniff-first mode that disrupts
-        # packet flow). Bypass for .ru domains is handled by TunnelVault's
-        # DNS bypass proxy (/etc/resolver/ + BypassDNSProxy).
         run_config = str(config_path)
 
         # Launch in background
-        self.log.log("INFO", f"Launch: sudo sing-box run -c {run_config}")
+        self.log.log("INFO", f"Launch: sudo {sb_bin} run -c {run_config}")
         sb_proc = proc.run_background(
-            ["sing-box", "run", "-c", run_config],
+            [sb_bin, "run", "-c", run_config],
             sudo=True,
             log_path=str(log_path),
         )
@@ -115,17 +119,11 @@ class SingBoxPlugin(TunnelPlugin):
         try:
             r = subprocess.run(
                 [
-                    "curl",
-                    "-sS",
-                    "--max-time",
-                    "5",
-                    "--interface",
-                    interface,
+                    "curl", "-sS", "--max-time", "5",
+                    "--interface", interface,
                     "https://ifconfig.me",
                 ],
-                capture_output=True,
-                text=True,
-                timeout=8,
+                capture_output=True, text=True, timeout=8,
             )
             exit_ip = r.stdout.strip()
             self.log.log(

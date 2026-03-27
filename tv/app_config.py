@@ -66,15 +66,25 @@ class Paths:
             self.temp_dir = _default_temp_dir()
 
 
+def _default_singbox_interface() -> str:
+    import platform
+
+    return "utun99" if platform.system() == "Darwin" else "tun0"
+
+
 @dataclass
 class Defaults:
     fortivpn_port: str = "44333"
     fortivpn_cert_mode: str = "auto"
     openvpn_config: str = "client.ovpn"
     singbox_config: str = "singbox.json"
-    singbox_interface: str = "utun99"
+    singbox_interface: str = ""
     wireguard_config: str = "wg0.conf"
     network_service: str = "Wi-Fi"
+
+    def __post_init__(self):
+        if not self.singbox_interface:
+            self.singbox_interface = _default_singbox_interface()
 
 
 @dataclass

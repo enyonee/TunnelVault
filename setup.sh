@@ -32,13 +32,25 @@ for c in python3 python; do
     v=$("$c" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}') if v >= (3,10) else exit(1)" 2>/dev/null) && PY="$c" && break
 done
 if [ -z "$PY" ]; then
-    fail "Python 3.10+ not found"
-    case "$PLATFORM" in
-        macos)   echo -e "    ${D}brew install python@3.12${N}" ;;
-        linux)   echo -e "    ${D}sudo apt install python3 python3-venv  # or dnf/pacman${N}" ;;
-        windows) echo -e "    ${D}winget install Python.Python.3.12${N}" ;;
-    esac
-    exit 1
+    # Try auto-install on Linux
+    if [ "$PLATFORM" = "linux" ] && command -v apt-get &>/dev/null; then
+        warn "Python 3.10+ not found — installing via apt..."
+        sudo apt-get update -qq 2>/dev/null
+        sudo apt-get install -y -qq python3 python3-venv curl 2>/dev/null
+        for c in python3 python; do
+            command -v "$c" &>/dev/null || continue
+            v=$("$c" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}') if v >= (3,10) else exit(1)" 2>/dev/null) && PY="$c" && break
+        done
+    fi
+    if [ -z "$PY" ]; then
+        fail "Python 3.10+ not found"
+        case "$PLATFORM" in
+            macos)   echo -e "    ${D}brew install python@3.12${N}" ;;
+            linux)   echo -e "    ${D}sudo apt install python3 python3-venv${N}" ;;
+            windows) echo -e "    ${D}winget install Python.Python.3.12${N}" ;;
+        esac
+        exit 1
+    fi
 fi
 ok "Python $v ($PY)"
 
@@ -72,9 +84,9 @@ if [ ! -f "$PIP" ]; then
 fi
 
 # ── Python deps ───────────────────────────────────────────────
-"$PIP" install -q rich "dnslib>=0.9" pytest pytest-xdist 2>/dev/null
+"$PIP" install -q rich "dnslib>=0.9" "tomlkit>=0.13" pytest pytest-xdist 2>/dev/null
 "$VENV_PY" -c "import tomllib" 2>/dev/null || "$PIP" install -q tomli 2>/dev/null
-ok "Python deps (rich, dnslib, pytest)"
+ok "Python deps (rich, dnslib, tomlkit, pytest)"
 
 # ── System tools ──────────────────────────────────────────────
 echo
@@ -121,9 +133,9 @@ install_or_hint() {
 #               binary          brew                apt                     dnf                     windows hint
 install_or_hint openvpn         "openvpn"           "openvpn"               "openvpn"               "choco install openvpn"
 install_or_hint openfortivpn    "openfortivpn"      "openfortivpn"          "openfortivpn"          "https://github.com/adrienverge/openfortivpn#windows"
-install_or_hint sing-box        "sing-box"          ""                      ""                      "https://sing-box.sagernet.org/installation/package-manager/"
 install_or_hint curl            "curl"              "curl"                  "curl"                  "(built-in on Windows 10+)"
 install_or_hint openssl         "openssl"           "openssl"               "openssl"               "choco install openssl"
+install_or_hint wg              "wireguard-tools"   "wireguard-tools"       "wireguard-tools"       "https://www.wireguard.com/install/"
 
 # nc: different package names
 if ! command -v nc &>/dev/null; then
@@ -136,10 +148,14 @@ else
     ok "nc"
 fi
 
-# ── sing-box hint (no apt package) ────────────────────────────
-if ! command -v sing-box &>/dev/null && [ "$PLATFORM" = "linux" ]; then
-    echo -e "    ${D}# sing-box: see https://sing-box.sagernet.org/installation/package-manager/${N}"
-    echo -e "    ${D}# or: go install -v github.com/sagernet/sing-box/cmd/sing-box@latest${N}"
+# ── Bundled sing-box ──────────────────────────────────────────
+if [ -f bin/sing-box ]; then
+    chmod +x bin/sing-box 2>/dev/null
+    SB_VER=$(bin/sing-box version 2>/dev/null | head -1 | awk '{print $NF}')
+    ok "sing-box $SB_VER (bundled)"
+else
+    warn "bin/sing-box not found"
+    MISSING=$((MISSING + 1))
 fi
 
 # ── Config ────────────────────────────────────────────────────
@@ -154,14 +170,6 @@ else
 fi
 
 chmod +x tvpn 2>/dev/null || true
-
-# ── Tests ─────────────────────────────────────────────────────
-if [ "${1:-}" != "--no-tests" ]; then
-    echo
-    echo -e "  ${D}Running tests...${N}"
-    echo
-    "$VENV_PY" -m pytest tests/ -x -q
-fi
 
 # ── Summary ───────────────────────────────────────────────────
 echo
