@@ -311,8 +311,8 @@ class TestDaemonize:
         assert 1 in targets  # stdout
         assert 2 in targets  # stderr
 
-    def test_daemon_log_permissions_0o600(self, tmp_dir):
-        """daemon.log should be opened with 0o600, not 0o644."""
+    def test_daemon_log_permissions_0o644(self, tmp_dir):
+        """daemon.log should be opened with 0o644 (readable without sudo)."""
         open_calls = []
 
         def track_open(path, flags, mode=0o777):
@@ -334,7 +334,7 @@ class TestDaemonize:
         # First os.open call is for daemon.log
         log_open = [c for c in open_calls if "daemon.log" in str(c[0])]
         assert log_open
-        assert log_open[0][2] == 0o600
+        assert log_open[0][2] == 0o644
 
 
 # =========================================================================

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
+import subprocess
 from pathlib import Path
 
 from tv import proc, ui
@@ -23,10 +21,6 @@ class SingBoxPlugin(TunnelPlugin):
     type_display_name = "sing-box"
     process_names = ("sing-box",)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._patched_config: str | None = None
-
     @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
         return [f"sing-box run -c {script_dir}"]
@@ -35,10 +29,6 @@ class SingBoxPlugin(TunnelPlugin):
     def discover_pid(cls, tcfg, script_dir) -> int | None:
         config_path = script_dir / tcfg.config_file
         pids = proc.find_pids(f"sing-box run -c {config_path}")
-        if pids:
-            return pids[0]
-        # Also check patched config pattern
-        pids = proc.find_pids(f"sing-box run -c {cfg.paths.temp_dir}/sb_bypass_")
         return pids[0] if pids else None
 
     @classmethod
@@ -71,14 +61,12 @@ class SingBoxPlugin(TunnelPlugin):
         if err := self._check_config_file("vpn.sb.config_not_found"):
             return err
 
-        # Inject bypass domain rules into sing-box config if configured
+        # Use original config as-is.
+        # Domain-based route rules break TUN routing in sing-box 1.12+ on macOS
+        # (any domain_suffix/domain rule triggers sniff-first mode that disrupts
+        # packet flow). Bypass for .ru domains is handled by TunnelVault's
+        # DNS bypass proxy (/etc/resolver/ + BypassDNSProxy).
         run_config = str(config_path)
-        bypass_suffixes = self.cfg.extra.get("bypass_domain_suffix", [])
-        if bypass_suffixes:
-            patched = _inject_bypass_rules(config_path, bypass_suffixes, self.log)
-            if patched:
-                run_config = patched
-                self._patched_config = patched
 
         # Launch in background
         self.log.log("INFO", f"Launch: sudo sing-box run -c {run_config}")
@@ -91,12 +79,13 @@ class SingBoxPlugin(TunnelPlugin):
         self._pid = sb_pid
         self.log.log("INFO", f"sing-box PID={sb_pid}")
 
-        # Wait for interface
+        # Wait for interface (abort early if process dies)
         if not proc.wait_for(
             f"sing-box ({interface})",
             lambda: self.net.check_interface(interface),
             cfg.timeouts.singbox_iface,
             self.log,
+            abort_fn=lambda: not proc.is_alive(sb_pid),
         ):
             _show_error(sb_proc, log_path, self.log)
             return VPNResult(ok=False, pid=sb_pid)
@@ -116,76 +105,41 @@ class SingBoxPlugin(TunnelPlugin):
 
         self.log.log("INFO", f"Routes after sing-box:\n{self.net.route_table()}")
 
+        # Connectivity probe through this tunnel
+        self._probe_connectivity(interface)
+
         return VPNResult(ok=True, pid=sb_pid)
 
-    def disconnect(self) -> None:
-        super().disconnect()
-        # Clean up patched config file
-        if self._patched_config:
-            try:
-                os.unlink(self._patched_config)
-            except OSError:
-                pass
-            self._patched_config = None
+    def _probe_connectivity(self, interface: str) -> None:
+        """Quick connectivity probe through tunnel, results logged."""
+        try:
+            r = subprocess.run(
+                [
+                    "curl",
+                    "-sS",
+                    "--max-time",
+                    "5",
+                    "--interface",
+                    interface,
+                    "https://ifconfig.me",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+            exit_ip = r.stdout.strip()
+            self.log.log(
+                "CHECK",
+                f"probe exit-ip via {interface}: {exit_ip} (exit={r.returncode})",
+            )
+            if r.stderr.strip():
+                self.log.log("CHECK", f"probe exit-ip stderr: {r.stderr.strip()}")
+        except Exception as e:
+            self.log.log("WARN", f"probe exit-ip: {e}")
 
     def _kill_by_pattern(self) -> None:
         config_path = self.script_dir / self.cfg.config_file
         proc.kill_pattern(f"sing-box run -c {config_path}", sudo=True)
-        # Also kill by patched config pattern
-        if self._patched_config:
-            proc.kill_pattern(f"sing-box run -c {self._patched_config}", sudo=True)
-
-
-def _inject_bypass_rules(
-    config_path: Path,
-    suffixes: list[str],
-    log: Logger,
-) -> str | None:
-    """Inject bypass domain_suffix rules into sing-box JSON config.
-
-    Creates a temp file with domain_suffix rules added as the first route
-    rule with outbound "direct". Returns the temp file path, or None on error.
-    """
-    try:
-        data = json.loads(config_path.read_text())
-    except (OSError, json.JSONDecodeError) as e:
-        log.log("WARN", f"bypass inject: cannot read {config_path}: {e}")
-        return None
-
-    # Normalize suffixes: ".ru" -> "ru", "vk.com" -> "vk.com"
-    normalized = [s.lstrip(".").rstrip(".") for s in suffixes if s.strip()]
-    if not normalized:
-        return None
-
-    # Build bypass rule
-    bypass_rule = {
-        "domain_suffix": normalized,
-        "outbound": "direct",
-    }
-
-    # Inject as first route rule (highest priority)
-    route = data.setdefault("route", {})
-    rules = route.setdefault("rules", [])
-    rules.insert(0, bypass_rule)
-
-    # Write patched config to temp file
-    try:
-        fd, tmp_path = tempfile.mkstemp(
-            prefix="sb_bypass_",
-            suffix=".json",
-            dir=cfg.paths.temp_dir,
-        )
-        os.write(fd, json.dumps(data, indent=2).encode())
-        os.close(fd)
-    except OSError as e:
-        log.log("WARN", f"bypass inject: cannot write temp config: {e}")
-        return None
-
-    log.log(
-        "INFO",
-        f"bypass inject: {len(normalized)} domain suffixes -> direct ({tmp_path})",
-    )
-    return tmp_path
 
 
 def _show_error(sb_proc, log_path: Path, log: Logger) -> None:

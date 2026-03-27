@@ -99,6 +99,12 @@ class Logger:
         fh.setFormatter(_TVFormatter())
         self._logger.addHandler(fh)
 
+        # Ensure log file is readable without sudo
+        try:
+            os.chmod(str(log_path), 0o644)
+        except OSError:
+            pass
+
         # Debug stderr handler
         if debug:
             sh = logging.StreamHandler(sys.stderr)

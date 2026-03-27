@@ -73,8 +73,12 @@ def wait_for(
     check_fn: Callable[[], bool],
     timeout: int,
     logger: Optional[Logger] = None,
+    abort_fn: Optional[Callable[[], bool]] = None,
 ) -> bool:
-    """Poll check_fn every second until True or timeout."""
+    """Poll check_fn every second until True or timeout.
+
+    If abort_fn is provided and returns True, stop early (e.g. process died).
+    """
     print(f"  ⏳ {t('proc.waiting', desc=desc)}")
     if logger:
         logger.log("WAIT", f"Waiting for '{desc}' (timeout {timeout}s)")
@@ -83,6 +87,10 @@ def wait_for(
             if logger:
                 logger.log("WAIT", f"'{desc}' ready in {i}s")
             return True
+        if abort_fn and abort_fn():
+            if logger:
+                logger.log("WAIT", f"'{desc}' aborted (process dead)")
+            return False
         time.sleep(1)
     if logger:
         logger.log("WAIT", f"'{desc}' TIMEOUT ({timeout}s)")

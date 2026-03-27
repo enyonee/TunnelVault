@@ -271,7 +271,7 @@ def daemonize(script_dir: Path) -> int:
     # Redirect stdio to daemon.log
     log_path = daemon_log_path(script_dir)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     os.dup2(fd, 1)  # stdout
     os.dup2(fd, 2)  # stderr
     os.close(fd)

@@ -28,6 +28,27 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
         )
 
 
+# macOS ignores 0.0.0.0/1 and 128.0.0.0/1 routes for normal app traffic.
+# Split into specific subnets like sing-box auto_route does.
+_CATCHALL_SPLIT: dict[str, list[str]] = {
+    "0.0.0.0/1": [
+        "1.0.0.0/8",
+        "2.0.0.0/7",
+        "4.0.0.0/6",
+        "8.0.0.0/5",
+        "16.0.0.0/4",
+        "32.0.0.0/3",
+        "64.0.0.0/2",
+    ],
+    "128.0.0.0/1": ["128.0.0.0/1"],
+}
+
+
+def _split_catchall(network: str) -> list[str] | None:
+    """Split 0.0.0.0/1 into specific subnets. Returns None if no split needed."""
+    return _CATCHALL_SPLIT.get(network)
+
+
 class NetManager(ABC):
     """Abstract network manager. Implementations for Darwin/Linux."""
 
@@ -201,6 +222,23 @@ class DarwinNet(NetManager):
 
     def add_iface_route(self, target: str, iface: str, host: bool = True) -> bool:
         flag = "-host" if host else "-net"
+        # For TUN interfaces, use gateway (peer IP) instead of -interface.
+        # macOS ignores -interface routes for normal app traffic (no G flag).
+        if iface.startswith("utun"):
+            gw = self.ppp_peer(iface)
+            if gw:
+                # macOS ignores 0.0.0.0/1 even with gateway. Split into
+                # specific subnets like sing-box auto_route does.
+                if not host:
+                    subnets = _split_catchall(target)
+                    if subnets:
+                        return all(
+                            _run(["sudo", "route", "add", "-net", s, gw]).returncode
+                            == 0
+                            for s in subnets
+                        )
+                r = _run(["sudo", "route", "add", flag, target, gw])
+                return r.returncode == 0
         r = _run(["sudo", "route", "add", flag, target, "-interface", iface])
         return r.returncode == 0
 
@@ -293,6 +331,12 @@ class DarwinNet(NetManager):
         return r.returncode == 0
 
     def delete_net_route(self, network: str) -> bool:
+        subnets = _split_catchall(network)
+        if subnets:
+            return all(
+                _run(["sudo", "route", "delete", "-net", s]).returncode == 0
+                for s in subnets
+            )
         r = _run(["sudo", "route", "delete", "-net", network])
         return r.returncode == 0
 
