@@ -32,13 +32,25 @@ for c in python3 python; do
     v=$("$c" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}') if v >= (3,10) else exit(1)" 2>/dev/null) && PY="$c" && break
 done
 if [ -z "$PY" ]; then
-    fail "Python 3.10+ not found"
-    case "$PLATFORM" in
-        macos)   echo -e "    ${D}brew install python@3.12${N}" ;;
-        linux)   echo -e "    ${D}sudo apt install python3 python3-venv  # or dnf/pacman${N}" ;;
-        windows) echo -e "    ${D}winget install Python.Python.3.12${N}" ;;
-    esac
-    exit 1
+    # Try auto-install on Linux
+    if [ "$PLATFORM" = "linux" ] && command -v apt-get &>/dev/null; then
+        warn "Python 3.10+ not found — installing via apt..."
+        sudo apt-get update -qq 2>/dev/null
+        sudo apt-get install -y -qq python3 python3-venv curl 2>/dev/null
+        for c in python3 python; do
+            command -v "$c" &>/dev/null || continue
+            v=$("$c" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}') if v >= (3,10) else exit(1)" 2>/dev/null) && PY="$c" && break
+        done
+    fi
+    if [ -z "$PY" ]; then
+        fail "Python 3.10+ not found"
+        case "$PLATFORM" in
+            macos)   echo -e "    ${D}brew install python@3.12${N}" ;;
+            linux)   echo -e "    ${D}sudo apt install python3 python3-venv${N}" ;;
+            windows) echo -e "    ${D}winget install Python.Python.3.12${N}" ;;
+        esac
+        exit 1
+    fi
 fi
 ok "Python $v ($PY)"
 
@@ -136,10 +148,17 @@ else
     ok "nc"
 fi
 
-# ── sing-box hint (no apt package) ────────────────────────────
-if ! command -v sing-box &>/dev/null && [ "$PLATFORM" = "linux" ]; then
-    echo -e "    ${D}# sing-box: see https://sing-box.sagernet.org/installation/package-manager/${N}"
-    echo -e "    ${D}# or: go install -v github.com/sagernet/sing-box/cmd/sing-box@latest${N}"
+# ── sing-box auto-install (Linux: official apt repo) ─────────
+if ! command -v sing-box &>/dev/null && [ "$PLATFORM" = "linux" ] && command -v apt-get &>/dev/null; then
+    warn "sing-box not found — adding sagernet apt repo..."
+    sudo curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc 2>/dev/null
+    echo "deb [signed-by=/etc/apt/keyrings/sagernet.asc] https://deb.sagernet.org/ * *" | sudo tee /etc/apt/sources.list.d/sagernet.list >/dev/null
+    sudo apt-get update -qq 2>/dev/null
+    sudo apt-get install -y -qq sing-box 2>/dev/null && install_tool "sing-box" || {
+        fail "sing-box auto-install failed"
+        echo -e "    ${D}# see https://sing-box.sagernet.org/installation/package-manager/${N}"
+        MISSING=$((MISSING + 1))
+    }
 fi
 
 # ── Config ────────────────────────────────────────────────────
