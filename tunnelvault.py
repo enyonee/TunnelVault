@@ -659,7 +659,14 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
                 engine.log.log("WARN", "Reconnect lock timeout, skipping")
                 continue
         try:
-            check_results, ext_ip = engine.reconnect_all(quiet=True)
+            if reason == "wake":
+                check_results, ext_ip = engine.reconnect_all(quiet=True)
+            else:
+                # Reconnect only dead tunnels, leave healthy ones running
+                for tc, pid in dead:
+                    engine.log.log("INFO", f"Reconnecting dead tunnel: {tc.name} (was PID={pid})")
+                    engine.reconnect_one(tc.name, quiet=True)
+                check_results, ext_ip = engine.check_all(quiet=True)
             reconnect_count += 1
             last_reconnect = time.monotonic()
         except Exception as e:
