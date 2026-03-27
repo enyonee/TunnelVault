@@ -136,6 +136,7 @@ install_or_hint openfortivpn    "openfortivpn"      "openfortivpn"          "ope
 install_or_hint sing-box        "sing-box"          ""                      ""                      "https://sing-box.sagernet.org/installation/package-manager/"
 install_or_hint curl            "curl"              "curl"                  "curl"                  "(built-in on Windows 10+)"
 install_or_hint openssl         "openssl"           "openssl"               "openssl"               "choco install openssl"
+install_or_hint wg              "wireguard-tools"   "wireguard-tools"       "wireguard-tools"       "https://www.wireguard.com/install/"
 
 # nc: different package names
 if ! command -v nc &>/dev/null; then
