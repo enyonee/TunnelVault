@@ -175,14 +175,6 @@ fi
 
 chmod +x tvpn 2>/dev/null || true
 
-# ── Tests ─────────────────────────────────────────────────────
-if [ "${1:-}" != "--no-tests" ]; then
-    echo
-    echo -e "  ${D}Running tests...${N}"
-    echo
-    "$VENV_PY" -m pytest tests/ -x -q
-fi
-
 # ── Summary ───────────────────────────────────────────────────
 echo
 if [ "$MISSING" -eq 0 ]; then
