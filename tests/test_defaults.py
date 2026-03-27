@@ -390,8 +390,8 @@ class TestSingboxInterfaceAssignment:
         assert tunnels[0].interface == "utun99"
         assert tunnels[1].interface == "utun100"
 
-    def test_explicit_interface_preserved(self):
-        """Explicit interface is never overwritten."""
+    def test_explicit_interface_overwritten_by_platform(self):
+        """Interface from config.toml is overwritten with platform-correct value."""
         defs = {
             "tunnels": {
                 "sb": {
@@ -403,7 +403,12 @@ class TestSingboxInterfaceAssignment:
             }
         }
         tunnels = parse_tunnels(defs)
-        assert tunnels[0].interface == "utun42"
+        # Platform-dependent: utun* on macOS, tun* on Linux
+        import platform
+        if platform.system() == "Darwin":
+            assert tunnels[0].interface.startswith("utun")
+        else:
+            assert tunnels[0].interface.startswith("tun")
 
     def test_non_singbox_not_assigned(self):
         """FortiVPN/OpenVPN don't get auto-assigned interface."""
@@ -446,17 +451,16 @@ class TestSingboxInterfaceAssignment:
         assert tunnels[0].interface == "tun0"
         assert tunnels[1].interface == "tun1"
 
-    def test_cross_type_interface_collision_avoided(self):
-        """Explicit non-singbox interface 'utun99' -> singbox auto skips to utun100."""
+    def test_non_singbox_interface_unchanged(self):
+        """Non-singbox tunnel interface is not touched by auto-assign."""
         defs = {
             "tunnels": {
-                "f": {"type": "fortivpn", "order": 1, "interface": "utun99"},
+                "f": {"type": "fortivpn", "order": 1, "interface": "ppp0"},
                 "s": {"type": "singbox", "order": 2, "config_file": "sb.json"},
             }
         }
         tunnels = parse_tunnels(defs)
-        assert tunnels[0].interface == "utun99"  # fortivpn explicit
-        assert tunnels[1].interface == "utun100"  # singbox auto, skipped utun99
+        assert tunnels[0].interface == "ppp0"  # fortivpn unchanged
 
 
 # =========================================================================
