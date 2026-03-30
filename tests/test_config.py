@@ -23,7 +23,7 @@ from tv.config import (
     _get_param_value,
     _set_param_value,
 )
-from tv.vpn.fortivpn import generate_cert as _generate_cert
+from tv.vpn.cert import generate_cert_sha256 as _generate_cert
 from tv.vpn.base import TunnelConfig, ConfigParam, TunnelPlugin, VPNResult
 from tv.vpn.fortivpn import FortiVPNPlugin
 from tv.vpn.openvpn import OpenVPNPlugin
@@ -364,7 +364,7 @@ class TestResolveTunnelParams:
         resolve_tunnel_params(tc, NoSchemaPlugin, Path("/tmp"))
         assert tc.auth == {}
 
-    @patch("tv.vpn.fortivpn.generate_cert", return_value="generated_cert_abc")
+    @patch("tv.vpn.fortivpn.generate_cert_sha256", return_value="generated_cert_abc")
     def test_forti_auto_cert_generated(self, mock_cert):
         """cert_mode=auto triggers cert generation."""
         tc = TunnelConfig(
@@ -396,7 +396,7 @@ class TestResolveTunnelParams:
                 "trusted_cert": "manual_cert",
             },
         )
-        with patch("tv.vpn.fortivpn.generate_cert") as mock_cert:
+        with patch("tv.vpn.fortivpn.generate_cert_sha256") as mock_cert:
             resolve_tunnel_params(tc, FortiVPNPlugin, Path("/tmp"))
         mock_cert.assert_not_called()
         assert tc.auth["trusted_cert"] == "manual_cert"
@@ -416,7 +416,7 @@ class TestResolveTunnelParams:
         )
         with (
             patch.dict(os.environ, {"VPN_TRUSTED_CERT": "env_cert_value"}),
-            patch("tv.vpn.fortivpn.generate_cert") as mock_cert,
+            patch("tv.vpn.fortivpn.generate_cert_sha256") as mock_cert,
         ):
             resolve_tunnel_params(tc, FortiVPNPlugin, Path("/tmp"))
         mock_cert.assert_not_called()
@@ -436,7 +436,7 @@ class TestResolveTunnelParams:
                 "trusted_cert": "toml_cert_value",
             },
         )
-        with patch("tv.vpn.fortivpn.generate_cert") as mock_cert:
+        with patch("tv.vpn.fortivpn.generate_cert_sha256") as mock_cert:
             resolve_tunnel_params(tc, FortiVPNPlugin, Path("/tmp"))
         mock_cert.assert_not_called()
         assert tc.auth["trusted_cert"] == "toml_cert_value"

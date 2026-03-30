@@ -108,11 +108,10 @@ def resolve_tunnel_params(
                 ui.param_found(param.label, current, "config.toml", param.secret)
             continue
 
-        # FortiVPN trusted_cert with cert_mode=auto: skip wizard, handled below
-        if (
-            tcfg.type == "fortivpn"
-            and param.key == "trusted_cert"
-            and tcfg.auth.get("cert_mode") == "auto"
+        # Cert with cert_mode=auto: skip wizard, handled by post_resolve_params
+        if tcfg.auth.get("cert_mode") == "auto" and param.key in (
+            "trusted_cert",
+            "servercert",
         ):
             continue
 

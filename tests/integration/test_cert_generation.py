@@ -11,7 +11,7 @@ import shutil
 
 import pytest
 
-from tv.vpn.fortivpn import generate_cert as _generate_cert, _SHA256_EMPTY
+from tv.vpn.cert import generate_cert_sha256 as _generate_cert, _SHA256_EMPTY
 
 pytestmark = pytest.mark.network
 

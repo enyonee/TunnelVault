@@ -3,7 +3,7 @@
 # Скопируй в config.toml и редактируй:  cp config.toml.example config.toml
 #
 # Каждый туннель описан в отдельной секции [tunnels.<name>]
-# Обязательное поле: type (openvpn | fortivpn | singbox | wireguard)
+# Обязательное поле: type (openvpn | fortivpn | openconnect | singbox | wireguard)
 # Опциональные: order, enabled, config_file, log, interface, auth, routes, dns, checks
 
 # Host routes к VPN-серверам через default GW (до старта туннелей)
@@ -66,6 +66,37 @@ ping = [
 dns = [
     { name = "app.example.local", server = "10.0.1.1" },
     { name = "dc.internal.local", server = "10.0.1.1" },
+]
+
+# OpenConnect - замена fortivpn на macOS (TUN вместо PPP, стабильнее)
+# brew install openconnect
+# Миграция: type = "openconnect", порт тот же, cert_mode = "auto"
+[tunnels.openconnect]
+type = "openconnect"
+order = 2
+
+[tunnels.openconnect.auth]
+host = "vpn.example.com"
+port = "44333"
+protocol = "fortinet"
+cert_mode = "auto"
+# login и pass — wizard спросит или ENV: VPN_OC_LOGIN, VPN_OC_PASS
+
+[tunnels.openconnect.routes]
+targets = ["*.example.local", "*.internal.local", "10.0.0.0/8", "192.168.100.0/24"]
+
+[tunnels.openconnect.dns]
+nameservers = ["10.0.1.1", "10.0.1.2"]
+
+[tunnels.openconnect.checks]
+ports = [
+    { host = "192.168.100.1", port = 8080 },
+]
+ping = [
+    { host = "10.0.1.1", label = "DNS-1", fallback = "port:53" },
+]
+dns = [
+    { name = "app.example.local", server = "10.0.1.1" },
 ]
 
 [tunnels.singbox]

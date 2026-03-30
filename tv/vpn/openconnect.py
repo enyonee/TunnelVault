@@ -16,7 +16,8 @@ from tv.app_config import cfg
 from tv.i18n import t
 from tv.logger import Logger
 from tv.proc import IS_WINDOWS
-from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
+from tv.vpn.base import ConfigParam, TunnelConfig, TunnelPlugin, VPNResult
+from tv.vpn.cert import generate_cert_sha256
 from tv.vpn.registry import register
 
 
@@ -100,6 +101,49 @@ class OpenConnectPlugin(TunnelPlugin):
         host = tcfg.auth.get("host", "")
         pids = proc.find_pids(f"openconnect.*--protocol=fortinet.*{host}")
         return pids[0] if pids else None
+
+    @classmethod
+    def post_resolve_params(
+        cls,
+        tcfg: TunnelConfig,
+        *,
+        quiet: bool = False,
+    ) -> None:
+        """Auto-generate server cert if cert_mode=auto.
+
+        Generates SHA256 hex via openssl, then formats as 'sha256:HEX'
+        for openconnect --servercert.
+        """
+        cert_mode = tcfg.auth.get("cert_mode", "")
+        if cert_mode != "auto":
+            return
+        if tcfg.auth.get("servercert"):
+            return
+
+        env_val = os.environ.get("VPN_SERVERCERT", "")
+        if env_val:
+            if not quiet:
+                ui.param_found("param.cert_sha256", env_val, "$VPN_SERVERCERT", False)
+            tcfg.auth["servercert"] = env_val
+            return
+
+        host = tcfg.auth.get("host", "")
+        port = tcfg.auth.get("port", "443")
+        if not host:
+            return
+
+        if not quiet:
+            print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
+        cert_hex = generate_cert_sha256(host, port)
+        if cert_hex:
+            servercert = f"sha256:{cert_hex}"
+            if not quiet:
+                print(
+                    f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=servercert[:32])}"
+                )
+            tcfg.auth["servercert"] = servercert
+        else:
+            ui.warn(t("config.cert_unreachable", host=host, port=port))
 
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:
@@ -241,7 +285,7 @@ class OpenConnectPlugin(TunnelPlugin):
         ]
 
         # Certificate handling
-        if cert_mode == "pin" and servercert:
+        if cert_mode in ("pin", "auto") and servercert:
             cmd.append(f"--servercert={servercert}")
         elif cert_mode == "system":
             # Use system CA store, no additional args

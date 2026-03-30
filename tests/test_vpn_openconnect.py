@@ -711,3 +711,115 @@ class TestDisconnect:
         assert "openconnect" in pattern
         assert "fortinet" in pattern
         assert plugin.cfg.auth["host"] in pattern
+
+
+class TestPostResolveParams:
+    """Tests for cert_mode=auto in OpenConnectPlugin.post_resolve_params."""
+
+    def test_auto_cert_generated(self):
+        """cert_mode=auto triggers cert generation with sha256: prefix."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+            return_value="aabbccdd" * 8,
+        ):
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        assert tc.auth["servercert"] == f"sha256:{'aabbccdd' * 8}"
+
+    def test_auto_cert_existing_not_overwritten(self):
+        """cert_mode=auto with servercert already set skips generation."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+                "servercert": "sha256:existing",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+        ) as mock_gen:
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        mock_gen.assert_not_called()
+        assert tc.auth["servercert"] == "sha256:existing"
+
+    def test_pin_mode_skips_generation(self):
+        """cert_mode=pin does not trigger auto-generation."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "pin",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+        ) as mock_gen:
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        mock_gen.assert_not_called()
+
+    def test_auto_cert_from_env(self):
+        """cert_mode=auto with VPN_SERVERCERT env uses env value."""
+        import os
+
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+            },
+        )
+        with (
+            patch.dict(os.environ, {"VPN_SERVERCERT": "sha256:env_cert"}),
+            patch("tv.vpn.openconnect.generate_cert_sha256") as mock_gen,
+        ):
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        mock_gen.assert_not_called()
+        assert tc.auth["servercert"] == "sha256:env_cert"
+
+    def test_auto_cert_unreachable(self):
+        """cert_mode=auto with unreachable host shows warning."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "unreachable.test",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+            return_value="",
+        ):
+            OpenConnectPlugin.post_resolve_params(tc, quiet=False)
+        assert not tc.auth.get("servercert")
