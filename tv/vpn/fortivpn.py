@@ -20,10 +20,6 @@ from tv.vpn.base import ConfigParam, TunnelConfig, TunnelPlugin, VPNResult
 from tv.vpn.cert import generate_cert_sha256
 from tv.vpn.registry import register
 
-# Backward-compat alias for tests that import generate_cert from this module
-generate_cert = generate_cert_sha256
-_SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
 
 @dataclass
 class FortiDNSInfo:
