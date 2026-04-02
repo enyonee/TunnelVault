@@ -529,6 +529,102 @@ class LinuxNet(NetManager):
                 return m.group(1)
         return ""
 
+    def setup_system_proxy(self, port: int) -> bool:
+        """Set Linux system proxy via gsettings (GNOME) or env file fallback."""
+        proxy = f"127.0.0.1:{port}"
+        # Try GNOME gsettings first
+        if shutil.which("gsettings"):
+            ok = True
+            for cmd in [
+                ["gsettings", "set", "org.gnome.system.proxy", "mode", "manual"],
+                [
+                    "gsettings",
+                    "set",
+                    "org.gnome.system.proxy.http",
+                    "host",
+                    "127.0.0.1",
+                ],
+                ["gsettings", "set", "org.gnome.system.proxy.http", "port", str(port)],
+                [
+                    "gsettings",
+                    "set",
+                    "org.gnome.system.proxy.https",
+                    "host",
+                    "127.0.0.1",
+                ],
+                ["gsettings", "set", "org.gnome.system.proxy.https", "port", str(port)],
+                [
+                    "gsettings",
+                    "set",
+                    "org.gnome.system.proxy.socks",
+                    "host",
+                    "127.0.0.1",
+                ],
+                ["gsettings", "set", "org.gnome.system.proxy.socks", "port", str(port)],
+            ]:
+                r = _run(cmd)
+                if r.returncode != 0:
+                    ok = False
+            if ok:
+                return True
+        # Fallback: write env vars to /etc/environment
+        env_lines = [
+            f'http_proxy="http://{proxy}/"',
+            f'https_proxy="http://{proxy}/"',
+            f'all_proxy="socks5://{proxy}/"',
+            f'HTTP_PROXY="http://{proxy}/"',
+            f'HTTPS_PROXY="http://{proxy}/"',
+            f'ALL_PROXY="socks5://{proxy}/"',
+        ]
+        return _write_env_proxy(env_lines)
+
+    def cleanup_system_proxy(self) -> bool:
+        """Remove Linux system proxy settings."""
+        if shutil.which("gsettings"):
+            r = _run(["gsettings", "set", "org.gnome.system.proxy", "mode", "none"])
+            if r.returncode == 0:
+                return True
+        return _remove_env_proxy()
+
+
+def _write_env_proxy(lines: list[str]) -> bool:
+    """Append proxy env vars to /etc/environment (with marker for cleanup)."""
+    marker = "# tunnelvault-proxy"
+    content = f"\n{marker}\n" + "\n".join(lines) + f"\n{marker}-end\n"
+    r = _run(
+        ["sudo", "tee", "-a", "/etc/environment"],
+        input=content,
+        capture_output=True,
+    )
+    return r.returncode == 0
+
+
+def _remove_env_proxy() -> bool:
+    """Remove tunnelvault proxy lines from /etc/environment."""
+    env_path = "/etc/environment"
+    try:
+        with open(env_path) as f:
+            original = f.read()
+    except OSError:
+        return True  # file doesn't exist = nothing to clean
+    marker = "# tunnelvault-proxy"
+    if marker not in original:
+        return True
+    cleaned_lines = []
+    skipping = False
+    for line in original.splitlines():
+        if line.strip() == marker:
+            skipping = True
+            continue
+        if line.strip() == f"{marker}-end":
+            skipping = False
+            continue
+        if not skipping:
+            cleaned_lines.append(line)
+    cleaned = "\n".join(cleaned_lines).rstrip() + "\n" if cleaned_lines else ""
+    r = _run(["sudo", "tee", env_path], input=cleaned, capture_output=True)
+    return r.returncode == 0
+
 
 # ---------------------------------------------------------------------------
 # Windows
@@ -737,6 +833,33 @@ class WindowsNet(NetManager):
                 if re.match(r"\d+\.\d+\.\d+\.\d+$", gw):
                     return gw
         return ""
+
+    def setup_system_proxy(self, port: int) -> bool:
+        """Set Windows system proxy via netsh and registry."""
+        proxy = f"127.0.0.1:{port}"
+        # netsh winhttp (system-level, used by many Windows services)
+        r = _run(["netsh", "winhttp", "set", "proxy", proxy])
+        # Registry (user-level, used by browsers and most apps)
+        ps_cmd = (
+            "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' "
+            f"-Name ProxyServer -Value '{proxy}'; "
+            "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' "
+            "-Name ProxyEnable -Value 1"
+        )
+        r2 = _run(["powershell", "-Command", ps_cmd])
+        return r.returncode == 0 or r2.returncode == 0
+
+    def cleanup_system_proxy(self) -> bool:
+        """Remove Windows system proxy settings."""
+        r = _run(["netsh", "winhttp", "reset", "proxy"])
+        ps_cmd = (
+            "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' "
+            "-Name ProxyEnable -Value 0; "
+            "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' "
+            "-Name ProxyServer -ErrorAction SilentlyContinue"
+        )
+        r2 = _run(["powershell", "-Command", ps_cmd])
+        return r.returncode == 0 or r2.returncode == 0
 
 
 # ---------------------------------------------------------------------------

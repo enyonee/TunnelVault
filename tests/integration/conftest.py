@@ -8,6 +8,7 @@ Environment variables provide server addresses and credentials.
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 import textwrap
 from pathlib import Path
@@ -208,6 +209,8 @@ def singbox_client_config(
 @pytest.fixture(autouse=True)
 def _ensure_devices():
     """Ensure /dev/net/tun and /dev/ppp exist (needed in containers)."""
+    if platform.system() != "Linux":
+        return
     tun_path = Path("/dev/net/tun")
     if not tun_path.exists():
         Path("/dev/net").mkdir(parents=True, exist_ok=True)
@@ -258,12 +261,17 @@ def _cleanup_after_test():
     import time
 
     # Capture default gateway before test
-    gw_result = subprocess.run(
-        ["ip", "route", "show", "default"],
-        capture_output=True,
-        text=True,
-    )
-    default_gw = gw_result.stdout.strip()
+    import shutil
+
+    if shutil.which("ip"):
+        gw_result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+        )
+        default_gw = gw_result.stdout.strip()
+    else:
+        default_gw = ""
 
     yield
 
@@ -273,6 +281,11 @@ def _cleanup_after_test():
             ["pkill", "-9", "-f", proc_name], check=False, capture_output=True
         )
     time.sleep(1)
+
+    # Linux-specific cleanup (ip command required)
+    if not shutil.which("ip"):
+        time.sleep(0.5)
+        return
 
     # Remove leftover tun/ppp interfaces
     result = subprocess.run(["ip", "-br", "link"], capture_output=True, text=True)
