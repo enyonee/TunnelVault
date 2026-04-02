@@ -95,3 +95,13 @@ http = ["https://service.example.com"]
 #
 # [tunnels.wireguard.checks]
 # ping = [{ host = "10.0.0.1", label = "wg-gw" }]
+
+# === Плановый reconnect ===
+# Периодическое переподключение (disconnect + connect) по расписанию.
+# Полезно для серверов, которые дропают долгие сессии.
+
+# [reconnect]
+# enabled = true
+# interval = "6h"              # каждые N: "30m", "1h", "6h", "12h", "24h"
+# # schedule = "03:00"         # ИЛИ фиксированное время HH:MM (вместо interval)
+# # tunnels = ["fortivpn"]     # какие туннели, по умолчанию все

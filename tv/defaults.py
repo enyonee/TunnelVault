@@ -69,6 +69,7 @@ def load(script_dir: Path, *, setup: bool = False) -> dict:
     from tv import app_config
 
     app_config.load(data.get("app", {}))
+    app_config.load_reconnect(data.get("reconnect", {}))
 
     print(
         f"  {ui.GREEN}📋{ui.NC} {t('defaults.loaded')} {ui.DIM}({defaults_file}){ui.NC}"
