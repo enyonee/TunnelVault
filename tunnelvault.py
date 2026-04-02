@@ -656,6 +656,12 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     else:
         next_sched_reconnect = 0.0  # disabled
 
+    reason_i18n = {
+        "wake": "main.keepalive_reason_wake",
+        "dead": "main.keepalive_reason_dead",
+        "scheduled": "main.keepalive_reason_scheduled",
+    }
+
     while True:
         time.sleep(interval)
         now = time.monotonic()
@@ -709,12 +715,7 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
             dead_names = ", ".join(tc.name for tc, pid in dead)
             engine.log.log("WARN", f"Keepalive: dead processes: {dead_names}")
 
-        _REASON_I18N = {
-            "wake": "main.keepalive_reason_wake",
-            "dead": "main.keepalive_reason_dead",
-            "scheduled": "main.keepalive_reason_scheduled",
-        }
-        reason_display = t(_REASON_I18N[reason])
+        reason_display = t(reason_i18n[reason])
         print(
             f"\n  {ui.YELLOW}🔄 {t('main.keepalive_reconnecting', reason=reason_display)}{ui.NC}"
         )

@@ -97,17 +97,25 @@ class Reconnect:
     tunnels: list[str] | None = None  # None = all tunnels
 
     def interval_seconds(self) -> int | None:
-        """Parse interval string to seconds. Returns None if not set."""
+        """Parse interval string to seconds. Returns None if not set.
+
+        Raises ValueError for unparseable intervals.
+        """
         if not self.interval:
             return None
         s = self.interval.strip().lower()
-        if s.endswith("h"):
-            return int(float(s[:-1]) * 3600)
-        if s.endswith("m"):
-            return int(float(s[:-1]) * 60)
-        if s.endswith("s"):
-            return int(float(s[:-1]))
-        return int(s)
+        try:
+            if s.endswith("h"):
+                return int(float(s[:-1]) * 3600)
+            if s.endswith("m"):
+                return int(float(s[:-1]) * 60)
+            if s.endswith("s"):
+                return int(float(s[:-1]))
+            return int(s)
+        except (ValueError, ArithmeticError) as e:
+            raise ValueError(
+                f"Invalid reconnect interval '{self.interval}': {e}"
+            ) from e
 
 
 @dataclass

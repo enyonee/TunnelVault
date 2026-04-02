@@ -75,6 +75,16 @@ class TestIntervalSeconds:
         r = Reconnect(interval="1.5h")
         assert r.interval_seconds() == 5400
 
+    def test_invalid_raises(self):
+        r = Reconnect(interval="abc")
+        with pytest.raises(ValueError, match="Invalid reconnect interval"):
+            r.interval_seconds()
+
+    def test_empty_suffix_raises(self):
+        r = Reconnect(interval="h")
+        with pytest.raises(ValueError, match="Invalid reconnect interval"):
+            r.interval_seconds()
+
 
 class TestNextScheduleTime:
     """Test _next_schedule_time helper."""
