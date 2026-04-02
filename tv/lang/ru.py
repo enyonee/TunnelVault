@@ -49,6 +49,10 @@ STRINGS: dict[str, str] = {
     "main.keepalive_reason_dead": "процесс умер",
     "main.keepalive_reconnected": "Переподключено {ok}/{total}: {names}",
     "main.keepalive_failed": "Переподключение не удалось: {error}",
+    "main.keepalive_reason_scheduled": "плановое переподключение",
+    "main.reconnect_scheduled": "Плановый reconnect каждые {interval}",
+    "main.reconnect_scheduled_at": "Плановый reconnect в {time}",
+    "main.reconnect_now": "Переподключение{tunnels}...",
     "main.backgrounded": "Сервис запущен (PID={pid}), терминал освобождён",
     "main.daemon_log_hint": "Лог: tail -f {path}",
     "main.daemon_stopped": "Демон остановлен (PID={pid})",
@@ -224,6 +228,7 @@ STRINGS: dict[str, str] = {
     # --- CLI help strings ---
     "cli.desc": "tunnelvault - менеджер мульти-VPN подключений",
     "cli.disconnect": "Отключить все VPN",
+    "cli.reconnect": "Переподключить туннели (disconnect + connect)",
     "cli.clear": "Отключить предыдущие VPN перед подключением (по умолчанию не трогает)",
     "cli.setup": "Интерактивная настройка (wizard)",
     "cli.debug": "DEBUG-вывод в stderr",

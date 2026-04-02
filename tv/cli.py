@@ -12,6 +12,7 @@ def parse_args() -> argparse.Namespace:
         description=t("cli.desc"),
     )
     p.add_argument("--disconnect", action="store_true", help=t("cli.disconnect"))
+    p.add_argument("--reconnect", action="store_true", help=t("cli.reconnect"))
     p.add_argument("--clear", action="store_true", help=t("cli.clear"))
     p.add_argument("--setup", action="store_true", help=t("cli.setup"))
     p.add_argument("--debug", action="store_true", help=t("cli.debug"))
