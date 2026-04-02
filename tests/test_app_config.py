@@ -115,6 +115,42 @@ class TestLoad:
         # No crash
 
 
+class TestProxyMode:
+    def setup_method(self):
+        reset()
+
+    def teardown_method(self):
+        reset()
+
+    def test_default_mode_is_tun(self):
+        assert cfg.mode == "tun"
+
+    def test_default_proxy_port(self):
+        assert cfg.proxy_port == 1080
+
+    def test_load_proxy_mode(self):
+        load({"mode": "proxy"})
+        assert cfg.mode == "proxy"
+
+    def test_load_proxy_port(self):
+        load({"mode": "proxy", "proxy_port": 8080})
+        assert cfg.proxy_port == 8080
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match="Invalid mode"):
+            load({"mode": "invalid"})
+
+    def test_tun_mode_is_valid(self):
+        load({"mode": "tun"})
+        assert cfg.mode == "tun"
+
+    def test_reset_restores_tun_mode(self):
+        load({"mode": "proxy", "proxy_port": 9999})
+        reset()
+        assert cfg.mode == "tun"
+        assert cfg.proxy_port == 1080
+
+
 class TestReset:
     def test_reset_restores_defaults(self):
         load({"timeouts": {"process": 999}, "paths": {"log_dir": "/custom"}})

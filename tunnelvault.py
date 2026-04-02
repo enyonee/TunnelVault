@@ -104,9 +104,9 @@ def main() -> None:
             daemon.disable(script_dir)
         return
 
-    # --- Commands that need root ---
+    # --- Commands that need root (TUN mode only) ---
 
-    if not _is_admin():
+    if not _is_admin() and cfg.mode != "proxy":
         ui.warn(t("main.needs_sudo"))
 
     if args.reset:
@@ -664,7 +664,9 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
             else:
                 # Reconnect only dead tunnels, leave healthy ones running
                 for tc, pid in dead:
-                    engine.log.log("INFO", f"Reconnecting dead tunnel: {tc.name} (was PID={pid})")
+                    engine.log.log(
+                        "INFO", f"Reconnecting dead tunnel: {tc.name} (was PID={pid})"
+                    )
                     engine.reconnect_one(tc.name, quiet=True)
                 check_results, ext_ip = engine.check_all(quiet=True)
             reconnect_count += 1
