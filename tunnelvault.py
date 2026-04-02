@@ -107,7 +107,7 @@ def main() -> None:
 
     # --- Commands that need root (TUN mode only) ---
 
-    if not _is_admin() and cfg.mode != "proxy":
+    if not _is_admin() and cfg.mode != "proxy-only":
         ui.warn(t("main.needs_sudo"))
 
     if args.reset:
@@ -127,6 +127,17 @@ def main() -> None:
     # CLI --log-level overrides config
     if args.log_level:
         cfg.logging.level = args.log_level
+
+    # CLI --proxy / --proxy-only overrides config mode
+    proxy_only = getattr(args, "proxy_only", None)
+    if args.proxy is not None:
+        cfg.mode = "proxy"
+        if args.proxy > 0:
+            cfg.proxy_port = args.proxy
+    elif proxy_only is not None:
+        cfg.mode = "proxy-only"
+        if proxy_only > 0:
+            cfg.proxy_port = proxy_only
 
     if args.validate:
         from tv import validate as validate_mod
