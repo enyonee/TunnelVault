@@ -166,3 +166,166 @@ class TestSystemProxy:
         assert any("setwebproxystate" in c and "off" in c for c in calls)
         assert any("setsecurewebproxystate" in c and "off" in c for c in calls)
         assert any("setsocksfirewallproxystate" in c and "off" in c for c in calls)
+
+
+class TestLinuxSystemProxy:
+    """Test LinuxNet.setup_system_proxy / cleanup_system_proxy."""
+
+    def test_setup_with_gsettings(self):
+        from tv.net import LinuxNet
+
+        net = LinuxNet()
+        with (
+            patch("tv.net.shutil.which", return_value="/usr/bin/gsettings"),
+            patch("tv.net._run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            result = net.setup_system_proxy(1080)
+
+        assert result is True
+        calls = [str(c) for c in mock_run.call_args_list]
+        assert any("org.gnome.system.proxy" in c and "manual" in c for c in calls)
+        assert any("org.gnome.system.proxy.http" in c and "1080" in c for c in calls)
+        assert any("org.gnome.system.proxy.https" in c and "1080" in c for c in calls)
+        assert any("org.gnome.system.proxy.socks" in c and "1080" in c for c in calls)
+
+    def test_setup_fallback_env(self):
+        from tv.net import LinuxNet
+
+        net = LinuxNet()
+        with (
+            patch("tv.net.shutil.which", return_value=None),
+            patch("tv.net._run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            result = net.setup_system_proxy(8080)
+
+        assert result is True
+        calls = [str(c) for c in mock_run.call_args_list]
+        assert any("tee" in c and "/etc/environment" in c for c in calls)
+
+    def test_cleanup_with_gsettings(self):
+        from tv.net import LinuxNet
+
+        net = LinuxNet()
+        with (
+            patch("tv.net.shutil.which", return_value="/usr/bin/gsettings"),
+            patch("tv.net._run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            result = net.cleanup_system_proxy()
+
+        assert result is True
+        calls = [str(c) for c in mock_run.call_args_list]
+        assert any("org.gnome.system.proxy" in c and "none" in c for c in calls)
+
+
+class TestLinuxEnvProxy:
+    """Test _write_env_proxy / _remove_env_proxy helpers."""
+
+    def test_remove_cleans_markers(self, tmp_path):
+        from tv.net import _remove_env_proxy
+
+        env_file = tmp_path / "environment"
+        env_file.write_text(
+            "PATH=/usr/bin\n"
+            "# tunnelvault-proxy\n"
+            'http_proxy="http://127.0.0.1:1080/"\n'
+            "# tunnelvault-proxy-end\n"
+            "OTHER=val\n"
+        )
+        with patch("tv.net._run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            # Patch the file path
+            with patch(
+                "builtins.open",
+                side_effect=lambda f, *a, **kw: (
+                    env_file.open(*a, **kw)
+                    if f == "/etc/environment"
+                    else open(f, *a, **kw)
+                ),
+            ):
+                result = _remove_env_proxy()
+
+        assert result is True
+        # Verify tee was called with cleaned content (no proxy lines)
+        tee_call = mock_run.call_args
+        input_data = tee_call.kwargs.get("input", "")
+        assert "tunnelvault-proxy" not in input_data
+        assert "http_proxy" not in input_data
+        assert "PATH=/usr/bin" in input_data
+        assert "OTHER=val" in input_data
+
+    def test_remove_noop_when_no_markers(self):
+        from tv.net import _remove_env_proxy
+
+        with patch(
+            "builtins.open",
+            side_effect=lambda f, *a, **kw: (
+                __import__("io").StringIO("PATH=/usr/bin\n")
+                if f == "/etc/environment"
+                else open(f, *a, **kw)
+            ),
+        ):
+            result = _remove_env_proxy()
+
+        assert result is True
+
+    def test_remove_noop_when_no_file(self):
+        from tv.net import _remove_env_proxy
+
+        with patch("builtins.open", side_effect=OSError("not found")):
+            result = _remove_env_proxy()
+
+        assert result is True
+
+
+class TestWindowsSystemProxy:
+    """Test WindowsNet.setup_system_proxy / cleanup_system_proxy."""
+
+    def test_setup_calls_netsh_and_registry(self):
+        from tv.net import WindowsNet
+
+        net = WindowsNet()
+        with patch("tv.net._run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = net.setup_system_proxy(1080)
+
+        assert result is True
+        calls = [str(c) for c in mock_run.call_args_list]
+        assert any(
+            "netsh" in c and "winhttp" in c and "set" in c and "proxy" in c
+            for c in calls
+        )
+        assert any("ProxyServer" in c and "127.0.0.1:1080" in c for c in calls)
+        assert any("ProxyEnable" in c and "1" in c for c in calls)
+
+    def test_cleanup_resets_proxy(self):
+        from tv.net import WindowsNet
+
+        net = WindowsNet()
+        with patch("tv.net._run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = net.cleanup_system_proxy()
+
+        assert result is True
+        calls = [str(c) for c in mock_run.call_args_list]
+        assert any("netsh" in c and "winhttp" in c and "reset" in c for c in calls)
+        assert any("ProxyEnable" in c and "0" in c for c in calls)
+
+    def test_setup_ok_if_either_succeeds(self):
+        """Even if netsh fails, registry success is enough."""
+        from tv.net import WindowsNet
+
+        net = WindowsNet()
+        call_count = [0]
+
+        def side_effect(*args, **kwargs):
+            call_count[0] += 1
+            rc = 1 if call_count[0] == 1 else 0  # netsh fails, powershell ok
+            return MagicMock(returncode=rc)
+
+        with patch("tv.net._run", side_effect=side_effect):
+            result = net.setup_system_proxy(1080)
+
+        assert result is True
