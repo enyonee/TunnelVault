@@ -15,6 +15,23 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--reconnect", action="store_true", help=t("cli.reconnect"))
     p.add_argument("--clear", action="store_true", help=t("cli.clear"))
     p.add_argument("--setup", action="store_true", help=t("cli.setup"))
+    proxy_group = p.add_mutually_exclusive_group()
+    proxy_group.add_argument(
+        "--proxy",
+        nargs="?",
+        const=0,
+        default=None,
+        type=int,
+        help=t("cli.proxy"),
+    )
+    proxy_group.add_argument(
+        "--proxy-only",
+        nargs="?",
+        const=0,
+        default=None,
+        type=int,
+        help=t("cli.proxy_only"),
+    )
     p.add_argument("--debug", action="store_true", help=t("cli.debug"))
     p.add_argument(
         "--log-level",

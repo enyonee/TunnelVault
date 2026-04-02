@@ -127,7 +127,7 @@ class AppConfig:
     logging: Logging
     reconnect: Reconnect
     locale: str = ""
-    mode: str = "tun"  # "tun" or "proxy"
+    mode: str = "tun"  # "tun", "proxy" (tun+proxy), or "proxy-only"
     proxy_port: int = 1080
 
 
@@ -162,8 +162,9 @@ def load(app_dict: dict) -> None:
     for tk in _TOP_LEVEL:
         if tk in app_dict:
             setattr(cfg, tk, app_dict[tk])
-    if cfg.mode not in ("tun", "proxy"):
-        raise ValueError(f"Invalid mode '{cfg.mode}', expected 'tun' or 'proxy'")
+    _VALID_MODES = ("tun", "proxy", "proxy-only")
+    if cfg.mode not in _VALID_MODES:
+        raise ValueError(f"Invalid mode '{cfg.mode}', expected one of {_VALID_MODES}")
 
     known_sections = set(_SECTION_MAP)
     for k in app_dict:

@@ -63,7 +63,7 @@ class SingBoxPlugin(TunnelPlugin):
         return "sing-box"
 
     def connect(self) -> VPNResult:
-        if cfg.mode == "proxy":
+        if cfg.mode == "proxy-only":
             return self._connect_proxy()
         return self._connect_tun()
 
