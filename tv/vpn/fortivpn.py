@@ -169,6 +169,11 @@ class FortiVPNPlugin(TunnelPlugin):
     kill_patterns = (f"openfortivpn -c {cfg.paths.temp_dir}/forti_",)
 
     @classmethod
+    def get_version(cls) -> str:
+        raw = super().get_version()
+        return f"openfortivpn {raw}" if raw else ""
+
+    @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
         return [f"openfortivpn -c {cfg.paths.temp_dir}/forti_"]
 

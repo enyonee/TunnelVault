@@ -45,6 +45,15 @@ class OpenVPNPlugin(TunnelPlugin):
     kill_patterns = ("openvpn --config .*/tunnelvault/",)
 
     @classmethod
+    def get_version(cls) -> str:
+        raw = super().get_version()
+        # "OpenVPN 2.7.0 aarch64-apple-darwin..." -> "OpenVPN 2.7.0"
+        parts = raw.split()
+        if len(parts) >= 2:
+            return f"{parts[0]} {parts[1]}"
+        return raw
+
+    @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:
         return [f"openvpn --config {script_dir}"]
 
