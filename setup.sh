@@ -72,9 +72,9 @@ if [ ! -f "$PIP" ]; then
 fi
 
 # ── Python deps ───────────────────────────────────────────────
-"$PIP" install -q rich "dnslib>=0.9" pytest pytest-xdist 2>/dev/null
+"$PIP" install -q rich "dnslib>=0.9" "tomlkit>=0.13" pytest pytest-xdist 2>/dev/null
 "$VENV_PY" -c "import tomllib" 2>/dev/null || "$PIP" install -q tomli 2>/dev/null
-ok "Python deps (rich, dnslib, pytest)"
+ok "Python deps (rich, dnslib, tomlkit, pytest)"
 
 # ── System tools ──────────────────────────────────────────────
 echo
