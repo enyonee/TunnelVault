@@ -15,6 +15,17 @@ from tv.logger import Logger
 from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
 from tv.vpn.registry import register
 
+_LOCAL_BINARY = "bin/sing-box"
+
+
+def _resolve_binary(script_dir: Path | None = None) -> str:
+    """Prefer local bin/sing-box over system PATH."""
+    if script_dir:
+        local = script_dir / _LOCAL_BINARY
+        if local.is_file():
+            return str(local)
+    return "sing-box"
+
 
 @register("singbox")
 class SingBoxPlugin(TunnelPlugin):
@@ -36,6 +47,11 @@ class SingBoxPlugin(TunnelPlugin):
     def discover_pid(cls, tcfg, script_dir) -> int | None:
         config_path = script_dir / tcfg.config_file
         pids = proc.find_pids(f"sing-box run -c {config_path}")
+        if not pids:
+            # Also match local binary path
+            sb = _resolve_binary(script_dir)
+            if sb != "sing-box":
+                pids = proc.find_pids(f"{sb} run -c {config_path}")
         if pids:
             return pids[0]
         # Also check patched config pattern (proxy mode)
@@ -88,9 +104,10 @@ class SingBoxPlugin(TunnelPlugin):
         self._patched_config = patched
 
         # Launch without sudo (no TUN = no root needed)
-        self.log.log("INFO", f"Launch: sing-box run -c {run_config}")
+        sb = _resolve_binary(self.script_dir)
+        self.log.log("INFO", f"Launch: {sb} run -c {run_config}")
         sb_proc = proc.run_background(
-            ["sing-box", "run", "-c", run_config],
+            [sb, "run", "-c", run_config],
             sudo=False,
             log_path=str(log_path),
         )
@@ -132,9 +149,10 @@ class SingBoxPlugin(TunnelPlugin):
         run_config = str(config_path)
 
         # Launch in background
-        self.log.log("INFO", f"Launch: sudo sing-box run -c {run_config}")
+        sb = _resolve_binary(self.script_dir)
+        self.log.log("INFO", f"Launch: sudo {sb} run -c {run_config}")
         sb_proc = proc.run_background(
-            ["sing-box", "run", "-c", run_config],
+            [sb, "run", "-c", run_config],
             sudo=True,
             log_path=str(log_path),
         )
