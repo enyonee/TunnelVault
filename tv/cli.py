@@ -11,6 +11,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=t("cli.desc"),
     )
+    p.add_argument("-c", "--config", type=str, default=None, help="Path to config.toml")
     p.add_argument("--disconnect", action="store_true", help=t("cli.disconnect"))
     p.add_argument("--reconnect", action="store_true", help=t("cli.reconnect"))
     p.add_argument("--clear", action="store_true", help=t("cli.clear"))

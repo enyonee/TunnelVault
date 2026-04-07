@@ -49,6 +49,10 @@ def main() -> None:
     args = parse_args()
     script_dir = Path(__file__).parent.resolve()
 
+    # Override config path if specified
+    if args.config:
+        cfg.paths.defaults_file = args.config
+
     # Mutual exclusion check
     exclusive = [
         args.disconnect,
