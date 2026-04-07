@@ -260,9 +260,32 @@ def logo() -> None:
     # Dynamic protocol line from registry
     proto_line = _build_proto_line()
     print(f"{' ' * 12}{proto_line}")
+    # sing-box version
+    sb_ver = _get_singbox_version()
+    if sb_ver:
+        print(f"{' ' * ver_pad}{_c(240)}sing-box {sb_ver}{R}")
     print()
     print(bar)
     print()
+
+
+def _get_singbox_version() -> str:
+    """Get sing-box version string from local or system binary."""
+    import subprocess
+    from pathlib import Path
+
+    script_dir = Path(__file__).parent.parent
+    local = script_dir / "bin" / "sing-box"
+    sb = str(local) if local.is_file() else "sing-box"
+    try:
+        r = subprocess.run([sb, "version"], capture_output=True, text=True, timeout=5)
+        if r.stdout:
+            # "sing-box version 1.12.22" -> "1.12.22"
+            first_line = r.stdout.strip().split("\n")[0]
+            return first_line.replace("sing-box version ", "")
+    except Exception:
+        pass
+    return ""
 
 
 def _build_proto_line() -> str:
