@@ -16,6 +16,7 @@ from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
 from tv.vpn.registry import register
 
 _LOCAL_BINARY = "bin/sing-box"
+_version_logged = False
 
 
 def _resolve_binary(script_dir: Path | None = None) -> str:
@@ -25,6 +26,21 @@ def _resolve_binary(script_dir: Path | None = None) -> str:
         if local.is_file():
             return str(local)
     return "sing-box"
+
+
+def _log_version(sb: str, log: Logger) -> None:
+    """Log sing-box version on first use."""
+    global _version_logged
+    if _version_logged:
+        return
+    _version_logged = True
+    try:
+        r = subprocess.run([sb, "version"], capture_output=True, text=True, timeout=5)
+        version_line = r.stdout.strip().split("\n")[0] if r.stdout else "unknown"
+        log.log("INFO", f"sing-box binary: {sb}")
+        log.log("INFO", f"sing-box version: {version_line}")
+    except Exception:
+        log.log("WARN", f"sing-box version check failed: {sb}")
 
 
 @register("singbox")
@@ -105,6 +121,7 @@ class SingBoxPlugin(TunnelPlugin):
 
         # Launch without sudo (no TUN = no root needed)
         sb = _resolve_binary(self.script_dir)
+        _log_version(sb, self.log)
         self.log.log("INFO", f"Launch: {sb} run -c {run_config}")
         sb_proc = proc.run_background(
             [sb, "run", "-c", run_config],
@@ -150,6 +167,7 @@ class SingBoxPlugin(TunnelPlugin):
 
         # Launch in background
         sb = _resolve_binary(self.script_dir)
+        _log_version(sb, self.log)
         self.log.log("INFO", f"Launch: sudo {sb} run -c {run_config}")
         sb_proc = proc.run_background(
             [sb, "run", "-c", run_config],
