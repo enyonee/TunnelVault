@@ -492,6 +492,9 @@ def run_all_from_tunnels(
             "INFO",
             f"Checks: passed={passed} failed={failed} skipped={skipped} total={len(results)}",
         )
+        for r in results:
+            if r.status == "fail":
+                logger.log("WARN", f"Check FAILED: {r.label}")
 
     return results, ext_ip
 
@@ -649,7 +652,16 @@ def run_all_quiet(
     sys.stderr.write(f"\r{summary}{' ' * pad}\n")
     sys.stderr.flush()
 
+    if failed:
+        for r in results:
+            if r.status == "fail":
+                sys.stderr.write(f"    \033[0;31m✗\033[0m {r.label}\n")
+        sys.stderr.flush()
+
     if logger:
         logger.log("INFO", f"Checks: passed={passed} failed={failed} total={total}")
+        for r in results:
+            if r.status == "fail":
+                logger.log("WARN", f"Check FAILED: {r.label}")
 
     return results, ext_ip

@@ -540,6 +540,11 @@ def _run_check_only(tunnels: list[TunnelConfig], script_dir: Path) -> None:
         f"\n  {t('main.total', passed=f'{ui.GREEN}{passed}{ui.NC}', failed=f'{ui.RED}{failed}{ui.NC}', skipped=f'{ui.DIM}{skipped}{ui.NC}')}"
     )
 
+    if failed:
+        for r in results:
+            if r.status == "fail":
+                print(f"    {ui.RED}✗{ui.NC} {r.label}")
+
     if ext_ip:
         print(f"  {t('main.external_ip', ip=ext_ip)}")
     print()
