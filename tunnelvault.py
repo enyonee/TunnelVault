@@ -375,6 +375,9 @@ def main() -> None:
         sys.exit(0)
 
     # --- Daemon (grandchild) ---
+    # Fix log permissions so they're readable without sudo
+    daemon_mod.fix_log_permissions(script_dir)
+
     # Fresh lock - threading primitives don't survive fork reliably
     _reconnect_lock = threading.Lock()
 
