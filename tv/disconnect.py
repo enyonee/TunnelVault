@@ -39,6 +39,11 @@ def get_bypass_routes(defs: dict) -> dict:
     return defs.get("global", {}).get("bypass", {})
 
 
+def get_kill_switch_enabled(defs: dict) -> bool:
+    """Check if kill switch is enabled in config."""
+    return bool(defs.get("global", {}).get("kill_switch", False))
+
+
 def cleanup_global_routes(
     net: NetManager,
     log: Optional[Logger],
@@ -133,7 +138,13 @@ def _cleanup_routes_and_ipv6(
     log: Optional[Logger],
     defs: dict,
 ) -> None:
-    """Shared cleanup: global routes + IPv6 restore."""
+    """Shared cleanup: global routes + kill switch + IPv6 restore."""
+    # Disable kill switch before restoring routes
+    from tv.killswitch import create as create_killswitch
+
+    ks = create_killswitch(log)
+    _safe(lambda: ks.disable(), "disable kill switch", log)
+
     cleanup_global_routes(net, log, defs)
 
     print(f"🌐 {t('disc.restore_ipv6')}")
