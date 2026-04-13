@@ -435,16 +435,17 @@ class TestConnectFailure:
 
 
 class TestRoutingMode:
-    def test_managed_mode_passes_no_routes_no_dns(self, plugin):
-        """With custom routes/DNS, runs with --no-routes --no-dns."""
+    def test_managed_mode_uses_script_true(self, plugin):
+        """With custom routes/DNS, runs with -s /bin/true to skip vpnc-script."""
         with (
             _oc_connect_ok(plugin),
             patch("tv.vpn.openconnect.subprocess.Popen") as mock_popen,
         ):
             plugin.connect()
             cmd = mock_popen.call_args[0][0]
-            assert "--no-routes" in cmd
-            assert "--no-dns" in cmd
+            assert "-s" in cmd
+            idx = cmd.index("-s")
+            assert cmd[idx + 1] == "/bin/true"
 
     def test_native_mode_skips_managed_flags(self, tmp_dir, mock_net, logger):
         """Without custom routes/DNS, runs without --no-routes/--no-dns."""
@@ -475,8 +476,7 @@ class TestRoutingMode:
             r = p.connect()
 
         cmd = mock_popen.call_args[0][0]
-        assert "--no-routes" not in cmd
-        assert "--no-dns" not in cmd
+        assert "-s" not in cmd
         assert r.ok is True
 
     def test_native_mode_skips_add_routes(self, tmp_dir, mock_net, logger):
@@ -536,8 +536,9 @@ class TestRoutingMode:
             p.connect()
 
         cmd = mock_popen.call_args[0][0]
-        assert "--no-routes" in cmd
-        assert "--no-dns" in cmd
+        assert "-s" in cmd
+        idx = cmd.index("-s")
+        assert cmd[idx + 1] == "/bin/true"
 
 
 # =========================================================================
