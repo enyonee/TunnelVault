@@ -5,7 +5,14 @@ from __future__ import annotations
 
 import pytest
 
-from tv.defaults import load, parse_tunnels, validate_config_files
+from unittest.mock import patch
+
+from tv.defaults import (
+    load,
+    parse_tunnels,
+    validate_config_files,
+    _migrate_fortivpn_to_openconnect,
+)
 from tv.vpn.base import TunnelConfig
 
 
@@ -134,17 +141,17 @@ class TestLoadSetup:
 class TestParseTunnelsAutoLog:
     def test_auto_log_path_generated(self):
         """Tunnel without explicit log gets logs/{type}-{name}.log."""
-        defs = {"tunnels": {"forti1": {"type": "fortivpn", "order": 1}}}
+        defs = {"tunnels": {"vpn1": {"type": "openvpn", "order": 1}}}
         tunnels = parse_tunnels(defs)
         assert len(tunnels) == 1
-        assert tunnels[0].log == "logs/fortivpn-forti1.log"
+        assert tunnels[0].log == "logs/openvpn-vpn1.log"
 
     def test_explicit_log_preserved(self):
         """Tunnel with explicit log keeps it."""
         defs = {
             "tunnels": {
-                "forti1": {
-                    "type": "fortivpn",
+                "vpn1": {
+                    "type": "openvpn",
                     "order": 1,
                     "log": "/var/log/my.log",
                 }
@@ -157,22 +164,22 @@ class TestParseTunnelsAutoLog:
         """Two same-type tunnels get different auto-generated log paths."""
         defs = {
             "tunnels": {
-                "forti1": {"type": "fortivpn", "order": 1},
-                "home": {"type": "fortivpn", "order": 2},
+                "vpn1": {"type": "openvpn", "order": 1},
+                "home": {"type": "openvpn", "order": 2},
             }
         }
         tunnels = parse_tunnels(defs)
         logs = [t.log for t in tunnels]
         assert len(set(logs)) == 2
-        assert "logs/fortivpn-forti1.log" in logs
-        assert "logs/fortivpn-home.log" in logs
+        assert "logs/openvpn-vpn1.log" in logs
+        assert "logs/openvpn-home.log" in logs
 
     def test_disabled_tunnels_excluded(self):
         """Disabled tunnels are filtered out."""
         defs = {
             "tunnels": {
-                "active": {"type": "fortivpn", "order": 1},
-                "inactive": {"type": "fortivpn", "order": 2, "enabled": False},
+                "active": {"type": "openvpn", "order": 1},
+                "inactive": {"type": "openvpn", "order": 2, "enabled": False},
             }
         }
         tunnels = parse_tunnels(defs)
@@ -184,15 +191,15 @@ class TestParseTunnelsAutoLog:
         defs = {
             "tunnels": {
                 "gw": {
-                    "type": "fortivpn",
+                    "type": "openvpn",
                     "order": 1,
-                    "fallback_gateway": "10.0.0.1",
+                    "custom_gateway": "10.0.0.1",
                     "custom_flag": True,
                 }
             }
         }
         tunnels = parse_tunnels(defs)
-        assert tunnels[0].extra == {"fallback_gateway": "10.0.0.1", "custom_flag": True}
+        assert tunnels[0].extra == {"custom_gateway": "10.0.0.1", "custom_flag": True}
 
 
 class TestParseTunnelsValidation:
@@ -540,3 +547,114 @@ class TestValidateConfigFiles:
             TunnelConfig(name="b", type="openvpn", config_file="shared.conf"),
         ]
         validate_config_files(tunnels)  # no error
+
+
+# =========================================================================
+# FortiVPN -> OpenConnect migration on macOS
+# =========================================================================
+
+
+class TestMigrateFortivpnToOpenconnect:
+    """_migrate_fortivpn_to_openconnect on macOS."""
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_type_changed_to_openconnect(self, _mock):
+        """type=fortivpn becomes type=openconnect on macOS."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={"host": "vpn.corp.com", "port": "443", "login": "u", "pass": "p"},
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].type == "openconnect"
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_protocol_fortinet_added(self, _mock):
+        """protocol=fortinet is set."""
+        tunnels = [
+            TunnelConfig(name="corp", type="fortivpn", auth={"host": "vpn.test"})
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].auth["protocol"] == "fortinet"
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_trusted_cert_remapped_to_servercert(self, _mock):
+        """trusted_cert -> servercert with sha256: prefix."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={"host": "vpn.test", "trusted_cert": "aabbccdd1234"},
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].auth["servercert"] == "sha256:aabbccdd1234"
+        assert "trusted_cert" not in tunnels[0].auth
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_trusted_cert_with_sha256_prefix_kept(self, _mock):
+        """trusted_cert already has sha256: prefix - kept as is."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={"host": "vpn.test", "trusted_cert": "sha256:aabbccdd"},
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].auth["servercert"] == "sha256:aabbccdd"
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_fallback_gateway_removed(self, _mock):
+        """fallback_gateway extra param removed (not applicable to openconnect)."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={"host": "vpn.test"},
+                extra={"fallback_gateway": "10.0.0.1"},
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert "fallback_gateway" not in tunnels[0].extra
+
+    @patch("tv.defaults.platform.system", return_value="Linux")
+    def test_no_migration_on_linux(self, _mock):
+        """type=fortivpn stays on Linux."""
+        tunnels = [
+            TunnelConfig(name="corp", type="fortivpn", auth={"host": "vpn.test"})
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].type == "fortivpn"
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_other_types_untouched(self, _mock):
+        """Non-fortivpn tunnels not affected."""
+        tunnels = [
+            TunnelConfig(name="sb", type="singbox"),
+            TunnelConfig(name="ovpn", type="openvpn"),
+            TunnelConfig(name="corp", type="fortivpn", auth={"host": "vpn.test"}),
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].type == "singbox"
+        assert tunnels[1].type == "openvpn"
+        assert tunnels[2].type == "openconnect"
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_existing_servercert_not_overwritten(self, _mock):
+        """If servercert already set, trusted_cert doesn't overwrite it."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={
+                    "host": "vpn.test",
+                    "trusted_cert": "old_cert",
+                    "servercert": "sha256:existing",
+                },
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].auth["servercert"] == "sha256:existing"

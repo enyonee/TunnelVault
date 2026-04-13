@@ -279,14 +279,6 @@ class FortiVPNPlugin(TunnelPlugin):
             self.log.log("WARN", "openfortivpn is not available on Windows")
             return VPNResult(ok=False, detail="unsupported on Windows")
 
-        # Deprecation warning: recommend openconnect on macOS
-        if platform.system() == "Darwin":
-            ui.warn(t("vpn.forti.deprecated_macos"))
-            self.log.log(
-                "WARN",
-                "FortiVPN on macOS: consider switching to openconnect (type=openconnect)",
-            )
-
         auth = self.cfg.auth
         host = auth.get("host", "")
         port = auth.get("port", cfg.defaults.fortivpn_port)

@@ -68,9 +68,9 @@ dns = [
     { name = "dc.internal.local", server = "10.0.1.1" },
 ]
 
-# OpenConnect - замена fortivpn на macOS (TUN вместо PPP, стабильнее)
-# brew install openconnect
-# Миграция: type = "openconnect", порт тот же, cert_mode = "auto"
+# OpenConnect - TUN вместо PPP, стабильнее на macOS
+# На macOS type="fortivpn" автоматически мигрируется на openconnect
+# Для явного использования: brew install openconnect
 [tunnels.openconnect]
 type = "openconnect"
 order = 2

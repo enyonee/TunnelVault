@@ -109,15 +109,15 @@ class TestParseTunnels:
     def test_extra_fields(self):
         defs = {
             "tunnels": {
-                "forti": {
-                    "type": "fortivpn",
-                    "fallback_gateway": "169.254.2.1",
+                "vpn": {
+                    "type": "openvpn",
+                    "custom_gateway": "169.254.2.1",
                     "custom_thing": "foo",
                 },
             },
         }
         t = parse_tunnels(defs)[0]
-        assert t.extra["fallback_gateway"] == "169.254.2.1"
+        assert t.extra["custom_gateway"] == "169.254.2.1"
         assert t.extra["custom_thing"] == "foo"
 
     def test_interface_field(self):

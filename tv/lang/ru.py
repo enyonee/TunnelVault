@@ -73,7 +73,7 @@ STRINGS: dict[str, str] = {
     "defaults.expected_at": "Ожидается в: {path}",
     "defaults.parse_error": "Ошибка парсинга {file}: {error}",
     "defaults.no_tunnels": "{file}: отсутствует секция [tunnels.*]",
-    "defaults.format_hint": 'Формат: [tunnels.<имя>] с полем type = "openvpn" | "fortivpn" | "singbox" | "wireguard"',
+    "defaults.format_hint": 'Формат: [tunnels.<имя>] с полем type = "openvpn" | "fortivpn" | "openconnect" | "singbox" | "wireguard"',
     "defaults.loaded": "Defaults: загружены",
     "defaults.created_from_example": "Создан {file} из шаблона",
     "defaults.iface_conflict": "Туннели '{a}' и '{b}' используют один интерфейс '{iface}'",
@@ -173,7 +173,7 @@ STRINGS: dict[str, str] = {
     "vpn.forti.no_gw_fallback": "Не удалось определить PPP gateway, используем fallback: {gw}",
     "vpn.forti.no_gw": "Не удалось определить PPP gateway, маршруты могут не работать",
     "vpn.forti.unsupported_windows": "openfortivpn недоступен на Windows",
-    "vpn.forti.deprecated_macos": "FortiVPN на macOS: рекомендуется переключиться на openconnect (type=openconnect) для лучшей стабильности",
+    "vpn.forti.deprecated_macos": "FortiVPN на macOS использует PPP (deprecated). Автомиграция на openconnect (TUN)",
     # --- vpn/openconnect.py ---
     "vpn.openconnect.not_connected": "OpenConnect не поднялся за {timeout}с",
     "vpn.openconnect.alive_no_iface": "Процесс жив (PID={pid}), но {label} не появился",

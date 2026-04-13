@@ -67,8 +67,10 @@ def _read_log_tail(log_path: Path, max_bytes: int = 4096) -> str:
 
 def _show_error(oc_proc, oc_log: Path, log: Logger, label: str = "tun") -> None:
     """Display OpenConnect error details to user and log."""
-    ui.fail(t("vpn.openconnect.not_connected", timeout=cfg.timeouts.fortivpn_ppp))
-    log.log("ERROR", f"OpenConnect did not start within {cfg.timeouts.fortivpn_ppp}s")
+    ui.fail(t("vpn.openconnect.not_connected", timeout=cfg.timeouts.openconnect_tun))
+    log.log(
+        "ERROR", f"OpenConnect did not start within {cfg.timeouts.openconnect_tun}s"
+    )
 
     pid = oc_proc.pid
     if proc.is_alive(pid):
@@ -291,10 +293,10 @@ class OpenConnectPlugin(TunnelPlugin):
             # Use system CA store, no additional args
             pass
 
-        # Managed mode: disable default routing
+        # Managed mode: tunnelvault handles routes and DNS
         if managed:
-            cmd += ["--no-default-route"]
-            self.log.log("INFO", "Mode: managed (--no-default-route)")
+            cmd += ["--no-routes", "--no-dns"]
+            self.log.log("INFO", "Mode: managed (--no-routes --no-dns)")
         else:
             self.log.log("INFO", "Mode: native (routing from openconnect)")
 
@@ -349,7 +351,7 @@ class OpenConnectPlugin(TunnelPlugin):
         if not proc.wait_for(
             f"OpenConnect ({self.cfg.name} {tun_prefix})",
             _check_new_tun,
-            cfg.timeouts.fortivpn_ppp,
+            cfg.timeouts.openconnect_tun,
             self.log,
         ):
             _show_error(oc_proc, log_path, self.log, label=f"{tun_prefix} interface")

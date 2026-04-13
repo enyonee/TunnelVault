@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import platform
 import re
 import sys
 from pathlib import Path
@@ -128,6 +129,10 @@ def parse_tunnels(defs: dict) -> list[TunnelConfig]:
     result.sort(key=lambda t_: t_.order)
     enabled = [t_ for t_ in result if t_.enabled]
 
+    # On macOS: auto-migrate fortivpn -> openconnect (TUN instead of PPP)
+    # Must run before log path generation so log names reflect actual type
+    _migrate_fortivpn_to_openconnect(enabled)
+
     # Auto-generate unique log paths for tunnels without explicit log
     for tc in enabled:
         if not tc.log:
@@ -139,6 +144,44 @@ def parse_tunnels(defs: dict) -> list[TunnelConfig]:
 
     _validate_tunnels(enabled)
     return enabled
+
+
+def _migrate_fortivpn_to_openconnect(tunnels: list[TunnelConfig]) -> None:
+    """On macOS, transparently replace fortivpn with openconnect.
+
+    openfortivpn uses PPP (pppd) which is deprecated on macOS and unstable
+    after sleep/wake. openconnect with --protocol=fortinet uses TUN instead.
+
+    Auth params are remapped: trusted_cert -> servercert (with sha256: prefix),
+    protocol=fortinet is added. The user's config.toml stays unchanged.
+    """
+    if platform.system() != "Darwin":
+        return
+
+    for tc in tunnels:
+        if tc.type != "fortivpn":
+            continue
+
+        tc.type = "openconnect"
+
+        # Remap auth params
+        auth = tc.auth
+        auth.setdefault("protocol", "fortinet")
+
+        # trusted_cert -> servercert (openconnect uses sha256:HEX format)
+        trusted_cert = auth.pop("trusted_cert", "")
+        if trusted_cert and not auth.get("servercert"):
+            if trusted_cert.startswith("sha256:"):
+                auth["servercert"] = trusted_cert
+            else:
+                auth["servercert"] = f"sha256:{trusted_cert}"
+
+        # Remove fortivpn-specific params
+        tc.extra.pop("fallback_gateway", None)
+
+        ui.info(
+            f"  {ui.DIM}{tc.name}: fortivpn -> openconnect (TUN instead of PPP){ui.NC}"
+        )
 
 
 _IFACE_RE = re.compile(r"^([a-zA-Z]+)(\d+)$")
