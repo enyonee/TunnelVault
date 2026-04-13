@@ -65,8 +65,11 @@ def oc_cfg(tmp_dir) -> TunnelConfig:
 
 @pytest.fixture
 def plugin(oc_cfg, mock_net, logger, tmp_dir):
-    _setup_mock_net_snapshot(mock_net)
+    _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
     return OpenConnectPlugin(oc_cfg, mock_net, logger, tmp_dir)
+
+
+_real_open = open  # capture before builtins.open gets patched
 
 
 @contextlib.contextmanager
@@ -93,7 +96,7 @@ def _oc_connect_ok(plugin):
     with (
         patch("tv.vpn.openconnect.subprocess.Popen", return_value=mock_popen),
         patch("tv.vpn.openconnect.proc") as mock_proc,
-        patch("builtins.open", side_effect=lambda path, mode: open(path, mode)),
+        patch("builtins.open", side_effect=lambda *a, **kw: _real_open(*a, **kw)),
     ):
         mock_proc.wait_for.side_effect = lambda desc, fn, *a, **kw: fn() or fn()
         plugin.net.iface_info.return_value = "tun0: flags=8051<UP>"
@@ -111,7 +114,7 @@ def _oc_connect_fail(plugin, poll=1, is_alive=False):
     with (
         patch("tv.vpn.openconnect.subprocess.Popen", return_value=mock_popen),
         patch("tv.vpn.openconnect.proc") as mock_proc,
-        patch("builtins.open", side_effect=lambda path, mode: open(path, mode)),
+        patch("builtins.open", side_effect=lambda *a, **kw: _real_open(*a, **kw)),
     ):
         mock_proc.wait_for.return_value = False
         mock_proc.is_alive.return_value = is_alive
@@ -225,7 +228,8 @@ class TestConnectSuccess:
         assert r.ok is True
         assert r.pid == 9999
         assert plugin._pid == 9999
-        assert plugin.cfg.interface == "tun0"
+        expected_iface = "utun3" if platform.system() == "Darwin" else "tun0"
+        assert plugin.cfg.interface == expected_iface
 
     def test_password_via_stdin(self, plugin):
         """Password sent through stdin pipe, not CLI args."""
@@ -277,7 +281,7 @@ class TestConnectSuccess:
                 "cert_mode": "system",
             },
         )
-        _setup_mock_net_snapshot(mock_net)
+        _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
         with (
@@ -416,7 +420,7 @@ class TestConnectFailure:
             },
             dns={},  # empty!
         )
-        _setup_mock_net_snapshot(mock_net)
+        _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
         with _oc_connect_ok(p):
@@ -431,18 +435,19 @@ class TestConnectFailure:
 
 
 class TestRoutingMode:
-    def test_managed_mode_passes_no_default_route(self, plugin):
-        """With custom routes/DNS, runs with --no-default-route."""
+    def test_managed_mode_passes_no_routes_no_dns(self, plugin):
+        """With custom routes/DNS, runs with --no-routes --no-dns."""
         with (
             _oc_connect_ok(plugin),
             patch("tv.vpn.openconnect.subprocess.Popen") as mock_popen,
         ):
             plugin.connect()
             cmd = mock_popen.call_args[0][0]
-            assert "--no-default-route" in cmd
+            assert "--no-routes" in cmd
+            assert "--no-dns" in cmd
 
-    def test_native_mode_skips_no_default_route(self, tmp_dir, mock_net, logger):
-        """Without custom routes/DNS, runs without --no-default-route."""
+    def test_native_mode_skips_managed_flags(self, tmp_dir, mock_net, logger):
+        """Without custom routes/DNS, runs without --no-routes/--no-dns."""
         cfg = TunnelConfig(
             name="bare",
             type="openconnect",
@@ -460,7 +465,7 @@ class TestRoutingMode:
             routes={},
             dns={},
         )
-        _setup_mock_net_snapshot(mock_net)
+        _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
         with (
@@ -470,7 +475,8 @@ class TestRoutingMode:
             r = p.connect()
 
         cmd = mock_popen.call_args[0][0]
-        assert "--no-default-route" not in cmd
+        assert "--no-routes" not in cmd
+        assert "--no-dns" not in cmd
         assert r.ok is True
 
     def test_native_mode_skips_add_routes(self, tmp_dir, mock_net, logger):
@@ -492,7 +498,7 @@ class TestRoutingMode:
             routes={},
             dns={},
         )
-        _setup_mock_net_snapshot(mock_net)
+        _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
         with _oc_connect_ok(p):
@@ -520,7 +526,7 @@ class TestRoutingMode:
             routes={"networks": ["10.0.0.0/8"]},
             dns={},
         )
-        _setup_mock_net_snapshot(mock_net)
+        _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
         with (
@@ -530,7 +536,8 @@ class TestRoutingMode:
             p.connect()
 
         cmd = mock_popen.call_args[0][0]
-        assert "--no-default-route" in cmd
+        assert "--no-routes" in cmd
+        assert "--no-dns" in cmd
 
 
 # =========================================================================
@@ -549,12 +556,18 @@ class TestPlatformPing:
             ("Windows", "-n", ["-c"]),
         ],
     )
-    def test_ping_uses_platform_flag(self, plugin, platform_name, flag, absent_flags):
+    def test_ping_uses_platform_flag(
+        self, oc_cfg, mock_net, logger, tmp_dir, platform_name, flag, absent_flags
+    ):
+        is_macos = platform_name == "Darwin"
+        _setup_mock_net_snapshot(mock_net, is_macos=is_macos)
+        p = OpenConnectPlugin(oc_cfg, mock_net, logger, tmp_dir)
+
         with (
-            _oc_connect_ok(plugin) as mock_proc,
+            _oc_connect_ok(p) as mock_proc,
             patch("tv.vpn.openconnect.platform.system", return_value=platform_name),
         ):
-            plugin.connect()
+            p.connect()
 
         ping_calls = [
             c for c in mock_proc.run_background.call_args_list if c[0][0][0] == "ping"
@@ -593,7 +606,7 @@ class TestDnsAutoDiscovery:
             routes={"networks": ["10.0.0.0/8"]},
             dns=dns,
         )
-        _setup_mock_net_snapshot(mock_net)
+        _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(tcfg, mock_net, logger, tmp_dir)
         log_path = Path(tcfg.log)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -711,3 +724,115 @@ class TestDisconnect:
         assert "openconnect" in pattern
         assert "fortinet" in pattern
         assert plugin.cfg.auth["host"] in pattern
+
+
+class TestPostResolveParams:
+    """Tests for cert_mode=auto in OpenConnectPlugin.post_resolve_params."""
+
+    def test_auto_cert_generated(self):
+        """cert_mode=auto triggers cert generation with sha256: prefix."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+            return_value="aabbccdd" * 8,
+        ):
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        assert tc.auth["servercert"] == f"sha256:{'aabbccdd' * 8}"
+
+    def test_auto_cert_existing_not_overwritten(self):
+        """cert_mode=auto with servercert already set skips generation."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+                "servercert": "sha256:existing",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+        ) as mock_gen:
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        mock_gen.assert_not_called()
+        assert tc.auth["servercert"] == "sha256:existing"
+
+    def test_pin_mode_skips_generation(self):
+        """cert_mode=pin does not trigger auto-generation."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "pin",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+        ) as mock_gen:
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        mock_gen.assert_not_called()
+
+    def test_auto_cert_from_env(self):
+        """cert_mode=auto with VPN_SERVERCERT env uses env value."""
+        import os
+
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "vpn.test.com",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+            },
+        )
+        with (
+            patch.dict(os.environ, {"VPN_SERVERCERT": "sha256:env_cert"}),
+            patch("tv.vpn.openconnect.generate_cert_sha256") as mock_gen,
+        ):
+            OpenConnectPlugin.post_resolve_params(tc, quiet=True)
+        mock_gen.assert_not_called()
+        assert tc.auth["servercert"] == "sha256:env_cert"
+
+    def test_auto_cert_unreachable(self):
+        """cert_mode=auto with unreachable host shows warning."""
+        tc = TunnelConfig(
+            name="oc1",
+            type="openconnect",
+            auth={
+                "host": "unreachable.test",
+                "port": "443",
+                "login": "u",
+                "pass": "p",
+                "protocol": "fortinet",
+                "cert_mode": "auto",
+            },
+        )
+        with patch(
+            "tv.vpn.openconnect.generate_cert_sha256",
+            return_value="",
+        ):
+            OpenConnectPlugin.post_resolve_params(tc, quiet=False)
+        assert not tc.auth.get("servercert")

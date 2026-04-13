@@ -24,7 +24,7 @@ from tv.vpn.base import TunnelConfig
 from tv.vpn.registry import get_plugin
 
 # Ensure all plugins are registered on import
-from tv.vpn import openvpn, fortivpn, singbox, wireguard  # noqa: F401
+from tv.vpn import openvpn, fortivpn, openconnect, singbox, wireguard  # noqa: F401
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -460,6 +460,7 @@ def _print_ipc_check(data: dict) -> None:
 # so prefix matching is not useful; watch uses saved state (exact match) instead.
 _TYPE_PREFIXES: dict[str, list[str]] = {
     "fortivpn": ["ppp"],
+    "openconnect": ["tun", "utun"] if not IS_WINDOWS else [],
     "openvpn": ["tun", "utun"] if not IS_WINDOWS else [],
     "singbox": ["utun"] if not IS_WINDOWS else [],
 }

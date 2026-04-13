@@ -143,7 +143,7 @@ class TestFortiCertUnreachable:
             auth={"host": "vpn.example.com", "port": "443", "cert_mode": "auto"},
         )
 
-        with patch("tv.vpn.fortivpn.generate_cert", return_value=""):
+        with patch("tv.vpn.fortivpn.generate_cert_sha256", return_value=""):
             FortiVPNPlugin.post_resolve_params(tc, quiet=False)
 
         out = capsys.readouterr().out
@@ -164,7 +164,7 @@ class TestFortiCertUnreachable:
                 "trusted_cert": "aabbcc112233",
             },
         )
-        with patch("tv.vpn.fortivpn.generate_cert") as mock_gen:
+        with patch("tv.vpn.fortivpn.generate_cert_sha256") as mock_gen:
             FortiVPNPlugin.post_resolve_params(tc, quiet=True)
         mock_gen.assert_not_called()
         assert tc.auth["trusted_cert"] == "aabbcc112233"

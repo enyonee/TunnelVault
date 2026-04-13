@@ -16,7 +16,8 @@ from tv.app_config import cfg
 from tv.i18n import t
 from tv.logger import Logger
 from tv.proc import IS_WINDOWS
-from tv.vpn.base import ConfigParam, TunnelPlugin, VPNResult
+from tv.vpn.base import ConfigParam, TunnelConfig, TunnelPlugin, VPNResult
+from tv.vpn.cert import generate_cert_sha256
 from tv.vpn.registry import register
 
 
@@ -66,8 +67,10 @@ def _read_log_tail(log_path: Path, max_bytes: int = 4096) -> str:
 
 def _show_error(oc_proc, oc_log: Path, log: Logger, label: str = "tun") -> None:
     """Display OpenConnect error details to user and log."""
-    ui.fail(t("vpn.openconnect.not_connected", timeout=cfg.timeouts.fortivpn_ppp))
-    log.log("ERROR", f"OpenConnect did not start within {cfg.timeouts.fortivpn_ppp}s")
+    ui.fail(t("vpn.openconnect.not_connected", timeout=cfg.timeouts.openconnect_tun))
+    log.log(
+        "ERROR", f"OpenConnect did not start within {cfg.timeouts.openconnect_tun}s"
+    )
 
     pid = oc_proc.pid
     if proc.is_alive(pid):
@@ -100,6 +103,49 @@ class OpenConnectPlugin(TunnelPlugin):
         host = tcfg.auth.get("host", "")
         pids = proc.find_pids(f"openconnect.*--protocol=fortinet.*{host}")
         return pids[0] if pids else None
+
+    @classmethod
+    def post_resolve_params(
+        cls,
+        tcfg: TunnelConfig,
+        *,
+        quiet: bool = False,
+    ) -> None:
+        """Auto-generate server cert if cert_mode=auto.
+
+        Generates SHA256 hex via openssl, then formats as 'sha256:HEX'
+        for openconnect --servercert.
+        """
+        cert_mode = tcfg.auth.get("cert_mode", "")
+        if cert_mode != "auto":
+            return
+        if tcfg.auth.get("servercert"):
+            return
+
+        env_val = os.environ.get("VPN_SERVERCERT", "")
+        if env_val:
+            if not quiet:
+                ui.param_found("param.cert_sha256", env_val, "$VPN_SERVERCERT", False)
+            tcfg.auth["servercert"] = env_val
+            return
+
+        host = tcfg.auth.get("host", "")
+        port = tcfg.auth.get("port", "443")
+        if not host:
+            return
+
+        if not quiet:
+            print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
+        cert_hex = generate_cert_sha256(host, port)
+        if cert_hex:
+            servercert = f"sha256:{cert_hex}"
+            if not quiet:
+                print(
+                    f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=servercert[:32])}"
+                )
+            tcfg.auth["servercert"] = servercert
+        else:
+            ui.warn(t("config.cert_unreachable", host=host, port=port))
 
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:
@@ -241,16 +287,16 @@ class OpenConnectPlugin(TunnelPlugin):
         ]
 
         # Certificate handling
-        if cert_mode == "pin" and servercert:
+        if cert_mode in ("pin", "auto") and servercert:
             cmd.append(f"--servercert={servercert}")
         elif cert_mode == "system":
             # Use system CA store, no additional args
             pass
 
-        # Managed mode: disable default routing
+        # Managed mode: tunnelvault handles routes and DNS
         if managed:
-            cmd += ["--no-default-route"]
-            self.log.log("INFO", "Mode: managed (--no-default-route)")
+            cmd += ["--no-routes", "--no-dns"]
+            self.log.log("INFO", "Mode: managed (--no-routes --no-dns)")
         else:
             self.log.log("INFO", "Mode: native (routing from openconnect)")
 
@@ -305,7 +351,7 @@ class OpenConnectPlugin(TunnelPlugin):
         if not proc.wait_for(
             f"OpenConnect ({self.cfg.name} {tun_prefix})",
             _check_new_tun,
-            cfg.timeouts.fortivpn_ppp,
+            cfg.timeouts.openconnect_tun,
             self.log,
         ):
             _show_error(oc_proc, log_path, self.log, label=f"{tun_prefix} interface")

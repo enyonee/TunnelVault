@@ -19,6 +19,7 @@ class Timeouts:
     net_command: int = 10
     openvpn_init: int = 30
     fortivpn_ppp: int = 20
+    openconnect_tun: int = 20
     singbox_iface: int = 15
     wireguard_iface: int = 10
     fortivpn_gw_poll: float = 0.5
