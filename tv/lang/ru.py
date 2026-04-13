@@ -173,7 +173,6 @@ STRINGS: dict[str, str] = {
     "vpn.forti.no_gw_fallback": "Не удалось определить PPP gateway, используем fallback: {gw}",
     "vpn.forti.no_gw": "Не удалось определить PPP gateway, маршруты могут не работать",
     "vpn.forti.unsupported_windows": "openfortivpn недоступен на Windows",
-    "vpn.forti.deprecated_macos": "FortiVPN на macOS использует PPP (deprecated). Автомиграция на openconnect (TUN)",
     # --- vpn/openconnect.py ---
     "vpn.openconnect.not_connected": "OpenConnect не поднялся за {timeout}с",
     "vpn.openconnect.alive_no_iface": "Процесс жив (PID={pid}), но {label} не появился",
