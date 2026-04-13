@@ -39,6 +39,8 @@ services:
     build:
       context: .
       dockerfile: tests/e2e/Dockerfile.singbox-server
+    ports:
+      - "18388:8388"
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "8388"]
       interval: 5s

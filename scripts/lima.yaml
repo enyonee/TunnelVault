@@ -52,4 +52,14 @@ provision:
       chmod 666 /dev/net/tun
 
       # VPN tools
-      apt-get install -y openconnect openvpn wireguard-tools iputils-ping iproute2
+      apt-get install -y openconnect openvpn wireguard-tools iputils-ping iproute2 tcpdump
+
+      # sing-box binary
+      if ! command -v sing-box &>/dev/null; then
+        ARCH=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')
+        curl -Lo /tmp/sing-box.tar.gz \
+          "https://github.com/SagerNet/sing-box/releases/download/v1.11.0/sing-box-1.11.0-linux-${ARCH}.tar.gz"
+        tar -xzf /tmp/sing-box.tar.gz -C /tmp
+        mv /tmp/sing-box-*/sing-box /usr/local/bin/
+        rm -rf /tmp/sing-box*
+      fi
