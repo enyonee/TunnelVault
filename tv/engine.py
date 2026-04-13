@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -18,6 +19,15 @@ from tv.logger import Logger
 from tv.net import NetManager, create as create_net
 from tv.vpn.base import TunnelConfig, TunnelPlugin, VPNResult
 from tv.vpn.registry import get_plugin
+
+
+def _check_port(port: int) -> bool:
+    """Check if a port is listening on localhost."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except (ConnectionRefusedError, TimeoutError, OSError):
+        return False
 
 
 def load_watch_state(script_dir: Path) -> dict[str, str]:
@@ -111,6 +121,18 @@ class Engine:
         # NOTE: bypass domain_suffix is NOT injected into sing-box configs.
         # Domain-based route rules break TUN routing in sing-box 1.12+ on macOS.
         # Bypass is handled by DNS bypass proxy (/etc/resolver/ + BypassDNSProxy).
+
+        # In proxy-only mode, only sing-box tunnels are useful (no TUN)
+        if cfg.mode == "proxy-only":
+            self.tunnels = [t_ for t_ in self.tunnels if t_.type == "singbox"]
+
+        # Proxy modes require at least one sing-box tunnel
+        if cfg.mode in ("proxy", "proxy-only"):
+            has_singbox = any(t_.type == "singbox" for t_ in self.tunnels)
+            if not has_singbox:
+                ui.fail("Proxy mode requires at least one sing-box tunnel")
+                self.log.log("ERROR", "Proxy mode but no sing-box tunnel configured")
+                return
 
         # Filter out tunnels whose binary is not installed
         self.tunnels = self._filter_available(self.tunnels)
@@ -258,11 +280,21 @@ class Engine:
         # In proxy/proxy-only mode, set system proxy after tunnels are connected
         if cfg.mode in ("proxy", "proxy-only") and any(r.ok for r in self.results):
             addr = f"127.0.0.1:{cfg.proxy_port}"
-            self.net.setup_system_proxy(cfg.proxy_port)
-            self.log.log("INFO", f"System proxy set to {addr}")
-            if not quiet:
-                ui.info(f"🌐 {t('main.proxy_urls', addr=addr)}")
-                ui.info(f"  {ui.DIM}{t('main.proxy_env', addr=addr)}{ui.NC}")
+            if _check_port(cfg.proxy_port):
+                self.net.setup_system_proxy(cfg.proxy_port)
+                self.log.log("INFO", f"System proxy set to {addr}")
+                if not quiet:
+                    ui.info(f"🌐 {t('main.proxy_urls', addr=addr)}")
+                    ui.info(f"  {ui.DIM}{t('main.proxy_env', addr=addr)}{ui.NC}")
+            else:
+                self.log.log(
+                    "WARN",
+                    f"Proxy port {cfg.proxy_port} not listening, skipping system proxy",
+                )
+                if not quiet:
+                    ui.warn(
+                        f"Proxy port {cfg.proxy_port} not listening, system proxy not set"
+                    )
 
     def _save_watch_state(self) -> None:
         """Persist interface->name mapping for --watch.

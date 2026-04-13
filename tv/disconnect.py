@@ -184,6 +184,16 @@ def run(
         except OSError:
             pass
 
+    # Clean up sing-box proxy temp configs
+    for conf in glob.glob(f"{cfg.paths.temp_dir}/sb_proxy_*.json"):
+        try:
+            os.unlink(conf)
+        except OSError:
+            pass
+
+    # Always clean up system proxy (leaked proxy = all HTTP broken)
+    _safe(lambda: net.cleanup_system_proxy(), "cleanup system proxy", log)
+
     _cleanup_routes_and_ipv6(net, log, defs)
 
 
@@ -226,6 +236,9 @@ def run_plugins(
         _safe(lambda p=plugin: p.disconnect(), f"disconnect {tcfg.name}", log)
         _safe(lambda p=plugin: p.delete_routes(), f"del routes {tcfg.name}", log)
         _safe(lambda p=plugin: p.cleanup_dns(), f"cleanup dns {tcfg.name}", log)
+
+    # Clean up system proxy (safety net for crash/partial disconnect)
+    _safe(lambda: net.cleanup_system_proxy(), "cleanup system proxy", log)
 
     _cleanup_routes_and_ipv6(net, log, defs)
 
