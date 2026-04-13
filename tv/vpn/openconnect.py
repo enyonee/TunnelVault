@@ -292,10 +292,10 @@ class OpenConnectPlugin(TunnelPlugin):
             pass
 
         # Managed mode: tunnelvault handles routes and DNS
-        # Use -s /bin/true to skip vpnc-script (works on all openconnect versions)
+        # Managed mode: let openconnect set up TUN and server-pushed routes,
+        # then tunnelvault adds custom routes/DNS on top
         if managed:
-            cmd += ["-s", "/bin/true"]
-            self.log.log("INFO", "Mode: managed (-s /bin/true)")
+            self.log.log("INFO", "Mode: managed (tunnelvault routes + DNS)")
         else:
             self.log.log("INFO", "Mode: native (routing from openconnect)")
 

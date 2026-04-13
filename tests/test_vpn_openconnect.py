@@ -435,20 +435,18 @@ class TestConnectFailure:
 
 
 class TestRoutingMode:
-    def test_managed_mode_uses_script_true(self, plugin):
-        """With custom routes/DNS, runs with -s /bin/true to skip vpnc-script."""
-        with (
-            _oc_connect_ok(plugin),
-            patch("tv.vpn.openconnect.subprocess.Popen") as mock_popen,
-        ):
+    def test_managed_mode_adds_custom_routes(self, plugin):
+        """With custom routes/DNS, adds routes via interface after connect."""
+        with _oc_connect_ok(plugin):
             plugin.connect()
-            cmd = mock_popen.call_args[0][0]
-            assert "-s" in cmd
-            idx = cmd.index("-s")
-            assert cmd[idx + 1] == "/bin/true"
 
-    def test_native_mode_skips_managed_flags(self, tmp_dir, mock_net, logger):
-        """Without custom routes/DNS, runs without --no-routes/--no-dns."""
+        iface_calls = plugin.net.add_iface_route.call_args_list
+        added_targets = [c[0][0] for c in iface_calls]
+        for net in plugin.cfg.routes["networks"]:
+            assert net in added_targets
+
+    def test_native_mode_skips_custom_routes(self, tmp_dir, mock_net, logger):
+        """Without custom routes/DNS, no add_iface_route calls."""
         cfg = TunnelConfig(
             name="bare",
             type="openconnect",
@@ -469,15 +467,12 @@ class TestRoutingMode:
         _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
-        with (
-            _oc_connect_ok(p),
-            patch("tv.vpn.openconnect.subprocess.Popen") as mock_popen,
-        ):
+        with _oc_connect_ok(p):
             r = p.connect()
 
-        cmd = mock_popen.call_args[0][0]
-        assert "-s" not in cmd
         assert r.ok is True
+        # Native mode: no custom routes added by tunnelvault
+        mock_net.add_iface_route.assert_not_called()
 
     def test_native_mode_skips_add_routes(self, tmp_dir, mock_net, logger):
         """Native mode does not call add_iface_route."""
@@ -508,7 +503,7 @@ class TestRoutingMode:
         mock_net.setup_dns_resolver.assert_not_called()
 
     def test_routes_only_is_managed(self, tmp_dir, mock_net, logger):
-        """Networks without DNS is still managed mode."""
+        """Networks without DNS still adds custom routes."""
         cfg = TunnelConfig(
             name="routes_only",
             type="openconnect",
@@ -529,16 +524,12 @@ class TestRoutingMode:
         _setup_mock_net_snapshot(mock_net, is_macos=platform.system() == "Darwin")
         p = OpenConnectPlugin(cfg, mock_net, logger, tmp_dir)
 
-        with (
-            _oc_connect_ok(p),
-            patch("tv.vpn.openconnect.subprocess.Popen") as mock_popen,
-        ):
+        with _oc_connect_ok(p):
             p.connect()
 
-        cmd = mock_popen.call_args[0][0]
-        assert "-s" in cmd
-        idx = cmd.index("-s")
-        assert cmd[idx + 1] == "/bin/true"
+        iface_calls = p.net.add_iface_route.call_args_list
+        added = [c[0][0] for c in iface_calls]
+        assert "10.0.0.0/8" in added
 
 
 # =========================================================================
