@@ -1,8 +1,10 @@
 FROM alpine:3.21
 
+ARG TARGETARCH
 RUN apk add --no-cache curl netcat-openbsd \
+    && ARCH=$(echo "${TARGETARCH:-$(uname -m)}" | sed 's/aarch64/arm64/;s/x86_64/amd64/') \
     && curl -Lo /tmp/sing-box.tar.gz \
-       "https://github.com/SagerNet/sing-box/releases/download/v1.11.0/sing-box-1.11.0-linux-amd64.tar.gz" \
+       "https://github.com/SagerNet/sing-box/releases/download/v1.11.0/sing-box-1.11.0-linux-${ARCH}.tar.gz" \
     && tar -xzf /tmp/sing-box.tar.gz -C /tmp \
     && mv /tmp/sing-box-*/sing-box /usr/local/bin/ \
     && rm -rf /tmp/sing-box*
