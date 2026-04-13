@@ -187,8 +187,9 @@ class TestPrepare:
                         "port": "443",
                         "login": "u",
                         "pass": "p",
-                        "cert_mode": "manual",
+                        "cert_mode": "pin",
                         "trusted_cert": "abc",
+                        "servercert": "pin-sha256:test==",
                     },
                     "routes": {"targets": ["10.0.0.0/8", "*.alpha.local"]},
                     "dns": {"nameservers": ["10.0.1.1"]},
@@ -303,10 +304,10 @@ class TestPrepare:
         """Missing required param -> auto-enter setup via SetupRequiredError."""
         defs = {
             "tunnels": {
-                "forti": {
-                    "type": "fortivpn",
+                "vpn": {
+                    "type": "openvpn",
                     "order": 1,
-                    # No auth at all - login/pass/host missing
+                    # No config_file - required param missing
                 },
             },
         }
@@ -321,14 +322,9 @@ class TestPrepare:
 
             mock_resolve.side_effect = [
                 SetupRequiredError("missing"),  # quiet mode -> triggers auto-setup
-                "vpn.com",  # host (wizard)
-                "443",  # port (wizard)
-                "user",  # login (wizard)
-                "secret",  # pass (wizard)
-                "auto",  # cert_mode (wizard)
+                "client.ovpn",  # config_file (wizard)
             ]
-            with patch("tv.vpn.fortivpn.FortiVPNPlugin.post_resolve_params"):
-                e.prepare(setup=False)
+            e.prepare(setup=False)
 
         # Should have tunnels populated (auto-setup succeeded)
         assert len(e.tunnels) == 1
