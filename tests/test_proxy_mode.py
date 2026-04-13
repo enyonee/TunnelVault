@@ -113,6 +113,65 @@ class TestPatchForProxy:
         assert result is None
 
 
+class TestPatchAddProxyInbound:
+    """Test adding mixed inbound alongside TUN for --proxy mode."""
+
+    def test_adds_mixed_keeps_tun(self, tmp_path):
+        from tv.vpn.singbox import _patch_add_proxy_inbound
+
+        config = {
+            "inbounds": [{"type": "tun", "tag": "tun-in", "interface_name": "utun98"}],
+            "outbounds": [{"type": "direct"}],
+        }
+        config_path = tmp_path / "test.json"
+        config_path.write_text(json.dumps(config))
+
+        result = _patch_add_proxy_inbound(config_path, 1080, MagicMock())
+        assert result is not None
+        patched = json.loads(Path(result).read_text())
+
+        types = [ib["type"] for ib in patched["inbounds"]]
+        assert "tun" in types
+        assert "mixed" in types
+
+        mixed = next(ib for ib in patched["inbounds"] if ib["type"] == "mixed")
+        assert mixed["listen_port"] == 1080
+        assert mixed["listen"] == "127.0.0.1"
+
+        os.unlink(result)
+
+    def test_replaces_existing_mixed(self, tmp_path):
+        from tv.vpn.singbox import _patch_add_proxy_inbound
+
+        config = {
+            "inbounds": [
+                {"type": "tun", "tag": "tun-in"},
+                {"type": "mixed", "tag": "old-proxy", "listen_port": 9999},
+            ],
+            "outbounds": [{"type": "direct"}],
+        }
+        config_path = tmp_path / "test.json"
+        config_path.write_text(json.dumps(config))
+
+        result = _patch_add_proxy_inbound(config_path, 1080, MagicMock())
+        patched = json.loads(Path(result).read_text())
+
+        mixed_inbounds = [ib for ib in patched["inbounds"] if ib["type"] == "mixed"]
+        assert len(mixed_inbounds) == 1
+        assert mixed_inbounds[0]["listen_port"] == 1080
+
+        os.unlink(result)
+
+    def test_invalid_json_returns_none(self, tmp_path):
+        from tv.vpn.singbox import _patch_add_proxy_inbound
+
+        config_path = tmp_path / "bad.json"
+        config_path.write_text("not json")
+
+        result = _patch_add_proxy_inbound(config_path, 1080, MagicMock())
+        assert result is None
+
+
 class TestCheckPortListening:
     def test_listening_port(self):
         from tv.vpn.singbox import _check_port_listening

@@ -175,12 +175,16 @@ class SingBoxPlugin(TunnelPlugin):
         if err := self._check_config_file("vpn.sb.config_not_found"):
             return err
 
-        # Use original config as-is.
-        # Domain-based route rules break TUN routing in sing-box 1.12+ on macOS
-        # (any domain_suffix/domain rule triggers sniff-first mode that disrupts
-        # packet flow). Bypass for .ru domains is handled by TunnelVault's
-        # DNS bypass proxy (/etc/resolver/ + BypassDNSProxy).
-        run_config = str(config_path)
+        # In proxy mode (TUN + proxy), inject mixed inbound alongside TUN
+        if cfg.mode == "proxy":
+            patched = _patch_add_proxy_inbound(config_path, cfg.proxy_port, self.log)
+            if patched:
+                run_config = patched
+                self._patched_config = patched
+            else:
+                run_config = str(config_path)
+        else:
+            run_config = str(config_path)
 
         # Launch in background
         sb = _resolve_binary(self.script_dir)
@@ -317,6 +321,49 @@ def _patch_for_proxy(
         return None
 
     log.log("INFO", f"proxy patch: mixed inbound on :{port} ({tmp_path})")
+    return tmp_path
+
+
+def _patch_add_proxy_inbound(
+    config_path: Path,
+    port: int,
+    log: Logger,
+) -> str | None:
+    """Add mixed (HTTP+SOCKS5) inbound to existing config, keeping TUN.
+
+    For --proxy mode: TUN + proxy on the same sing-box instance.
+    Returns temp file path, or None on error.
+    """
+    try:
+        data = json.loads(config_path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        log.log("WARN", f"proxy+tun patch: cannot read {config_path}: {e}")
+        return None
+
+    mixed_inbound = {
+        "type": "mixed",
+        "tag": "proxy-in",
+        "listen": "127.0.0.1",
+        "listen_port": port,
+    }
+    inbounds = data.get("inbounds", [])
+    inbounds = [ib for ib in inbounds if ib.get("type") != "mixed"]
+    inbounds.append(mixed_inbound)
+    data["inbounds"] = inbounds
+
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix="sb_proxy_",
+            suffix=".json",
+            dir=cfg.paths.temp_dir,
+        )
+        os.write(fd, json.dumps(data, indent=2).encode())
+        os.close(fd)
+    except OSError as e:
+        log.log("WARN", f"proxy+tun patch: cannot write temp config: {e}")
+        return None
+
+    log.log("INFO", f"proxy+tun patch: TUN + mixed inbound on :{port} ({tmp_path})")
     return tmp_path
 
 
