@@ -51,6 +51,22 @@ services:
       vpn-e2e:
         ipv4_address: 172.28.0.12
 
+  fake-fortinet:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.fake-fortinet
+    ports:
+      - "14443:4443"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,ssl; urllib.request.urlopen('https://127.0.0.1:4443/remote/login', context=ssl._create_unverified_context())"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.13
+
   test-runner:
     build:
       context: .
@@ -68,6 +84,10 @@ services:
       - SINGBOX_SERVER=singbox-server
       - SINGBOX_SS_PORT=8388
       - SINGBOX_SS_PASSWORD=test-password-12345
+      - FORTINET_HOST=fake-fortinet
+      - FORTINET_PORT=4443
+      - FORTINET_USER=testuser
+      - FORTINET_PASS=testpass
       - TUN_AVAILABLE=${TUN_AVAILABLE:-0}
     depends_on:
       openvpn-server:
@@ -75,6 +95,8 @@ services:
       ocserv:
         condition: service_healthy
       singbox-server:
+        condition: service_healthy
+      fake-fortinet:
         condition: service_healthy
     networks:
       vpn-e2e:

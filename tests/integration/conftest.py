@@ -66,6 +66,26 @@ def singbox_ss_password() -> str:
     return _require_env("SINGBOX_SS_PASSWORD")
 
 
+@pytest.fixture(scope="session")
+def fortinet_host() -> str:
+    return _require_env("FORTINET_HOST")
+
+
+@pytest.fixture(scope="session")
+def fortinet_port() -> str:
+    return _require_env("FORTINET_PORT")
+
+
+@pytest.fixture(scope="session")
+def fortinet_user() -> str:
+    return _require_env("FORTINET_USER")
+
+
+@pytest.fixture(scope="session")
+def fortinet_pass() -> str:
+    return _require_env("FORTINET_PASS")
+
+
 @pytest.fixture
 def real_net() -> NetManager:
     """Real NetManager for the current platform (Linux in K8s)."""
