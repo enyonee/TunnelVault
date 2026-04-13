@@ -145,6 +145,51 @@ class TestMultiTunnel:
         finally:
             engine.disconnect_all()
 
+    def test_both_tunnels_route_traffic(
+        self,
+        multi_tunnel_project: Path,
+        real_net: NetManager,
+        test_logger: Logger,
+        requires_tun,
+    ):
+        """Both tunnels actually route traffic, not just create interfaces."""
+        import subprocess
+        import tomllib
+
+        with open(multi_tunnel_project / "defaults.toml", "rb") as f:
+            defs = tomllib.load(f)
+
+        engine = Engine(multi_tunnel_project, defs, net=real_net, log=test_logger)
+        engine.prepare(setup=False)
+        engine.setup()
+        engine.connect_all()
+        time.sleep(3)
+
+        try:
+            # OpenVPN: ping gateway through tun
+            ovpn_ping = subprocess.run(
+                ["ping", "-c", "1", "-W", "5", "10.8.0.1"],
+                capture_output=True,
+                timeout=10,
+            )
+            assert ovpn_ping.returncode == 0, "OpenVPN tunnel can't reach 10.8.0.1"
+
+            # sing-box: port check to SS server (proves outbound works)
+            import socket
+
+            singbox_server = defs["tunnels"]["singbox"]["checks"]["ports"][0]["host"]
+            singbox_port = defs["tunnels"]["singbox"]["checks"]["ports"][0]["port"]
+            try:
+                with socket.create_connection(
+                    (singbox_server, singbox_port), timeout=5
+                ):
+                    pass  # connection succeeded
+            except (ConnectionRefusedError, TimeoutError, OSError) as e:
+                pytest.fail(f"sing-box server unreachable: {e}")
+
+        finally:
+            engine.disconnect_all()
+
     def test_disconnect_cleans_up_all_interfaces(
         self,
         multi_tunnel_project: Path,

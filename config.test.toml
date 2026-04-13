@@ -1,0 +1,43 @@
+# Test config for docker-compose.test.yml VPN servers
+# Used by: scripts/vm-test.sh smoke
+
+[tunnels.openvpn]
+type = "openvpn"
+order = 1
+config_file = "tests/e2e/client.ovpn"
+
+[tunnels.openvpn.routes]
+networks = ["10.8.0.0/24"]
+
+[tunnels.openvpn.checks]
+ping = [{ host = "10.8.0.1", label = "openvpn-gw" }]
+
+[tunnels.openconnect]
+type = "openconnect"
+order = 2
+
+[tunnels.openconnect.auth]
+host = "172.28.0.11"
+port = "4443"
+login = "testuser"
+pass = "testpass"
+protocol = "anyconnect"
+cert_mode = "system"
+
+[tunnels.openconnect.routes]
+networks = ["10.10.0.0/24"]
+
+[tunnels.openconnect.checks]
+ping = [{ host = "10.10.0.1", label = "ocserv-gw" }]
+
+[tunnels.singbox]
+type = "singbox"
+order = 3
+config_file = "tests/e2e/singbox-client.json"
+interface = "tun0"
+
+[tunnels.singbox.routes]
+networks = ["10.20.0.0/24"]
+
+[tunnels.singbox.checks]
+ports = [{ host = "172.28.0.12", port = 8388 }]
