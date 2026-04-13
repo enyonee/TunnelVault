@@ -60,7 +60,9 @@ class SingBoxPlugin(TunnelPlugin):
         script_dir = Path(__file__).parent.parent.parent
         sb = _resolve_binary(script_dir)
         try:
-            r = subprocess.run([sb, "version"], capture_output=True, text=True, timeout=5)
+            r = subprocess.run(
+                [sb, "version"], capture_output=True, text=True, timeout=5
+            )
             first = (r.stdout or "").strip().split("\n")[0]
             return first.replace("sing-box version ", "sing-box ") if first else ""
         except Exception:
