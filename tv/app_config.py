@@ -91,13 +91,45 @@ class Logging:
 
 
 @dataclass
+class Reconnect:
+    enabled: bool = False
+    interval: str = ""  # e.g. "6h", "30m", "12h"
+    schedule: str = ""  # e.g. "03:00" (HH:MM, mutually exclusive with interval)
+    tunnels: list[str] | None = None  # None = all tunnels
+
+    def interval_seconds(self) -> int | None:
+        """Parse interval string to seconds. Returns None if not set.
+
+        Raises ValueError for unparseable intervals.
+        """
+        if not self.interval:
+            return None
+        s = self.interval.strip().lower()
+        try:
+            if s.endswith("h"):
+                return int(float(s[:-1]) * 3600)
+            if s.endswith("m"):
+                return int(float(s[:-1]) * 60)
+            if s.endswith("s"):
+                return int(float(s[:-1]))
+            return int(s)
+        except (ValueError, ArithmeticError) as e:
+            raise ValueError(
+                f"Invalid reconnect interval '{self.interval}': {e}"
+            ) from e
+
+
+@dataclass
 class AppConfig:
     timeouts: Timeouts
     paths: Paths
     defaults: Defaults
     display: Display
     logging: Logging
+    reconnect: Reconnect
     locale: str = ""
+    mode: str = "tun"  # "tun", "proxy" (tun+proxy), or "proxy-only"
+    proxy_port: int = 1080
 
 
 def _make_default() -> AppConfig:
@@ -107,6 +139,7 @@ def _make_default() -> AppConfig:
         defaults=Defaults(),
         display=Display(),
         logging=Logging(),
+        reconnect=Reconnect(),
     )
 
 
@@ -126,10 +159,13 @@ def load(app_dict: dict) -> None:
     if not app_dict:
         return
     # Top-level scalar keys (not nested sections)
-    _TOP_LEVEL = {"locale"}
+    _TOP_LEVEL = {"locale", "mode", "proxy_port"}
     for tk in _TOP_LEVEL:
         if tk in app_dict:
             setattr(cfg, tk, app_dict[tk])
+    _VALID_MODES = ("tun", "proxy", "proxy-only")
+    if cfg.mode not in _VALID_MODES:
+        raise ValueError(f"Invalid mode '{cfg.mode}', expected one of {_VALID_MODES}")
 
     known_sections = set(_SECTION_MAP)
     for k in app_dict:
@@ -151,6 +187,23 @@ def load(app_dict: dict) -> None:
                     f"Unknown key in [app.{section_key}]: '{k}'",
                     stacklevel=2,
                 )
+
+
+def load_reconnect(section: dict) -> None:
+    """Mutate ``cfg.reconnect`` from TOML ``[reconnect]`` section."""
+    if not section:
+        return
+    valid_keys = {"enabled", "interval", "schedule", "tunnels"}
+    for k, v in section.items():
+        if k in valid_keys:
+            setattr(cfg.reconnect, k, v)
+        else:
+            warnings.warn(f"Unknown key in [reconnect]: '{k}'", stacklevel=2)
+    if cfg.reconnect.interval and cfg.reconnect.schedule:
+        warnings.warn(
+            "[reconnect] has both 'interval' and 'schedule'; 'interval' takes precedence",
+            stacklevel=2,
+        )
 
 
 def reset() -> None:

@@ -168,6 +168,11 @@ class Engine:
             disconnect.run(self.net, self.log, self.defs, script_dir=self.script_dir)
             time.sleep(cfg.timeouts.cleanup_sleep)
 
+        if cfg.mode == "proxy-only":
+            self.log.log("INFO", "--- Proxy-only mode: skipping TUN setup ---")
+            config.prepare_log_files(self.tunnels)
+            return
+
         if not quiet:
             ui.info(f"🌐 {t('engine.disable_ipv6')}")
         self.log.log("INFO", "--- Disabling IPv6 ---")
@@ -249,6 +254,15 @@ class Engine:
             )
 
         self._save_watch_state()
+
+        # In proxy/proxy-only mode, set system proxy after tunnels are connected
+        if cfg.mode in ("proxy", "proxy-only") and any(r.ok for r in self.results):
+            addr = f"127.0.0.1:{cfg.proxy_port}"
+            self.net.setup_system_proxy(cfg.proxy_port)
+            self.log.log("INFO", f"System proxy set to {addr}")
+            if not quiet:
+                ui.info(f"🌐 {t('main.proxy_urls', addr=addr)}")
+                ui.info(f"  {ui.DIM}{t('main.proxy_env', addr=addr)}{ui.NC}")
 
     def _save_watch_state(self) -> None:
         """Persist interface->name mapping for --watch.
@@ -440,17 +454,24 @@ class Engine:
                 self.log.log("WARN", f"cleanup_dns {tcfg.name}: {e}")
             self._fire("post_disconnect", tunnel=tcfg, plugin=plugin)
 
+        # Cleanup system proxy (before killing processes)
+        if cfg.mode in ("proxy", "proxy-only"):
+            self.net.cleanup_system_proxy()
+            self.log.log("INFO", "System proxy disabled")
+            ui.info(f"🌐 {t('main.proxy_removed')}")
+
         self._stop_dns_proxy()
 
-        # Глобальные маршруты (vpn_server_routes, bypass) - без этого
-        # disconnect нужно вызывать дважды: daemon убивается, но routes остаются
-        disconnect.cleanup_global_routes(
-            self.net,
-            self.log,
-            self.defs,
-            skip_dns_suffix=True,
-        )
-        self.net.restore_ipv6()
+        if cfg.mode != "proxy-only":
+            # Глобальные маршруты (vpn_server_routes, bypass) - без этого
+            # disconnect нужно вызывать дважды: daemon убивается, но routes остаются
+            disconnect.cleanup_global_routes(
+                self.net,
+                self.log,
+                self.defs,
+                skip_dns_suffix=True,
+            )
+            self.net.restore_ipv6()
 
         self._clean_watch_state()
 

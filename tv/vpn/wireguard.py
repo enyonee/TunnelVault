@@ -20,6 +20,7 @@ class WireGuardPlugin(TunnelPlugin):
     binary = "wg-quick"
     type_display_name = "WireGuard"
     process_names = ("wireguard-go", "wg-quick")
+    version_cmd = ("wg", "--version")
 
     @classmethod
     def emergency_patterns(cls, script_dir) -> list[str]:

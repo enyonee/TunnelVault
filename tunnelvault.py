@@ -49,9 +49,14 @@ def main() -> None:
     args = parse_args()
     script_dir = Path(__file__).parent.resolve()
 
+    # Override config path if specified
+    if args.config:
+        cfg.paths.defaults_file = args.config
+
     # Mutual exclusion check
     exclusive = [
         args.disconnect,
+        args.reconnect,
         args.status,
         args.check,
         args.reset,
@@ -104,9 +109,9 @@ def main() -> None:
             daemon.disable(script_dir)
         return
 
-    # --- Commands that need root ---
+    # --- Commands that need root (TUN mode only) ---
 
-    if not _is_admin():
+    if not _is_admin() and cfg.mode != "proxy-only":
         ui.warn(t("main.needs_sudo"))
 
     if args.reset:
@@ -126,6 +131,17 @@ def main() -> None:
     # CLI --log-level overrides config
     if args.log_level:
         cfg.logging.level = args.log_level
+
+    # CLI --proxy / --proxy-only overrides config mode
+    proxy_only = getattr(args, "proxy_only", None)
+    if args.proxy is not None:
+        cfg.mode = "proxy"
+        if args.proxy > 0:
+            cfg.proxy_port = args.proxy
+    elif proxy_only is not None:
+        cfg.mode = "proxy-only"
+        if proxy_only > 0:
+            cfg.proxy_port = proxy_only
 
     if args.validate:
         from tv import validate as validate_mod
@@ -182,6 +198,26 @@ def main() -> None:
         else:
             disconnect.run(defs=defs, script_dir=script_dir)
         return
+
+    if args.reconnect:
+        tunnels = defaults_mod.parse_tunnels(defs)
+        try:
+            if args.only:
+                tunnels = defaults_mod.filter_tunnels(tunnels, args.only)
+        except ValueError as e:
+            ui.fail(str(e))
+            sys.exit(1)
+        tunnel_names = (
+            " (" + ", ".join(tc.name for tc in tunnels) + ")" if args.only else ""
+        )
+        ui.info(f"🔄 {t('main.reconnect_now', tunnels=tunnel_names)}")
+        # Disconnect first
+        if tunnels:
+            disconnect.run_plugins(tunnels, defs=defs)
+        else:
+            disconnect.run(defs=defs, script_dir=script_dir)
+        time.sleep(cfg.timeouts.keepalive_reconnect_pause)
+        # Fall through to normal connect flow below (no return)
 
     if args.check:
         from tv.ipc_client import try_ipc
@@ -339,6 +375,9 @@ def main() -> None:
         sys.exit(0)
 
     # --- Daemon (grandchild) ---
+    # Fix log permissions so they're readable without sudo
+    daemon_mod.fix_log_permissions(script_dir)
+
     # Fresh lock - threading primitives don't survive fork reliably
     _reconnect_lock = threading.Lock()
 
@@ -505,6 +544,11 @@ def _run_check_only(tunnels: list[TunnelConfig], script_dir: Path) -> None:
         f"\n  {t('main.total', passed=f'{ui.GREEN}{passed}{ui.NC}', failed=f'{ui.RED}{failed}{ui.NC}', skipped=f'{ui.DIM}{skipped}{ui.NC}')}"
     )
 
+    if failed:
+        for r in results:
+            if r.status == "fail":
+                print(f"    {ui.RED}✗{ui.NC} {r.label}")
+
     if ext_ip:
         print(f"  {t('main.external_ip', ip=ext_ip)}")
     print()
@@ -592,6 +636,19 @@ def _log_summary(engine: Engine, check_results: list, ext_ip: str) -> None:
     )
 
 
+def _next_schedule_time(schedule_str: str, *, _now=None) -> float:
+    """Calculate seconds until the next occurrence of HH:MM today or tomorrow."""
+    import datetime
+
+    parts = schedule_str.strip().split(":")
+    target_h, target_m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+    now = _now or datetime.datetime.now()
+    target = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
+    if target <= now:
+        target += datetime.timedelta(days=1)
+    return (target - now).total_seconds()
+
+
 def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     """Monitor VPN processes, reconnect when dead (e.g. after macOS sleep)."""
     interval = cfg.timeouts.keepalive_interval
@@ -603,6 +660,32 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     reconnect_count = 0
     reconnect_cooldown = 5.0  # seconds between reconnect attempts (debounce)
 
+    # Scheduled reconnect timer
+    sched_interval = cfg.reconnect.interval_seconds() if cfg.reconnect.enabled else None
+    sched_time = (
+        cfg.reconnect.schedule if cfg.reconnect.enabled and not sched_interval else ""
+    )
+    sched_tunnels = cfg.reconnect.tunnels  # None = all
+
+    if sched_interval:
+        next_sched_reconnect = time.monotonic() + sched_interval
+        engine.log.log("INFO", f"Scheduled reconnect every {cfg.reconnect.interval}")
+        ui.info(
+            f"  🕐 {t('main.reconnect_scheduled', interval=cfg.reconnect.interval)}"
+        )
+    elif sched_time:
+        next_sched_reconnect = time.monotonic() + _next_schedule_time(sched_time)
+        engine.log.log("INFO", f"Scheduled reconnect at {sched_time}")
+        ui.info(f"  🕐 {t('main.reconnect_scheduled_at', time=sched_time)}")
+    else:
+        next_sched_reconnect = 0.0  # disabled
+
+    reason_i18n = {
+        "wake": "main.keepalive_reason_wake",
+        "dead": "main.keepalive_reason_dead",
+        "scheduled": "main.keepalive_reason_scheduled",
+    }
+
     while True:
         time.sleep(interval)
         now = time.monotonic()
@@ -612,9 +695,18 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
         # Detect sleep: elapsed >> interval means system was suspended
         slept = elapsed > interval * 2
 
+        # Check for scheduled reconnect
+        scheduled = False
+        if next_sched_reconnect and now >= next_sched_reconnect:
+            scheduled = True
+            if sched_interval:
+                next_sched_reconnect = now + sched_interval
+            elif sched_time:
+                next_sched_reconnect = now + _next_schedule_time(sched_time)
+
         dead = engine.check_alive()
 
-        if not slept and not dead:
+        if not slept and not dead and not scheduled:
             continue
 
         # Debounce: skip if reconnect was done recently (lid dance protection)
@@ -626,7 +718,10 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
             continue
 
         # Determine reason
-        if slept and dead:
+        if scheduled and not slept and not dead:
+            reason = "scheduled"
+            engine.log.log("INFO", "Scheduled reconnect triggered")
+        elif slept and dead:
             reason = "wake"
             dead_names = ", ".join(tc.name for tc, _ in dead)
             engine.log.log(
@@ -644,11 +739,7 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
             dead_names = ", ".join(tc.name for tc, pid in dead)
             engine.log.log("WARN", f"Keepalive: dead processes: {dead_names}")
 
-        reason_display = (
-            t("main.keepalive_reason_wake")
-            if reason == "wake"
-            else t("main.keepalive_reason_dead")
-        )
+        reason_display = t(reason_i18n[reason])
         print(
             f"\n  {ui.YELLOW}🔄 {t('main.keepalive_reconnecting', reason=reason_display)}{ui.NC}"
         )
@@ -660,8 +751,14 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
                 engine.log.log("WARN", "Reconnect lock timeout, skipping")
                 continue
         try:
-            if reason == "wake":
-                check_results, ext_ip = engine.reconnect_all(quiet=True)
+            if reason in ("wake", "scheduled"):
+                if reason == "scheduled" and sched_tunnels:
+                    # Reconnect only specified tunnels
+                    for name in sched_tunnels:
+                        engine.reconnect_one(name, quiet=True)
+                    check_results, ext_ip = engine.check_all(quiet=True)
+                else:
+                    check_results, ext_ip = engine.reconnect_all(quiet=True)
             else:
                 # Reconnect only dead tunnels, leave healthy ones running
                 for tc, pid in dead:

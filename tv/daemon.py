@@ -33,6 +33,38 @@ _pid_fd: int | None = None
 
 
 # =========================================================================
+# Log helpers
+# =========================================================================
+
+
+_MAX_LOG_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+def _rotate_log(path: Path) -> None:
+    """Rotate log file: rename current to .prev if too large."""
+    try:
+        if path.exists() and path.stat().st_size > _MAX_LOG_SIZE:
+            prev = path.with_suffix(".prev")
+            path.rename(prev)
+    except OSError:
+        pass
+
+
+def fix_log_permissions(script_dir: Path) -> None:
+    """Make all log files readable (fix root umask creating 600 files)."""
+    log_dir = Path(cfg.paths.log_dir)
+    if not log_dir.is_absolute():
+        log_dir = script_dir / log_dir
+    for name in ("daemon.log", "daemon.log.prev", "tunnelvault.log"):
+        path = log_dir / name
+        try:
+            if path.exists():
+                path.chmod(0o644)
+        except OSError:
+            pass
+
+
+# =========================================================================
 # PID file
 # =========================================================================
 
@@ -271,7 +303,12 @@ def daemonize(script_dir: Path) -> int:
     # Redirect stdio to daemon.log
     log_path = daemon_log_path(script_dir)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_log(log_path)
     fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        os.fchmod(fd, 0o644)  # override umask so logs are readable without sudo
+    except OSError:
+        pass
     os.dup2(fd, 1)  # stdout
     os.dup2(fd, 2)  # stderr
     os.close(fd)

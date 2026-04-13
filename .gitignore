@@ -10,6 +10,13 @@ piklema.json
 connect-vpn.sh
 disconnect-vpn.sh
 
+# Local binaries (sing-box tracked, rest ignored)
+bin/*
+!bin/sing-box
+
+# Infra repo (cloned, contains access configs)
+.infra/
+
 # Python
 __pycache__/
 *.pyc

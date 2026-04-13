@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -78,6 +79,23 @@ class TunnelPlugin(ABC):
     # Regex patterns for kill_pattern() during emergency cleanup.
     # Override in subclasses that need pattern-based kill (e.g. to avoid killing Tunnelblick).
     kill_patterns: tuple[str, ...] = ()
+
+    # Command to get version. Override in subclasses if different.
+    # Default: [binary, "--version"]. Set to None to skip.
+    version_cmd: tuple[str, ...] | None = None
+
+    @classmethod
+    def get_version(cls) -> str:
+        """Get version string from binary. Returns empty string on failure."""
+        if not cls.binary or not shutil.which(cls.binary):
+            return ""
+        cmd = cls.version_cmd or (cls.binary, "--version")
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            out = (r.stdout or r.stderr or "").strip()
+            return out.split("\n")[0] if out else ""
+        except Exception:
+            return ""
 
     def __init__(
         self,
