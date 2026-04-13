@@ -580,8 +580,8 @@ class TestMigrateFortivpnToOpenconnect:
         assert tunnels[0].auth["protocol"] == "fortinet"
 
     @patch("tv.defaults.platform.system", return_value="Darwin")
-    def test_trusted_cert_remapped_to_servercert(self, _mock):
-        """trusted_cert -> servercert with sha256: prefix."""
+    def test_trusted_cert_dropped_and_auto_mode_set(self, _mock):
+        """trusted_cert dropped (incompatible format), cert_mode=auto set."""
         tunnels = [
             TunnelConfig(
                 name="corp",
@@ -590,21 +590,21 @@ class TestMigrateFortivpnToOpenconnect:
             )
         ]
         _migrate_fortivpn_to_openconnect(tunnels)
-        assert tunnels[0].auth["servercert"] == "sha256:aabbccdd1234"
         assert "trusted_cert" not in tunnels[0].auth
+        assert tunnels[0].auth["cert_mode"] == "auto"
 
     @patch("tv.defaults.platform.system", return_value="Darwin")
-    def test_trusted_cert_with_sha256_prefix_kept(self, _mock):
-        """trusted_cert already has sha256: prefix - kept as is."""
+    def test_existing_servercert_preserved(self, _mock):
+        """Existing servercert kept, cert_mode=auto not forced."""
         tunnels = [
             TunnelConfig(
                 name="corp",
                 type="fortivpn",
-                auth={"host": "vpn.test", "trusted_cert": "sha256:aabbccdd"},
+                auth={"host": "vpn.test", "servercert": "pin-sha256:existing=="},
             )
         ]
         _migrate_fortivpn_to_openconnect(tunnels)
-        assert tunnels[0].auth["servercert"] == "sha256:aabbccdd"
+        assert tunnels[0].auth["servercert"] == "pin-sha256:existing=="
 
     @patch("tv.defaults.platform.system", return_value="Darwin")
     def test_fallback_gateway_removed(self, _mock):
@@ -643,8 +643,8 @@ class TestMigrateFortivpnToOpenconnect:
         assert tunnels[2].type == "openconnect"
 
     @patch("tv.defaults.platform.system", return_value="Darwin")
-    def test_existing_servercert_not_overwritten(self, _mock):
-        """If servercert already set, trusted_cert doesn't overwrite it."""
+    def test_existing_servercert_skips_auto_mode(self, _mock):
+        """If servercert already set, cert_mode=auto not forced."""
         tunnels = [
             TunnelConfig(
                 name="corp",
@@ -652,9 +652,10 @@ class TestMigrateFortivpnToOpenconnect:
                 auth={
                     "host": "vpn.test",
                     "trusted_cert": "old_cert",
-                    "servercert": "sha256:existing",
+                    "servercert": "pin-sha256:existing==",
                 },
             )
         ]
         _migrate_fortivpn_to_openconnect(tunnels)
-        assert tunnels[0].auth["servercert"] == "sha256:existing"
+        assert tunnels[0].auth["servercert"] == "pin-sha256:existing=="
+        assert "trusted_cert" not in tunnels[0].auth

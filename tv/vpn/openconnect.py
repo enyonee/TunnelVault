@@ -17,7 +17,7 @@ from tv.i18n import t
 from tv.logger import Logger
 from tv.proc import IS_WINDOWS
 from tv.vpn.base import ConfigParam, TunnelConfig, TunnelPlugin, VPNResult
-from tv.vpn.cert import generate_cert_sha256
+from tv.vpn.cert import generate_spki_pin
 from tv.vpn.registry import register
 
 
@@ -111,10 +111,9 @@ class OpenConnectPlugin(TunnelPlugin):
         *,
         quiet: bool = False,
     ) -> None:
-        """Auto-generate server cert if cert_mode=auto.
+        """Auto-generate SPKI pin for openconnect --servercert.
 
-        Generates SHA256 hex via openssl, then formats as 'sha256:HEX'
-        for openconnect --servercert.
+        Generates pin-sha256:BASE64 via openssl (SPKI hash of server public key).
         """
         cert_mode = tcfg.auth.get("cert_mode", "")
         if cert_mode != "auto":
@@ -136,14 +135,13 @@ class OpenConnectPlugin(TunnelPlugin):
 
         if not quiet:
             print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
-        cert_hex = generate_cert_sha256(host, port)
-        if cert_hex:
-            servercert = f"sha256:{cert_hex}"
+        pin = generate_spki_pin(host, port)
+        if pin:
             if not quiet:
                 print(
-                    f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=servercert[:32])}"
+                    f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=pin[:32])}"
                 )
-            tcfg.auth["servercert"] = servercert
+            tcfg.auth["servercert"] = pin
         else:
             ui.warn(t("config.cert_unreachable", host=host, port=port))
 

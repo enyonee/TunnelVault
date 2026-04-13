@@ -73,3 +73,77 @@ def generate_cert_sha256(host: str, port: str) -> str:
             except Exception:
                 pass
     return ""
+
+
+def generate_spki_pin(host: str, port: str) -> str:
+    """Generate SPKI pin-sha256 for openconnect --servercert.
+
+    Returns 'pin-sha256:BASE64' string or empty string on failure.
+    openconnect uses SPKI hash (Subject Public Key Info), not cert DER hash.
+    """
+    import base64
+
+    procs: list[subprocess.Popen] = []
+    try:
+        s_client = subprocess.Popen(
+            ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(s_client)
+        pubkey = subprocess.Popen(
+            ["openssl", "x509", "-pubkey", "-noout"],
+            stdin=s_client.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(pubkey)
+        s_client.stdout.close()
+        s_client.stdin.write(b"\n")
+        s_client.stdin.close()
+
+        pem_out, _ = pubkey.communicate(timeout=cfg.timeouts.cert_generation)
+        s_client.wait(timeout=cfg.timeouts.cert_openssl)
+        if not pem_out:
+            return ""
+
+        der_conv = subprocess.Popen(
+            ["openssl", "pkey", "-pubin", "-outform", "DER"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(der_conv)
+        der_out, _ = der_conv.communicate(
+            input=pem_out, timeout=cfg.timeouts.cert_openssl
+        )
+        if not der_out:
+            return ""
+
+        dgst = subprocess.Popen(
+            ["openssl", "dgst", "-sha256", "-binary"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        procs.append(dgst)
+        hash_out, _ = dgst.communicate(input=der_out, timeout=cfg.timeouts.cert_openssl)
+        if not hash_out:
+            return ""
+
+        return f"pin-sha256:{base64.b64encode(hash_out).decode()}"
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    finally:
+        for p in procs:
+            try:
+                p.kill()
+            except OSError:
+                pass
+        for p in procs:
+            try:
+                p.wait(timeout=2)
+            except Exception:
+                pass
+    return ""

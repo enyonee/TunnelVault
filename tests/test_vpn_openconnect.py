@@ -731,7 +731,7 @@ class TestPostResolveParams:
     """Tests for cert_mode=auto in OpenConnectPlugin.post_resolve_params."""
 
     def test_auto_cert_generated(self):
-        """cert_mode=auto triggers cert generation with sha256: prefix."""
+        """cert_mode=auto triggers SPKI pin generation."""
         tc = TunnelConfig(
             name="oc1",
             type="openconnect",
@@ -745,11 +745,11 @@ class TestPostResolveParams:
             },
         )
         with patch(
-            "tv.vpn.openconnect.generate_cert_sha256",
-            return_value="aabbccdd" * 8,
+            "tv.vpn.openconnect.generate_spki_pin",
+            return_value="pin-sha256:AABBCCDD==",
         ):
             OpenConnectPlugin.post_resolve_params(tc, quiet=True)
-        assert tc.auth["servercert"] == f"sha256:{'aabbccdd' * 8}"
+        assert tc.auth["servercert"] == "pin-sha256:AABBCCDD=="
 
     def test_auto_cert_existing_not_overwritten(self):
         """cert_mode=auto with servercert already set skips generation."""
@@ -767,7 +767,7 @@ class TestPostResolveParams:
             },
         )
         with patch(
-            "tv.vpn.openconnect.generate_cert_sha256",
+            "tv.vpn.openconnect.generate_spki_pin",
         ) as mock_gen:
             OpenConnectPlugin.post_resolve_params(tc, quiet=True)
         mock_gen.assert_not_called()
@@ -788,7 +788,7 @@ class TestPostResolveParams:
             },
         )
         with patch(
-            "tv.vpn.openconnect.generate_cert_sha256",
+            "tv.vpn.openconnect.generate_spki_pin",
         ) as mock_gen:
             OpenConnectPlugin.post_resolve_params(tc, quiet=True)
         mock_gen.assert_not_called()
@@ -811,7 +811,7 @@ class TestPostResolveParams:
         )
         with (
             patch.dict(os.environ, {"VPN_SERVERCERT": "sha256:env_cert"}),
-            patch("tv.vpn.openconnect.generate_cert_sha256") as mock_gen,
+            patch("tv.vpn.openconnect.generate_spki_pin") as mock_gen,
         ):
             OpenConnectPlugin.post_resolve_params(tc, quiet=True)
         mock_gen.assert_not_called()
@@ -832,7 +832,7 @@ class TestPostResolveParams:
             },
         )
         with patch(
-            "tv.vpn.openconnect.generate_cert_sha256",
+            "tv.vpn.openconnect.generate_spki_pin",
             return_value="",
         ):
             OpenConnectPlugin.post_resolve_params(tc, quiet=False)

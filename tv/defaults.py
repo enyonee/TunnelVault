@@ -169,13 +169,11 @@ def _migrate_fortivpn_to_openconnect(tunnels: list[TunnelConfig]) -> None:
         auth = tc.auth
         auth.setdefault("protocol", "fortinet")
 
-        # trusted_cert -> servercert (openconnect uses sha256:HEX format)
-        trusted_cert = auth.pop("trusted_cert", "")
-        if trusted_cert and not auth.get("servercert"):
-            if trusted_cert.startswith("sha256:"):
-                auth["servercert"] = trusted_cert
-            else:
-                auth["servercert"] = f"sha256:{trusted_cert}"
+        # Drop fortivpn trusted_cert - incompatible format (DER hash vs SPKI pin).
+        # Set cert_mode=auto so openconnect plugin generates correct pin-sha256.
+        auth.pop("trusted_cert", "")
+        if not auth.get("servercert"):
+            auth.setdefault("cert_mode", "auto")
 
         # Remove fortivpn-specific params
         tc.extra.pop("fallback_gateway", None)
