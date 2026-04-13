@@ -11,12 +11,70 @@ Platform implementations:
 
 from __future__ import annotations
 
+import ipaddress
 import platform
+import re
 from abc import ABC, abstractmethod
 from typing import Optional
 
 from tv.logger import Logger
 from tv.net import _run
+
+
+def _is_valid_ip(s: str) -> bool:
+    """Validate IPv4 address (no CIDR)."""
+    try:
+        ipaddress.IPv4Address(s)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_valid_network(s: str) -> bool:
+    """Validate IPv4 network in CIDR notation."""
+    try:
+        ipaddress.IPv4Network(s, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_valid_iface(s: str) -> bool:
+    """Validate interface name (alphanumeric + limited symbols)."""
+    return bool(re.match(r"^[a-zA-Z0-9_-]+$", s))
+
+
+def _sanitize_ips(ips: list[str], log_fn=None) -> list[str]:
+    """Filter list to valid IPs only, log rejected."""
+    result = []
+    for ip in ips:
+        if _is_valid_ip(ip):
+            result.append(ip)
+        elif log_fn:
+            log_fn("WARN", f"rejected invalid IP: {ip!r}")
+    return result
+
+
+def _sanitize_networks(nets: list[str], log_fn=None) -> list[str]:
+    """Filter list to valid CIDR networks only, log rejected."""
+    result = []
+    for n in nets:
+        if _is_valid_network(n):
+            result.append(n)
+        elif log_fn:
+            log_fn("WARN", f"rejected invalid network: {n!r}")
+    return result
+
+
+def _sanitize_ifaces(ifaces: list[str], log_fn=None) -> list[str]:
+    """Filter list to valid interface names only, log rejected."""
+    result = []
+    for i in ifaces:
+        if _is_valid_iface(i):
+            result.append(i)
+        elif log_fn:
+            log_fn("WARN", f"rejected invalid interface: {i!r}")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +112,22 @@ class KillSwitch(ABC):
         if self.log:
             self.log.log(level, f"killswitch: {msg}")
 
+    def _sanitize(
+        self,
+        *,
+        vpn_interfaces: list[str],
+        vpn_server_ips: list[str],
+        bypass_ips: list[str],
+        bypass_networks: list[str],
+    ) -> tuple[list[str], list[str], list[str], list[str]]:
+        """Validate and filter all inputs before passing to firewall commands."""
+        return (
+            _sanitize_ifaces(vpn_interfaces, self._log),
+            _sanitize_ips(vpn_server_ips, self._log),
+            _sanitize_ips(bypass_ips, self._log),
+            _sanitize_networks(bypass_networks, self._log),
+        )
+
 
 # ---------------------------------------------------------------------------
 # macOS - pf anchor
@@ -73,6 +147,12 @@ class DarwinKillSwitch(KillSwitch):
         bypass_ips: list[str],
         bypass_networks: list[str],
     ) -> bool:
+        vpn_interfaces, vpn_server_ips, bypass_ips, bypass_networks = self._sanitize(
+            vpn_interfaces=vpn_interfaces,
+            vpn_server_ips=vpn_server_ips,
+            bypass_ips=bypass_ips,
+            bypass_networks=bypass_networks,
+        )
         rules = _build_pf_rules(
             vpn_interfaces=vpn_interfaces,
             vpn_server_ips=vpn_server_ips,
@@ -211,6 +291,12 @@ class LinuxKillSwitch(KillSwitch):
         bypass_ips: list[str],
         bypass_networks: list[str],
     ) -> bool:
+        vpn_interfaces, vpn_server_ips, bypass_ips, bypass_networks = self._sanitize(
+            vpn_interfaces=vpn_interfaces,
+            vpn_server_ips=vpn_server_ips,
+            bypass_ips=bypass_ips,
+            bypass_networks=bypass_networks,
+        )
         # Clean up any previous rules first
         self._flush_chain()
 
@@ -283,22 +369,7 @@ class LinuxKillSwitch(KillSwitch):
             ]
         )
 
-        # Allow VPN interfaces
-        for iface in vpn_interfaces:
-            _run(
-                [
-                    "sudo",
-                    "iptables",
-                    "-A",
-                    _IPTABLES_CHAIN,
-                    "-o",
-                    iface,
-                    "-j",
-                    "ACCEPT",
-                ]
-            )
-            # Also allow tun+ and utun+ wildcard for dynamic interfaces
-        # Wildcard patterns for interface families commonly used by VPNs
+        # Allow VPN interface families (tun+, ppp+ wildcards cover all instances)
         for prefix in ("tun+", "ppp+"):
             _run(
                 [
@@ -358,6 +429,12 @@ class WindowsKillSwitch(KillSwitch):
         bypass_ips: list[str],
         bypass_networks: list[str],
     ) -> bool:
+        vpn_interfaces, vpn_server_ips, bypass_ips, bypass_networks = self._sanitize(
+            vpn_interfaces=vpn_interfaces,
+            vpn_server_ips=vpn_server_ips,
+            bypass_ips=bypass_ips,
+            bypass_networks=bypass_networks,
+        )
         # Clean up previous rules
         self.disable()
 

@@ -13,8 +13,67 @@ from tv.killswitch import (
     _PF_ANCHOR,
     _IPTABLES_CHAIN,
     _WIN_RULE_PREFIX,
+    _is_valid_ip,
+    _is_valid_network,
+    _is_valid_iface,
+    _sanitize_ips,
+    _sanitize_networks,
+    _sanitize_ifaces,
     create,
 )
+
+
+# =========================================================================
+# Input sanitization
+# =========================================================================
+
+
+class TestSanitization:
+    def test_valid_ips(self):
+        assert _is_valid_ip("1.2.3.4")
+        assert _is_valid_ip("192.168.1.1")
+        assert _is_valid_ip("255.255.255.255")
+
+    def test_invalid_ips(self):
+        assert not _is_valid_ip("1.2.3.4/32")
+        assert not _is_valid_ip("not-an-ip")
+        assert not _is_valid_ip("1.2.3.4; pass out all")
+        assert not _is_valid_ip("")
+        assert not _is_valid_ip("10.0.0.0/8")
+
+    def test_valid_networks(self):
+        assert _is_valid_network("10.0.0.0/8")
+        assert _is_valid_network("192.168.1.0/24")
+        assert _is_valid_network("0.0.0.0/0")
+
+    def test_invalid_networks(self):
+        assert not _is_valid_network("not-a-network")
+        assert not _is_valid_network("10.0.0.0; DROP TABLE")
+        assert not _is_valid_network("")
+
+    def test_valid_ifaces(self):
+        assert _is_valid_iface("utun99")
+        assert _is_valid_iface("tun0")
+        assert _is_valid_iface("ppp0")
+        assert _is_valid_iface("en0")
+
+    def test_invalid_ifaces(self):
+        assert not _is_valid_iface("tun0; rm -rf /")
+        assert not _is_valid_iface("tun 0")
+        assert not _is_valid_iface("")
+        assert not _is_valid_iface("tun\n0")
+
+    def test_sanitize_ips_filters(self):
+        result = _sanitize_ips(["1.2.3.4", "bad; stuff", "5.6.7.8"])
+        assert result == ["1.2.3.4", "5.6.7.8"]
+
+    def test_sanitize_networks_filters(self):
+        result = _sanitize_networks(["10.0.0.0/8", "bad", "192.168.0.0/16"])
+        assert result == ["10.0.0.0/8", "192.168.0.0/16"]
+
+    def test_sanitize_ifaces_filters(self):
+        result = _sanitize_ifaces(["utun99", "bad iface", "tun0"])
+        assert result == ["utun99", "tun0"]
 
 
 # =========================================================================
