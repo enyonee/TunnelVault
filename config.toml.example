@@ -6,6 +6,13 @@
 # Обязательное поле: type (openvpn | fortivpn | openconnect | singbox | wireguard)
 # Опциональные: order, enabled, config_file, log, interface, auth, routes, dns, checks
 
+# Kill switch - блокировка non-VPN трафика через firewall.
+# Если VPN падает, трафик не утечёт в открытую сеть.
+# macOS: pf anchor, Linux: iptables chain, Windows: netsh firewall rules.
+# --reset и --disconnect автоматически снимают правила.
+# [global]
+# kill_switch = true
+
 # Host routes к VPN-серверам через default GW (до старта туннелей)
 [global.vpn_server_routes]
 hosts = ["203.0.113.10", "203.0.113.20"]

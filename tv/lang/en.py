@@ -112,6 +112,8 @@ STRINGS: dict[str, str] = {
     "engine.settings_incomplete": "Settings incomplete, starting wizard...",
     "engine.binary_not_found": "'{binary}' not found, skipping profile '{name}' (install the package to use it)",
     "engine.no_available_tunnels": "No tunnels available - all required VPN packages are missing",
+    "engine.kill_switch_enabled": "Kill switch enabled (non-VPN traffic blocked)",
+    "engine.kill_switch_failed": "Kill switch failed to enable",
     # --- disconnect.py ---
     "disc.deleting_routes": "Deleting routes...",
     "disc.deleting_bypass": "Deleting bypass routes...",

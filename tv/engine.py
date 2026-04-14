@@ -11,8 +11,13 @@ from typing import Callable, Optional
 
 from tv import config, ui, disconnect, checks, proc
 from tv.app_config import cfg
-from tv.disconnect import get_vpn_server_routes, get_bypass_routes
+from tv.disconnect import (
+    get_vpn_server_routes,
+    get_bypass_routes,
+    get_kill_switch_enabled,
+)
 from tv import defaults as defaults_mod
+from tv.killswitch import KillSwitch, create as create_killswitch
 from tv.dns_proxy import BypassDNSProxy
 from tv.i18n import t
 from tv.logger import Logger
@@ -80,6 +85,7 @@ class Engine:
         self._dns_proxy: Optional[BypassDNSProxy] = None
         self._dns_proxy_zones: list[str] = []
         self._dns_proxy_upstream: str = ""
+        self._killswitch: KillSwitch = create_killswitch(self.log)
 
     # --- Hooks ---
 
@@ -208,6 +214,9 @@ class Engine:
         self._setup_vpn_server_routes(gw, quiet=quiet)
         self._setup_bypass_routes(gw, quiet=quiet)
         self._start_dns_proxy(gw, quiet=quiet)
+
+        # Enable kill switch (before connect, after routes are set up)
+        self._enable_kill_switch(quiet=quiet)
 
         # Pre-create log files with correct ownership (readable without sudo)
         config.prepare_log_files(self.tunnels)
@@ -493,6 +502,7 @@ class Engine:
             ui.info(f"🌐 {t('main.proxy_removed')}")
 
         self._stop_dns_proxy()
+        self._disable_kill_switch()
 
         if cfg.mode != "proxy-only":
             # Глобальные маршруты (vpn_server_routes, bypass) - без этого
@@ -688,6 +698,43 @@ class Engine:
         self._dns_proxy = None
         self._dns_proxy_zones = []
         self._dns_proxy_upstream = ""
+
+    def _enable_kill_switch(self, *, quiet: bool = False) -> None:
+        """Enable kill switch if configured in [global]."""
+        if not get_kill_switch_enabled(self.defs):
+            return
+
+        # Collect VPN interfaces from tunnel configs
+        vpn_interfaces = [tc.interface for tc in self.tunnels if tc.interface]
+
+        # Collect VPN server IPs (static + resolved)
+        routes_cfg = get_vpn_server_routes(self.defs)
+        vpn_server_ips = list(routes_cfg.get("hosts", []))
+        for hostname in routes_cfg.get("resolve", []):
+            vpn_server_ips.extend(self.net.resolve_host(hostname))
+
+        # Collect bypass IPs/networks
+        bypass_cfg = get_bypass_routes(self.defs)
+        bypass_ips = list(bypass_cfg.get("hosts", []))
+        for hostname in bypass_cfg.get("domains", []):
+            bypass_ips.extend(self.net.resolve_host(hostname))
+        bypass_networks = list(bypass_cfg.get("networks", []))
+
+        ok = self._killswitch.enable(
+            vpn_interfaces=vpn_interfaces,
+            vpn_server_ips=vpn_server_ips,
+            bypass_ips=bypass_ips,
+            bypass_networks=bypass_networks,
+        )
+        if ok and not quiet:
+            ui.info(f"🛡 {t('engine.kill_switch_enabled')}")
+        elif not ok:
+            ui.warn(t("engine.kill_switch_failed"))
+
+    def _disable_kill_switch(self) -> None:
+        """Disable kill switch if active."""
+        if self._killswitch.active:
+            self._killswitch.disable()
 
     @staticmethod
     def _suffix_zones(suffixes: list[str]) -> list[str]:
