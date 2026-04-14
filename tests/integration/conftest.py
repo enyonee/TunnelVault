@@ -96,6 +96,40 @@ def wireguard_port() -> str:
     return _require_env("WIREGUARD_PORT")
 
 
+@pytest.fixture(scope="session")
+def ssh_server() -> str:
+    return _require_env("SSH_SERVER")
+
+
+@pytest.fixture(scope="session")
+def ssh_port() -> str:
+    return _require_env("SSH_PORT")
+
+
+@pytest.fixture(scope="session")
+def ssh_user() -> str:
+    return _require_env("SSH_USER")
+
+
+@pytest.fixture(scope="session")
+def ssh_pass() -> str:
+    return _require_env("SSH_PASS")
+
+
+@pytest.fixture
+def ssh_socks_config(
+    ssh_server: str, ssh_port: str, ssh_user: str, ssh_pass: str
+) -> dict:
+    """SSH SOCKS proxy config for integration tests."""
+    return {
+        "host": ssh_server,
+        "port": ssh_port,
+        "user": ssh_user,
+        "pass": ssh_pass,
+        "socks_port": 11080,
+    }
+
+
 @pytest.fixture
 def real_net() -> NetManager:
     """Real NetManager for the current platform (Linux in K8s)."""
@@ -325,6 +359,7 @@ def _cleanup_after_test():
         "openconnect",
         "sing-box",
         "wireguard-go",
+        "sshpass",
     ):
         subprocess.run(
             ["pkill", "-9", "-f", proc_name], check=False, capture_output=True

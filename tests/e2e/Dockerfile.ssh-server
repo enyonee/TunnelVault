@@ -1,0 +1,11 @@
+FROM alpine:3.21
+RUN apk add --no-cache openssh-server openssh-sftp-server
+RUN ssh-keygen -A
+RUN adduser -D -s /bin/sh testuser \
+    && echo "testuser:testpass" | chpasswd
+RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && echo "PermitTunnel yes" >> /etc/ssh/sshd_config \
+    && echo "GatewayPorts yes" >> /etc/ssh/sshd_config \
+    && echo "AllowTcpForwarding yes" >> /etc/ssh/sshd_config
+EXPOSE 22
+CMD ["sh", "-c", "mkdir -p /run/sshd && exec /usr/sbin/sshd -D -e"]
