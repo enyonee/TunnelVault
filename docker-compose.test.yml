@@ -87,6 +87,26 @@ services:
       vpn-e2e:
         ipv4_address: 172.28.0.13
 
+  strongswan-server:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.strongswan-server
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ipsec-shared:/shared
+    healthcheck:
+      test: ["CMD", "swanctl", "--stats"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.16
+
   test-runner:
     build:
       context: .
@@ -97,6 +117,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - wg-shared:/shared/wg
+      - ipsec-shared:/shared/ipsec
     environment:
       - OPENVPN_SERVER=openvpn-server
       - OCSERV_HOST=ocserv
@@ -112,6 +133,8 @@ services:
       - FORTINET_PASS=testpass
       - WIREGUARD_SERVER=wireguard-server
       - WIREGUARD_PORT=51820
+      - IPSEC_SERVER=strongswan-server
+      - IPSEC_PSK=test-psk-secret-12345
       - TUN_AVAILABLE=${TUN_AVAILABLE:-0}
     depends_on:
       openvpn-server:
@@ -124,12 +147,15 @@ services:
         condition: service_healthy
       wireguard-server:
         condition: service_healthy
+      strongswan-server:
+        condition: service_healthy
     networks:
       vpn-e2e:
         ipv4_address: 172.28.0.20
 
 volumes:
   wg-shared:
+  ipsec-shared:
 
 networks:
   vpn-e2e:

@@ -5,6 +5,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openfortivpn \
     openconnect \
     wireguard-tools \
+    strongswan \
+    strongswan-swanctl \
+    strongswan-charon \
+    strongswan-starter \
+    libstrongswan \
+    libstrongswan-standard-plugins \
+    libcharon-extauth-plugins \
+    strongswan-libcharon \
     iproute2 \
     iptables \
     dnsutils \
