@@ -212,6 +212,12 @@ STRINGS: dict[str, str] = {
     "vpn.ipsec.not_connected": "IPsec SA не установлена за {timeout}с",
     "vpn.ipsec.setup_failed": "swanctl завершился с ошибкой (код {rc})",
     "vpn.ipsec.log_hint": "Проверьте конфиг: {path}",
+    # --- vpn/tailscale.py ---
+    "vpn.ts.connected": "Tailscale подключен ({iface})",
+    "vpn.ts.not_connected": "Tailscale интерфейс не появился за {timeout}с",
+    "vpn.ts.setup_failed": "tailscale up завершился с ошибкой (код {rc})",
+    "vpn.ts.log_hint": "Проверьте: tailscale status; journalctl -u tailscaled",
+    "vpn.ts.auth_required": "Tailscale auth key не задан (VPN_TS_AUTH_KEY или auth.auth_key)",
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN конфиг",
     "param.sb_config": "sing-box конфиг",
@@ -232,6 +238,9 @@ STRINGS: dict[str, str] = {
     "param.ssh_identity": "SSH ключ",
     "param.ssh_socks_port": "SOCKS порт",
     "param.ssh_subnets": "Подсети (CIDR, через запятую)",
+    "param.ts_auth_key": "Tailscale auth key",
+    "param.ts_login_server": "Login server (Headscale URL)",
+    "param.ts_exit_node": "Exit node",
     # --- daemon.py ---
     "daemon.log_hint": "Лог: tail -f {path}",
     "daemon.enabled": "Автозапуск включён",

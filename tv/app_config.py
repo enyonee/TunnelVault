@@ -24,6 +24,7 @@ class Timeouts:
     wireguard_iface: int = 10
     ipsec_sa: int = 20
     sshtunnel_connect: int = 15
+    tailscale_iface: int = 15
     fortivpn_gw_poll: float = 0.5
     fortivpn_gw_attempts: int = 10
     check_subprocess: int = 15
@@ -79,6 +80,8 @@ class Defaults:
     wireguard_config: str = "wg0.conf"
     ipsec_config: str = "swanctl.conf"
     ipsec_connection: str = "vpn"
+    tailscale_auth_key: str = ""
+    tailscale_login_server: str = ""
     network_service: str = "Wi-Fi"
     sshtunnel_mode: str = "socks"
     sshtunnel_socks_port: str = "1080"

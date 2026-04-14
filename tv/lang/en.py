@@ -212,6 +212,12 @@ STRINGS: dict[str, str] = {
     "vpn.ipsec.not_connected": "IPsec SA not established within {timeout}s",
     "vpn.ipsec.setup_failed": "swanctl failed (exit code {rc})",
     "vpn.ipsec.log_hint": "Check config: {path}",
+    # --- vpn/tailscale.py ---
+    "vpn.ts.connected": "Tailscale connected ({iface})",
+    "vpn.ts.not_connected": "Tailscale interface did not appear within {timeout}s",
+    "vpn.ts.setup_failed": "tailscale up failed (exit code {rc})",
+    "vpn.ts.log_hint": "Check: tailscale status; journalctl -u tailscaled",
+    "vpn.ts.auth_required": "Tailscale auth key not set (VPN_TS_AUTH_KEY or auth.auth_key)",
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN config",
     "param.sb_config": "sing-box config",
@@ -232,6 +238,9 @@ STRINGS: dict[str, str] = {
     "param.ssh_identity": "SSH key file",
     "param.ssh_socks_port": "SOCKS port",
     "param.ssh_subnets": "Subnets (CIDR, comma-separated)",
+    "param.ts_auth_key": "Tailscale auth key",
+    "param.ts_login_server": "Login server (Headscale URL)",
+    "param.ts_exit_node": "Exit node",
     # --- daemon.py ---
     "daemon.log_hint": "Log: tail -f {path}",
     "daemon.enabled": "Autostart enabled",

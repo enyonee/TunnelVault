@@ -121,6 +121,22 @@ services:
       vpn-e2e:
         ipv4_address: 172.28.0.16
 
+  headscale:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.headscale
+    volumes:
+      - ts-shared:/shared
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.17
+
   test-runner:
     build:
       context: .
@@ -132,6 +148,7 @@ services:
     volumes:
       - wg-shared:/shared/wg
       - ipsec-shared:/shared/ipsec
+      - ts-shared:/shared/ts
     environment:
       - OPENVPN_SERVER=openvpn-server
       - OCSERV_HOST=ocserv
@@ -153,6 +170,8 @@ services:
       - SSH_PASS=testpass
       - IPSEC_SERVER=strongswan-server
       - IPSEC_PSK=test-psk-secret-12345
+      - HEADSCALE_URL=http://172.28.0.17:8080
+      - TS_AUTH_KEY_FILE=/shared/ts/ts-auth-key
       - TUN_AVAILABLE=${TUN_AVAILABLE:-0}
     depends_on:
       openvpn-server:
@@ -169,6 +188,8 @@ services:
         condition: service_healthy
       strongswan-server:
         condition: service_healthy
+      headscale:
+        condition: service_healthy
     networks:
       vpn-e2e:
         ipv4_address: 172.28.0.20
@@ -176,6 +197,7 @@ services:
 volumes:
   wg-shared:
   ipsec-shared:
+  ts-shared:
 
 networks:
   vpn-e2e:
