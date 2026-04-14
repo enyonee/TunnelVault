@@ -201,6 +201,12 @@ STRINGS: dict[str, str] = {
     "vpn.wg.not_connected": "WireGuard interface did not appear within {timeout}s",
     "vpn.wg.setup_failed": "wg-quick up failed (exit code {rc})",
     "vpn.wg.log_hint": "Check config: {path}",
+    # --- vpn/tailscale.py ---
+    "vpn.ts.connected": "Tailscale connected ({iface})",
+    "vpn.ts.not_connected": "Tailscale interface did not appear within {timeout}s",
+    "vpn.ts.setup_failed": "tailscale up failed (exit code {rc})",
+    "vpn.ts.log_hint": "Check: tailscale status; journalctl -u tailscaled",
+    "vpn.ts.auth_required": "Tailscale auth key not set (VPN_TS_AUTH_KEY or auth.auth_key)",
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN config",
     "param.sb_config": "sing-box config",
@@ -213,6 +219,9 @@ STRINGS: dict[str, str] = {
     "param.cert_mode": "Certificate (auto/manual)",
     "param.cert_sha256": "SHA256 certificate",
     "param.fallback_gw": "Fallback GW",
+    "param.ts_auth_key": "Tailscale auth key",
+    "param.ts_login_server": "Login server (Headscale URL)",
+    "param.ts_exit_node": "Exit node",
     # --- daemon.py ---
     "daemon.log_hint": "Log: tail -f {path}",
     "daemon.enabled": "Autostart enabled",
