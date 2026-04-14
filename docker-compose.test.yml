@@ -87,6 +87,40 @@ services:
       vpn-e2e:
         ipv4_address: 172.28.0.13
 
+  ssh-server:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.ssh-server
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "22"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.15
+
+  strongswan-server:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.strongswan-server
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ipsec-shared:/shared
+    healthcheck:
+      test: ["CMD", "swanctl", "--stats"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.16
+
   headscale:
     build:
       context: .
@@ -113,6 +147,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - wg-shared:/shared/wg
+      - ipsec-shared:/shared/ipsec
       - ts-shared:/shared/ts
     environment:
       - OPENVPN_SERVER=openvpn-server
@@ -129,6 +164,12 @@ services:
       - FORTINET_PASS=testpass
       - WIREGUARD_SERVER=wireguard-server
       - WIREGUARD_PORT=51820
+      - SSH_SERVER=ssh-server
+      - SSH_PORT=22
+      - SSH_USER=testuser
+      - SSH_PASS=testpass
+      - IPSEC_SERVER=strongswan-server
+      - IPSEC_PSK=test-psk-secret-12345
       - HEADSCALE_URL=http://172.28.0.17:8080
       - TS_AUTH_KEY_FILE=/shared/ts/ts-auth-key
       - TUN_AVAILABLE=${TUN_AVAILABLE:-0}
@@ -143,6 +184,10 @@ services:
         condition: service_healthy
       wireguard-server:
         condition: service_healthy
+      ssh-server:
+        condition: service_healthy
+      strongswan-server:
+        condition: service_healthy
       headscale:
         condition: service_healthy
     networks:
@@ -151,6 +196,7 @@ services:
 
 volumes:
   wg-shared:
+  ipsec-shared:
   ts-shared:
 
 networks:

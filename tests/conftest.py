@@ -36,6 +36,8 @@ import tv.vpn.openvpn as _ovpn  # noqa: F401,E402
 import tv.vpn.fortivpn as _forti  # noqa: F401,E402
 import tv.vpn.singbox as _sb  # noqa: F401,E402
 import tv.vpn.wireguard as _wg  # noqa: F401,E402
+import tv.vpn.sshtunnel as _ssh  # noqa: F401,E402
+import tv.vpn.ipsec as _ipsec  # noqa: F401,E402
 import tv.vpn.tailscale as _ts  # noqa: F401,E402
 
 
@@ -46,6 +48,9 @@ def tmp_dir(tmp_path: Path) -> Path:
     (tmp_path / "singbox.json").write_text('{"log":{"level":"info"}}')
     (tmp_path / "wg0.conf").write_text(
         "[Interface]\nPrivateKey=test\nAddress=10.0.0.2/24"
+    )
+    (tmp_path / "swanctl.conf").write_text(
+        "connections { vpn { children { vpn {} } } }"
     )
     return tmp_path
 

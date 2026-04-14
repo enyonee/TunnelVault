@@ -3,7 +3,7 @@ set -e
 
 mkdir -p /etc/headscale /var/lib/headscale
 
-# Minimal headscale config
+# Minimal headscale config (compatible with 0.23-0.25)
 cat > /etc/headscale/config.yaml <<EOF
 server_url: http://172.28.0.17:8080
 listen_addr: 0.0.0.0:8080
@@ -34,11 +34,14 @@ derp:
   urls: []
   paths: []
   auto_update_enabled: false
+log:
+  level: info
 EOF
 
 # Start headscale in background
 headscale serve &
-sleep 3
+HS_PID=$!
+sleep 5
 
 # Create user and auth key
 headscale users create testuser 2>/dev/null || true
@@ -51,4 +54,4 @@ echo "$AUTH_KEY" > /shared/ts-auth-key
 echo "Headscale ready. Auth key: $AUTH_KEY"
 
 # Keep running
-wait
+wait $HS_PID

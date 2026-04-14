@@ -1,4 +1,4 @@
-FROM ghcr.io/juanfont/headscale:0.23 AS headscale-bin
+FROM ghcr.io/juanfont/headscale:0.25 AS headscale-bin
 
 FROM alpine:3.21
 COPY --from=headscale-bin /ko-app/headscale /usr/local/bin/headscale

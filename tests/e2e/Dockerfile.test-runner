@@ -1,10 +1,19 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    tini \
     openvpn \
     openfortivpn \
     openconnect \
     wireguard-tools \
+    strongswan \
+    strongswan-swanctl \
+    strongswan-charon \
+    strongswan-starter \
+    libstrongswan \
+    libstrongswan-standard-plugins \
+    libcharon-extauth-plugins \
+    strongswan-libcharon \
     iproute2 \
     iptables \
     dnsutils \
@@ -14,6 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     procps \
     sudo \
+    sshpass \
+    sshuttle \
     && rm -rf /var/lib/apt/lists/*
 
 # tailscale
@@ -41,5 +52,5 @@ RUN mkdir -p /shared \
 COPY tests/e2e/test-runner-entrypoint.sh /test-runner-entrypoint.sh
 RUN chmod +x /test-runner-entrypoint.sh
 
-ENTRYPOINT ["/test-runner-entrypoint.sh"]
-CMD ["uv", "run", "pytest", "tests/integration/", "-x", "-v", "--tb=short", "-o", "addopts=", "-p", "no:xdist"]
+ENTRYPOINT ["tini", "--", "/test-runner-entrypoint.sh"]
+CMD ["sleep", "infinity"]

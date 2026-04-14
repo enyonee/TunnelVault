@@ -44,7 +44,6 @@ def _ensure_tailscaled():
                 [
                     "tailscaled",
                     f"--state={TS_STATE}",
-                    "--tun=userspace-networking",
                     f"--socket={TS_SOCKET}",
                 ],
                 stdout=subprocess.DEVNULL,
