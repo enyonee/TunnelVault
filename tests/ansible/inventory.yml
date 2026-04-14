@@ -1,0 +1,8 @@
+all:
+  hosts:
+    tv-test:
+      ansible_host: lima-tv-test
+      ansible_ssh_common_args: '-F {{ lookup("env", "HOME") }}/.lima/tv-test/ssh.config'
+      ansible_user: viacheslav
+      ansible_become: true
+      project_dir: /tmp/tv-test/tunnelvault

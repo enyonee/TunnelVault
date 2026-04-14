@@ -1,0 +1,10 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache wireguard-tools iptables iproute2
+
+COPY tests/e2e/wireguard-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 51820/udp
+
+CMD ["/entrypoint.sh"]

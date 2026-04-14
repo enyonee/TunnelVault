@@ -41,3 +41,14 @@ networks = ["10.20.0.0/24"]
 
 [tunnels.singbox.checks]
 ports = [{ host = "172.28.0.12", port = 8388 }]
+
+[tunnels.wireguard]
+type = "wireguard"
+order = 4
+config_file = "/shared/wg/wg-client.conf"
+
+[tunnels.wireguard.routes]
+networks = ["10.30.0.0/24"]
+
+[tunnels.wireguard.checks]
+ping = [{ host = "10.30.0.1", label = "wireguard-gw" }]

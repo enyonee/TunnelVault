@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openvpn \
     openfortivpn \
     openconnect \
+    wireguard-tools \
     iproute2 \
     iptables \
     dnsutils \

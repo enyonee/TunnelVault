@@ -1,0 +1,323 @@
+---
+# Provision Lima VM + run full test suite (unit + integration)
+# VPN servers in Docker, pytest runs on VM host (real TUN)
+#
+# Usage:
+#   ansible-playbook playbook.yml                    # full: provision + deploy + test
+#   ansible-playbook playbook.yml -t provision       # install deps only
+#   ansible-playbook playbook.yml -t deploy          # sync code only
+#   ansible-playbook playbook.yml -t servers         # start VPN server containers
+#   ansible-playbook playbook.yml -t test            # run test suite only
+#   ansible-playbook playbook.yml -t teardown        # stop containers, cleanup
+
+- name: TunnelVault test suite on Lima VM
+  hosts: tv-test
+  vars:
+    project_dir: /tmp/tv-test/tunnelvault
+    singbox_version: "1.11.0"
+    uv_path: "{{ ansible_facts.env.HOME }}/.local/bin:{{ ansible_facts.env.HOME }}/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+    compose_file: docker-compose.test.yml
+    test_env:
+      TUN_AVAILABLE: "1"
+      OPENVPN_SERVER: "172.28.0.10"
+      OCSERV_HOST: "172.28.0.11"
+      OCSERV_PORT: "4443"
+      OCSERV_USER: "testuser"
+      OCSERV_PASS: "testpass"
+      SINGBOX_SERVER: "172.28.0.12"
+      SINGBOX_SS_PORT: "8388"
+      SINGBOX_SS_PASSWORD: "test-password-12345"
+      FORTINET_HOST: "172.28.0.13"
+      FORTINET_PORT: "4443"
+      FORTINET_USER: "testuser"
+      FORTINET_PASS: "testpass"
+      WIREGUARD_SERVER: "172.28.0.14"
+      WIREGUARD_PORT: "51820"
+
+  tasks:
+    # ── Provision ──────────────────────────────────────────────
+    - name: Install Docker
+      tags: [provision]
+      block:
+        - name: Check Docker installed
+          command: docker --version
+          register: docker_check
+          changed_when: false
+          failed_when: false
+
+        - name: Install Docker via get.docker.com
+          shell: curl -fsSL https://get.docker.com | sh
+          when: docker_check.rc != 0
+
+        - name: Add user to docker group
+          user:
+            name: "{{ ansible_user }}"
+            groups: docker
+            append: true
+
+        - name: Install Docker Compose plugin
+          apt:
+            name: docker-compose-plugin
+            state: present
+            update_cache: true
+
+        - name: Ensure Docker is running
+          systemd:
+            name: docker
+            state: started
+            enabled: true
+
+    - name: Install Python and uv
+      tags: [provision]
+      block:
+        - name: Install Python
+          apt:
+            name:
+              - python3
+              - python3-venv
+              - curl
+            state: present
+
+        - name: Check uv installed
+          shell: export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && uv --version
+          register: uv_check
+          changed_when: false
+          failed_when: false
+          become: false
+
+        - name: Install uv
+          shell: curl -LsSf https://astral.sh/uv/install.sh | sh
+          when: uv_check.rc != 0
+          become: false
+
+    - name: Install VPN tools
+      tags: [provision]
+      apt:
+        name:
+          - openconnect
+          - openvpn
+          - wireguard-tools
+          - iputils-ping
+          - iproute2
+          - tcpdump
+          - iptables
+          - dnsutils
+          - net-tools
+          - netcat-openbsd
+          - procps
+        state: present
+
+    - name: Setup TUN device
+      tags: [provision]
+      block:
+        - name: Create /dev/net directory
+          file:
+            path: /dev/net
+            state: directory
+
+        - name: Create TUN device
+          command: mknod /dev/net/tun c 10 200
+          args:
+            creates: /dev/net/tun
+
+        - name: Set TUN device permissions
+          file:
+            path: /dev/net/tun
+            mode: "0666"
+
+    - name: Install sing-box
+      tags: [provision]
+      block:
+        - name: Check sing-box installed
+          command: sing-box version
+          register: singbox_check
+          changed_when: false
+          failed_when: false
+
+        - name: Detect architecture
+          command: uname -m
+          register: uname_arch
+          changed_when: false
+          when: singbox_check.rc != 0
+
+        - name: Download sing-box
+          vars:
+            arch_map:
+              aarch64: arm64
+              x86_64: amd64
+            arch: "{{ arch_map[uname_arch.stdout] | default('amd64') }}"
+          unarchive:
+            src: "https://github.com/SagerNet/sing-box/releases/download/v{{ singbox_version }}/sing-box-{{ singbox_version }}-linux-{{ arch }}.tar.gz"
+            dest: /tmp
+            remote_src: true
+          when: singbox_check.rc != 0
+
+        - name: Move sing-box binary
+          shell: mv /tmp/sing-box-*/sing-box /usr/local/bin/
+          when: singbox_check.rc != 0
+
+        - name: Cleanup sing-box tarball
+          shell: rm -rf /tmp/sing-box*
+          when: singbox_check.rc != 0
+          changed_when: false
+
+    # ── Deploy ─────────────────────────────────────────────────
+    - name: Sync project code to VM
+      tags: [deploy, test]
+      block:
+        - name: Create project directory
+          file:
+            path: "{{ project_dir }}"
+            state: directory
+            owner: "{{ ansible_user }}"
+          become: true
+
+        - name: Sync code via rsync
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          shell: >
+            rsync -az --delete
+            --exclude '.venv' --exclude '__pycache__' --exclude '.git'
+            --exclude 'bin/sing-box' --exclude '.worktrees' --exclude 'logs'
+            --exclude '.pytest_cache' --exclude '.ruff_cache'
+            -e "ssh -F {{ lookup('env', 'HOME') }}/.lima/tv-test/ssh.config"
+            "{{ playbook_dir }}/../../" "lima-tv-test:{{ project_dir }}/"
+
+        - name: Install project dependencies
+          command: uv sync --group dev
+          args:
+            chdir: "{{ project_dir }}"
+          environment:
+            PATH: "{{ uv_path }}"
+          become: false
+          changed_when: false
+
+    # ── VPN Servers ────────────────────────────────────────────
+    - name: Start VPN server containers
+      tags: [servers, test]
+      block:
+        - name: Build VPN server images
+          command: docker compose -f {{ compose_file }} build
+          args:
+            chdir: "{{ project_dir }}"
+          changed_when: false
+
+        - name: Start VPN servers (detached)
+          command: >
+            docker compose -f {{ compose_file }} up -d
+            openvpn-server ocserv singbox-server wireguard-server fake-fortinet
+          args:
+            chdir: "{{ project_dir }}"
+          changed_when: false
+
+        - name: Ensure Docker bridge route exists on host
+          shell: |
+            BRIDGE_IP=$(docker network inspect tunnelvault_vpn-e2e \
+              --format '{% raw %}{{range .IPAM.Config}}{{.Gateway}}{{end}}{% endraw %}' 2>/dev/null)
+            if [ -n "$BRIDGE_IP" ]; then
+              ip route add 172.28.0.0/24 via "$BRIDGE_IP" 2>/dev/null || true
+            fi
+          changed_when: false
+
+        - name: Wait for VPN servers healthy
+          shell: |
+            for i in $(seq 1 30); do
+              HEALTHY=$(docker compose -f {{ compose_file }} ps \
+                --format '{% raw %}{{.Status}}{% endraw %}' 2>/dev/null | grep -c healthy || echo 0)
+              [ "$HEALTHY" -ge 5 ] && exit 0
+              sleep 2
+            done
+            echo "Only $HEALTHY/5 healthy after 60s"
+            docker compose -f {{ compose_file }} ps
+            exit 1
+          args:
+            chdir: "{{ project_dir }}"
+          changed_when: false
+
+        - name: Copy WireGuard client config from container
+          shell: |
+            docker compose -f {{ compose_file }} cp \
+              wireguard-server:/shared/wg-client.conf /tmp/wg-client.conf
+          args:
+            chdir: "{{ project_dir }}"
+          changed_when: false
+
+    # ── Test ───────────────────────────────────────────────────
+    - name: Run full test suite
+      tags: [test]
+      block:
+        - name: Ensure /shared directory exists
+          file:
+            path: /shared
+            state: directory
+
+        - name: Copy OpenVPN client config to /shared
+          copy:
+            src: "{{ project_dir }}/tests/e2e/pki/client.ovpn"
+            dest: /shared/client.ovpn
+            remote_src: true
+
+        - name: Copy ocserv fingerprint to /shared
+          copy:
+            src: "{{ project_dir }}/tests/e2e/pki/ocserv-fingerprint.txt"
+            dest: /shared/ocserv-fingerprint
+            remote_src: true
+
+        - name: Copy WireGuard client config to /shared/wg
+          block:
+            - name: Create /shared/wg directory
+              file:
+                path: /shared/wg
+                state: directory
+
+            - name: Copy WireGuard client config
+              copy:
+                src: /tmp/wg-client.conf
+                dest: /shared/wg/wg-client.conf
+                remote_src: true
+                mode: "0600"
+
+        - name: Run unit tests
+          command: uv run pytest tests/ -q --tb=short -m "not network" --ignore=tests/integration --ignore=tests/e2e -o addopts= -p no:xdist
+          args:
+            chdir: "{{ project_dir }}"
+          environment:
+            PATH: "{{ uv_path }}"
+          become: false
+          register: unit_result
+          changed_when: false
+          ignore_errors: true
+
+        - name: Show unit test results
+          debug:
+            msg: "{{ unit_result.stdout_lines[-5:] }}"
+
+        - name: Fail if unit tests have critical failures
+          fail:
+            msg: "Unit tests have critical failures: {{ unit_result.stdout_lines[-3:] }}"
+          when:
+            - unit_result.rc != 0
+            - "'failed' in unit_result.stdout"
+            - "' passed' not in unit_result.stdout"
+
+        - name: Run integration tests
+          command: uv run pytest tests/integration/ -v --tb=short -o addopts= -p no:xdist
+          args:
+            chdir: "{{ project_dir }}"
+          environment: "{{ test_env | combine({'PATH': uv_path}) }}"
+          become: true
+          register: integration_result
+          changed_when: false
+
+        - name: Show integration test results
+          debug:
+            msg: "{{ integration_result.stdout_lines[-10:] }}"
+
+    # ── Teardown ───────────────────────────────────────────────
+    - name: Stop VPN server containers
+      tags: [teardown, never]
+      command: docker compose -f {{ compose_file }} down -v
+      args:
+        chdir: "{{ project_dir }}"
+      changed_when: false
