@@ -22,6 +22,7 @@ class Timeouts:
     openconnect_tun: int = 20
     singbox_iface: int = 15
     wireguard_iface: int = 10
+    ipsec_sa: int = 20
     fortivpn_gw_poll: float = 0.5
     fortivpn_gw_attempts: int = 10
     check_subprocess: int = 15
@@ -75,6 +76,8 @@ class Defaults:
     singbox_config: str = "singbox.json"
     singbox_interface: str = "utun99"
     wireguard_config: str = "wg0.conf"
+    ipsec_config: str = "swanctl.conf"
+    ipsec_connection: str = "vpn"
     network_service: str = "Wi-Fi"
 
 

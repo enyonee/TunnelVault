@@ -24,7 +24,7 @@ from tv.vpn.base import TunnelConfig
 from tv.vpn.registry import get_plugin
 
 # Ensure all plugins are registered on import
-from tv.vpn import openvpn, fortivpn, openconnect, singbox, wireguard  # noqa: F401
+from tv.vpn import openvpn, fortivpn, openconnect, singbox, wireguard, ipsec  # noqa: F401
 
 IS_WINDOWS = platform.system() == "Windows"
 
