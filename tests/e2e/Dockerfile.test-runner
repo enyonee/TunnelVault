@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     procps \
     sudo \
+    sshpass \
+    sshuttle \
     && rm -rf /var/lib/apt/lists/*
 
 # sing-box

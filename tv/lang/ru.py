@@ -196,6 +196,12 @@ STRINGS: dict[str, str] = {
     "vpn.sb.log_hint": "Лог: {path}",
     "vpn.sb.connected": "sing-box подключен ({iface})",
     "vpn.sb.config_not_found": "Файл конфига не найден: {path}",
+    # --- vpn/sshtunnel.py ---
+    "vpn.ssh.connected_socks": "SSH SOCKS прокси подключен (порт {port})",
+    "vpn.ssh.connected_sshuttle": "sshuttle подключен ({host})",
+    "vpn.ssh.not_connected": "SSH туннель не подключился за {timeout}с",
+    "vpn.ssh.setup_failed": "SSH туннель не поднялся: {detail}",
+    "vpn.ssh.log_hint": "Проверьте SSH: ssh -v <host>",
     # --- vpn/wireguard.py ---
     "vpn.wg.connected": "WireGuard подключен ({iface})",
     "vpn.wg.not_connected": "WireGuard интерфейс не появился за {timeout}с",
@@ -220,6 +226,12 @@ STRINGS: dict[str, str] = {
     "param.cert_mode": "Сертификат (auto/manual)",
     "param.cert_sha256": "SHA256 сертификата",
     "param.fallback_gw": "Fallback GW",
+    "param.ssh_host": "SSH хост (user@hostname)",
+    "param.ssh_mode": "SSH режим (socks/sshuttle)",
+    "param.ssh_port": "SSH порт",
+    "param.ssh_identity": "SSH ключ",
+    "param.ssh_socks_port": "SOCKS порт",
+    "param.ssh_subnets": "Подсети (CIDR, через запятую)",
     # --- daemon.py ---
     "daemon.log_hint": "Лог: tail -f {path}",
     "daemon.enabled": "Автозапуск включён",

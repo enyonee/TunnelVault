@@ -196,6 +196,12 @@ STRINGS: dict[str, str] = {
     "vpn.sb.log_hint": "Log: {path}",
     "vpn.sb.connected": "sing-box connected ({iface})",
     "vpn.sb.config_not_found": "Config file not found: {path}",
+    # --- vpn/sshtunnel.py ---
+    "vpn.ssh.connected_socks": "SSH SOCKS proxy connected (port {port})",
+    "vpn.ssh.connected_sshuttle": "sshuttle connected ({host})",
+    "vpn.ssh.not_connected": "SSH tunnel did not connect within {timeout}s",
+    "vpn.ssh.setup_failed": "SSH tunnel setup failed: {detail}",
+    "vpn.ssh.log_hint": "Check SSH connectivity: ssh -v <host>",
     # --- vpn/wireguard.py ---
     "vpn.wg.connected": "WireGuard connected ({iface})",
     "vpn.wg.not_connected": "WireGuard interface did not appear within {timeout}s",
@@ -220,6 +226,12 @@ STRINGS: dict[str, str] = {
     "param.cert_mode": "Certificate (auto/manual)",
     "param.cert_sha256": "SHA256 certificate",
     "param.fallback_gw": "Fallback GW",
+    "param.ssh_host": "SSH host (user@hostname)",
+    "param.ssh_mode": "SSH mode (socks/sshuttle)",
+    "param.ssh_port": "SSH port",
+    "param.ssh_identity": "SSH key file",
+    "param.ssh_socks_port": "SOCKS port",
+    "param.ssh_subnets": "Subnets (CIDR, comma-separated)",
     # --- daemon.py ---
     "daemon.log_hint": "Log: tail -f {path}",
     "daemon.enabled": "Autostart enabled",

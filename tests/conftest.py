@@ -36,6 +36,7 @@ import tv.vpn.openvpn as _ovpn  # noqa: F401,E402
 import tv.vpn.fortivpn as _forti  # noqa: F401,E402
 import tv.vpn.singbox as _sb  # noqa: F401,E402
 import tv.vpn.wireguard as _wg  # noqa: F401,E402
+import tv.vpn.sshtunnel as _ssh  # noqa: F401,E402
 import tv.vpn.ipsec as _ipsec  # noqa: F401,E402
 
 
