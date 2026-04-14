@@ -96,6 +96,22 @@ def wireguard_port() -> str:
     return _require_env("WIREGUARD_PORT")
 
 
+@pytest.fixture(scope="session")
+def headscale_url() -> str:
+    return _require_env("HEADSCALE_URL")
+
+
+@pytest.fixture(scope="session")
+def ts_auth_key() -> str:
+    """Read Tailscale auth key from shared volume (written by headscale container)."""
+    key_file = Path(os.environ.get("TS_AUTH_KEY_FILE", "/shared/ts/ts-auth-key"))
+    if key_file.exists():
+        key = key_file.read_text().strip()
+        if key:
+            return key
+    pytest.skip(f"Tailscale auth key not found at {key_file}")
+
+
 @pytest.fixture
 def real_net() -> NetManager:
     """Real NetManager for the current platform (Linux in K8s)."""
@@ -318,6 +334,19 @@ def _cleanup_after_test():
 
     yield
 
+    # Tailscale cleanup (before killing daemon) - only if socket exists
+    ts_sock = Path("/var/run/tailscale/tailscaled.sock")
+    if ts_sock.exists():
+        try:
+            subprocess.run(
+                ["tailscale", f"--socket={ts_sock}", "down"],
+                check=False,
+                capture_output=True,
+                timeout=3,
+            )
+        except subprocess.TimeoutExpired:
+            pass
+
     # Kill all VPN processes
     for proc_name in (
         "openvpn",
@@ -325,6 +354,7 @@ def _cleanup_after_test():
         "openconnect",
         "sing-box",
         "wireguard-go",
+        "tailscaled",
     ):
         subprocess.run(
             ["pkill", "-9", "-f", proc_name], check=False, capture_output=True
@@ -347,7 +377,10 @@ def _cleanup_after_test():
     result = subprocess.run(["ip", "-br", "link"], capture_output=True, text=True)
     for line in result.stdout.splitlines():
         iface = line.split()[0]
-        if iface.startswith(("tun", "ppp", "wg")) or iface in ("tun-test", "vpns0"):
+        if iface.startswith(("tun", "ppp", "wg", "tailscale")) or iface in (
+            "tun-test",
+            "vpns0",
+        ):
             subprocess.run(
                 ["ip", "link", "delete", iface],
                 check=False,

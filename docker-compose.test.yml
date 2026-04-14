@@ -87,6 +87,22 @@ services:
       vpn-e2e:
         ipv4_address: 172.28.0.13
 
+  headscale:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.headscale
+    volumes:
+      - ts-shared:/shared
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.17
+
   test-runner:
     build:
       context: .
@@ -97,6 +113,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - wg-shared:/shared/wg
+      - ts-shared:/shared/ts
     environment:
       - OPENVPN_SERVER=openvpn-server
       - OCSERV_HOST=ocserv
@@ -112,6 +129,8 @@ services:
       - FORTINET_PASS=testpass
       - WIREGUARD_SERVER=wireguard-server
       - WIREGUARD_PORT=51820
+      - HEADSCALE_URL=http://172.28.0.17:8080
+      - TS_AUTH_KEY_FILE=/shared/ts/ts-auth-key
       - TUN_AVAILABLE=${TUN_AVAILABLE:-0}
     depends_on:
       openvpn-server:
@@ -124,12 +143,15 @@ services:
         condition: service_healthy
       wireguard-server:
         condition: service_healthy
+      headscale:
+        condition: service_healthy
     networks:
       vpn-e2e:
         ipv4_address: 172.28.0.20
 
 volumes:
   wg-shared:
+  ts-shared:
 
 networks:
   vpn-e2e:
