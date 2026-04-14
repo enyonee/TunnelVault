@@ -87,6 +87,20 @@ services:
       vpn-e2e:
         ipv4_address: 172.28.0.13
 
+  ssh-server:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.ssh-server
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "22"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      vpn-e2e:
+        ipv4_address: 172.28.0.15
+
   test-runner:
     build:
       context: .
@@ -112,6 +126,10 @@ services:
       - FORTINET_PASS=testpass
       - WIREGUARD_SERVER=wireguard-server
       - WIREGUARD_PORT=51820
+      - SSH_SERVER=ssh-server
+      - SSH_PORT=22
+      - SSH_USER=testuser
+      - SSH_PASS=testpass
       - TUN_AVAILABLE=${TUN_AVAILABLE:-0}
     depends_on:
       openvpn-server:
@@ -123,6 +141,8 @@ services:
       fake-fortinet:
         condition: service_healthy
       wireguard-server:
+        condition: service_healthy
+      ssh-server:
         condition: service_healthy
     networks:
       vpn-e2e:
