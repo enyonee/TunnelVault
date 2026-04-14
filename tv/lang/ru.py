@@ -207,10 +207,17 @@ STRINGS: dict[str, str] = {
     "vpn.wg.not_connected": "WireGuard интерфейс не появился за {timeout}с",
     "vpn.wg.setup_failed": "wg-quick up завершился с ошибкой (код {rc})",
     "vpn.wg.log_hint": "Проверьте конфиг: {path}",
+    # --- vpn/ipsec.py ---
+    "vpn.ipsec.connected": "IPsec подключен ({connection})",
+    "vpn.ipsec.not_connected": "IPsec SA не установлена за {timeout}с",
+    "vpn.ipsec.setup_failed": "swanctl завершился с ошибкой (код {rc})",
+    "vpn.ipsec.log_hint": "Проверьте конфиг: {path}",
     # --- ConfigParam labels ---
     "param.ovpn_config": "OpenVPN конфиг",
     "param.sb_config": "sing-box конфиг",
     "param.wg_config": "WireGuard конфиг (.conf)",
+    "param.ipsec_config": "IPsec конфиг (swanctl.conf)",
+    "param.ipsec_connection": "Имя IPsec соединения",
     "param.host": "Хост",
     "param.port": "Порт",
     "param.login": "Логин",
