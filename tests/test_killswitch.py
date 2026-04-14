@@ -12,6 +12,7 @@ from tv.killswitch import (
     _build_pf_rules,
     _PF_ANCHOR,
     _IPTABLES_CHAIN,
+    _IPTABLES_CHAIN_IN,
     _WIN_RULE_PREFIX,
     _is_valid_ip,
     _is_valid_network,
@@ -89,12 +90,16 @@ class TestBuildPfRules:
             bypass_ips=["5.6.7.8"],
             bypass_networks=["10.0.0.0/8"],
         )
-        assert "pass out quick on lo0 all" in rules
+        # Outbound
+        assert "pass quick on lo0 all" in rules
         assert "pass out quick inet proto { tcp, udp } to 1.2.3.4" in rules
         assert "pass out quick inet to 5.6.7.8" in rules
         assert "pass out quick inet to 10.0.0.0/8" in rules
-        assert "pass out quick on utun99 all" in rules
+        assert "pass quick on utun99 all" in rules
         assert "block out inet all" in rules
+        # Inbound
+        assert "pass in quick inet proto { tcp, udp } from 1.2.3.4" in rules
+        assert "block in inet all" in rules
 
     def test_dhcp_allowed(self):
         rules = _build_pf_rules(
@@ -121,9 +126,9 @@ class TestBuildPfRules:
             bypass_ips=[],
             bypass_networks=[],
         )
-        assert "pass out quick on utun99 all" in rules
-        assert "pass out quick on utun100 all" in rules
-        assert "pass out quick on tun0 all" in rules
+        assert "pass quick on utun99 all" in rules
+        assert "pass quick on utun100 all" in rules
+        assert "pass quick on tun0 all" in rules
 
     def test_empty_lists(self):
         rules = _build_pf_rules(
@@ -132,9 +137,10 @@ class TestBuildPfRules:
             bypass_ips=[],
             bypass_networks=[],
         )
-        # Should still have loopback, DHCP, DNS, and block
-        assert "pass out quick on lo0 all" in rules
+        # Should still have loopback, DHCP, DNS, and block (both directions)
+        assert "pass quick on lo0 all" in rules
         assert "block out inet all" in rules
+        assert "block in inet all" in rules
 
 
 # =========================================================================
@@ -218,29 +224,30 @@ class TestLinuxKillSwitch:
         assert ok
         assert ks.active
 
-        # Verify chain creation
+        # Verify both chains created (OUTPUT + INPUT)
         chain_calls = [
             c
             for c in mock_run.call_args_list
-            if "-N" in c.args[0] and _IPTABLES_CHAIN in c.args[0]
+            if "-N" in c.args[0]
+            and (_IPTABLES_CHAIN in c.args[0] or _IPTABLES_CHAIN_IN in c.args[0])
         ]
-        assert len(chain_calls) == 1
+        assert len(chain_calls) == 2
 
-        # Verify OUTPUT jump
+        # Verify OUTPUT and INPUT jumps
         jump_calls = [
             c
             for c in mock_run.call_args_list
-            if "-I" in c.args[0] and "OUTPUT" in c.args[0]
+            if "-I" in c.args[0] and ("OUTPUT" in c.args[0] or "INPUT" in c.args[0])
         ]
-        assert len(jump_calls) == 1
+        assert len(jump_calls) == 2
 
-        # Verify DROP at end
+        # Verify DROP rules (one per chain)
         drop_calls = [
             c
             for c in mock_run.call_args_list
             if "-j" in c.args[0] and "DROP" in c.args[0]
         ]
-        assert len(drop_calls) == 1
+        assert len(drop_calls) == 2
 
     @patch("tv.killswitch._run")
     def test_enable_allows_loopback(self, mock_run):
@@ -272,13 +279,14 @@ class TestLinuxKillSwitch:
         assert ok
         assert not ks.active
 
-        # Verify chain deletion
+        # Verify both chains deleted
         delete_calls = [
             c
             for c in mock_run.call_args_list
-            if "-X" in c.args[0] and _IPTABLES_CHAIN in c.args[0]
+            if "-X" in c.args[0]
+            and (_IPTABLES_CHAIN in c.args[0] or _IPTABLES_CHAIN_IN in c.args[0])
         ]
-        assert len(delete_calls) == 1
+        assert len(delete_calls) == 2
 
     @patch("tv.killswitch._run")
     def test_enable_cleans_previous_first(self, mock_run):
@@ -325,13 +333,15 @@ class TestWindowsKillSwitch:
         assert ok
         assert ks.active
 
-        # Verify block-all rule
+        # Verify block rules (outbound + inbound)
         block_calls = [
             c
             for c in mock_run.call_args_list
-            if f"{_WIN_RULE_PREFIX}-BlockAll" in str(c.args[0]) and "add" in c.args[0]
+            if "Block" in str(c.args[0])
+            and "add" in c.args[0]
+            and _WIN_RULE_PREFIX in str(c.args[0])
         ]
-        assert len(block_calls) == 1
+        assert len(block_calls) == 2  # BlockAll (out) + BlockAllIn (in)
 
     @patch("tv.killswitch._run")
     def test_disable_removes_rules(self, mock_run):

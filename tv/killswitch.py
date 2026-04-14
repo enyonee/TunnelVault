@@ -241,9 +241,11 @@ def _build_pf_rules(
     """Build pf rules for kill switch anchor."""
     lines: list[str] = [
         "# tunnelvault kill switch - auto-generated, do not edit",
-        "# Allow loopback",
-        "pass out quick on lo0 all",
+        "# Allow loopback (in + out)",
+        "pass quick on lo0 all",
     ]
+
+    # --- Outbound rules ---
 
     # Allow traffic to VPN server IPs (needed to establish tunnel)
     for ip in vpn_server_ips:
@@ -263,12 +265,22 @@ def _build_pf_rules(
     # Allow DNS to localhost (for local DNS proxy)
     lines.append("pass out quick inet proto { tcp, udp } to 127.0.0.1 port 53")
 
-    # Allow all traffic through VPN interfaces
+    # Allow all traffic through VPN interfaces (in + out)
     for iface in vpn_interfaces:
-        lines.append(f"pass out quick on {iface} all")
+        lines.append(f"pass quick on {iface} all")
 
-    # Block everything else
+    # --- Inbound rules ---
+
+    # Allow inbound from VPN server IPs (tunnel establishment responses)
+    for ip in vpn_server_ips:
+        lines.append(f"pass in quick inet proto {{ tcp, udp }} from {ip}")
+
+    # Allow DHCP responses
+    lines.append("pass in quick inet proto udp from any port 67 to any port 68")
+
+    # Block everything else (out + in)
     lines.append("block out inet all")
+    lines.append("block in inet all")
 
     return "\n".join(lines) + "\n"
 
@@ -278,10 +290,11 @@ def _build_pf_rules(
 # ---------------------------------------------------------------------------
 
 _IPTABLES_CHAIN = "TUNNELVAULT_KS"
+_IPTABLES_CHAIN_IN = "TUNNELVAULT_KS_IN"
 
 
 class LinuxKillSwitch(KillSwitch):
-    """Linux kill switch using iptables chain on OUTPUT."""
+    """Linux kill switch using iptables chains on OUTPUT and INPUT."""
 
     def enable(
         self,
@@ -384,11 +397,82 @@ class LinuxKillSwitch(KillSwitch):
                 ]
             )
 
-        # Drop everything else
+        # Drop everything else (OUTPUT)
         _run(["sudo", "iptables", "-A", _IPTABLES_CHAIN, "-j", "DROP"])
 
         # Insert jump to our chain at the top of OUTPUT
         _run(["sudo", "iptables", "-I", "OUTPUT", "1", "-j", _IPTABLES_CHAIN])
+
+        # --- INPUT chain: block unsolicited inbound on non-VPN interfaces ---
+        _run(["sudo", "iptables", "-N", _IPTABLES_CHAIN_IN])
+
+        # Allow loopback inbound
+        _run(
+            [
+                "sudo",
+                "iptables",
+                "-A",
+                _IPTABLES_CHAIN_IN,
+                "-i",
+                "lo",
+                "-j",
+                "ACCEPT",
+            ]
+        )
+
+        # Allow inbound on VPN interface families
+        for prefix in ("tun+", "ppp+"):
+            _run(
+                [
+                    "sudo",
+                    "iptables",
+                    "-A",
+                    _IPTABLES_CHAIN_IN,
+                    "-i",
+                    prefix,
+                    "-j",
+                    "ACCEPT",
+                ]
+            )
+
+        # Allow inbound from VPN server IPs (tunnel handshake)
+        for ip in vpn_server_ips:
+            _run(
+                [
+                    "sudo",
+                    "iptables",
+                    "-A",
+                    _IPTABLES_CHAIN_IN,
+                    "-s",
+                    ip,
+                    "-j",
+                    "ACCEPT",
+                ]
+            )
+
+        # Allow DHCP responses
+        _run(
+            [
+                "sudo",
+                "iptables",
+                "-A",
+                _IPTABLES_CHAIN_IN,
+                "-p",
+                "udp",
+                "--sport",
+                "67",
+                "--dport",
+                "68",
+                "-j",
+                "ACCEPT",
+            ]
+        )
+
+        # Drop everything else (INPUT)
+        _run(["sudo", "iptables", "-A", _IPTABLES_CHAIN_IN, "-j", "DROP"])
+
+        # Insert jump to our chain at the top of INPUT
+        _run(["sudo", "iptables", "-I", "INPUT", "1", "-j", _IPTABLES_CHAIN_IN])
 
         self._active = True
         self._log("INFO", "enabled (iptables)")
@@ -401,14 +485,19 @@ class LinuxKillSwitch(KillSwitch):
         return ok
 
     def _flush_chain(self) -> bool:
-        """Remove jump rule and flush/delete the chain."""
-        # Remove jump from OUTPUT (may fail if not present - ok)
+        """Remove jump rules and flush/delete both chains."""
+        # Remove jumps (may fail if not present - ok)
         _run(["sudo", "iptables", "-D", "OUTPUT", "-j", _IPTABLES_CHAIN])
-        # Flush chain
+        _run(["sudo", "iptables", "-D", "INPUT", "-j", _IPTABLES_CHAIN_IN])
+        # Flush and delete OUTPUT chain
         _run(["sudo", "iptables", "-F", _IPTABLES_CHAIN])
-        # Delete chain
-        r = _run(["sudo", "iptables", "-X", _IPTABLES_CHAIN])
-        return r.returncode == 0 or "No chain" in (r.stderr or "")
+        r1 = _run(["sudo", "iptables", "-X", _IPTABLES_CHAIN])
+        # Flush and delete INPUT chain
+        _run(["sudo", "iptables", "-F", _IPTABLES_CHAIN_IN])
+        r2 = _run(["sudo", "iptables", "-X", _IPTABLES_CHAIN_IN])
+        ok1 = r1.returncode == 0 or "No chain" in (r1.stderr or "")
+        ok2 = r2.returncode == 0 or "No chain" in (r2.stderr or "")
+        return ok1 and ok2
 
 
 # ---------------------------------------------------------------------------
@@ -521,12 +610,77 @@ class WindowsKillSwitch(KillSwitch):
             ]
         )
 
+        # --- Inbound rules ---
+
+        # Block all inbound by default
+        _run(
+            [
+                "netsh",
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={_WIN_RULE_PREFIX}-BlockAllIn",
+                "dir=in",
+                "action=block",
+                "protocol=any",
+            ]
+        )
+
+        # Allow inbound on loopback
+        _run(
+            [
+                "netsh",
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={_WIN_RULE_PREFIX}-AllowLoopbackIn",
+                "dir=in",
+                "action=allow",
+                "remoteip=127.0.0.0/8",
+            ]
+        )
+
+        # Allow inbound from VPN server IPs
+        if vpn_server_ips:
+            _run(
+                [
+                    "netsh",
+                    "advfirewall",
+                    "firewall",
+                    "add",
+                    "rule",
+                    f"name={_WIN_RULE_PREFIX}-AllowVPNServersIn",
+                    "dir=in",
+                    "action=allow",
+                    f"remoteip={','.join(vpn_server_ips)}",
+                ]
+            )
+
+        # Allow DHCP responses
+        _run(
+            [
+                "netsh",
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={_WIN_RULE_PREFIX}-AllowDHCPIn",
+                "dir=in",
+                "action=allow",
+                "protocol=udp",
+                "localport=68",
+                "remoteport=67",
+            ]
+        )
+
         self._active = True
         self._log("INFO", "enabled (netsh)")
         return True
 
     def disable(self) -> bool:
-        # Delete all rules with our prefix
+        # Delete all rules with our prefix (outbound + inbound)
         _run(
             [
                 "netsh",
@@ -537,7 +691,16 @@ class WindowsKillSwitch(KillSwitch):
                 f"name={_WIN_RULE_PREFIX}-BlockAll",
             ]
         )
-        for suffix in ("AllowLoopback", "AllowVPNServers", "AllowBypass", "AllowDHCP"):
+        for suffix in (
+            "AllowLoopback",
+            "AllowVPNServers",
+            "AllowBypass",
+            "AllowDHCP",
+            "BlockAllIn",
+            "AllowLoopbackIn",
+            "AllowVPNServersIn",
+            "AllowDHCPIn",
+        ):
             _run(
                 [
                     "netsh",
