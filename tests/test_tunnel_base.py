@@ -344,3 +344,31 @@ class TestRegistry:
         assert registry.available_types() == ["temp"]
         registry.clear()
         assert registry.available_types() == []
+
+
+class TestAllPluginsRegistered:
+    """Verify tv/vpn/__init__.py imports all plugins so they register."""
+
+    def test_init_imports_all_plugins(self):
+        """Check __init__.py has import lines for every plugin file."""
+        from pathlib import Path
+
+        vpn_dir = Path(__file__).resolve().parent.parent / "tv" / "vpn"
+        init_text = (vpn_dir / "__init__.py").read_text()
+
+        # Find all plugin files (exclude __init__, base, registry)
+        # Exclude non-plugin modules (utilities, base classes)
+        non_plugins = {"__init__", "base", "registry", "cert"}
+        plugin_files = {
+            p.stem for p in vpn_dir.glob("*.py") if p.stem not in non_plugins
+        }
+
+        missing = []
+        for name in sorted(plugin_files):
+            if f"from tv.vpn import {name}" not in init_text:
+                missing.append(name)
+
+        assert not missing, (
+            f"Plugins not imported in tv/vpn/__init__.py: {missing}. "
+            f"Add 'from tv.vpn import {missing[0]}  # noqa: F401' to register them."
+        )
