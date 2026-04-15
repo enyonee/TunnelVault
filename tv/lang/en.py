@@ -23,6 +23,7 @@ STRINGS: dict[str, str] = {
     "ui.dns_comma": "(IP addresses, comma-separated, empty = skip)",
     "ui.invalid_ip": "{item} - invalid IP address",
     "ui.summary_title": "CONNECTION SUMMARY",
+    "ui.profiles": "PROFILES",
     "ui.tunnels": "TUNNELS",
     "ui.checks_header": "CHECKS  {passed}/{total}",
     "ui.logs": "LOGS",

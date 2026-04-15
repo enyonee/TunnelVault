@@ -23,6 +23,7 @@ STRINGS: dict[str, str] = {
     "ui.dns_comma": "(IP-адреса через запятую, пусто = пропуск)",
     "ui.invalid_ip": "{item} - невалидный IP-адрес",
     "ui.summary_title": "ИТОГ ПОДКЛЮЧЕНИЯ",
+    "ui.profiles": "ПРОФИЛИ",
     "ui.tunnels": "ТУННЕЛИ",
     "ui.checks_header": "ПРОВЕРКИ  {passed}/{total}",
     "ui.logs": "ЛОГИ",

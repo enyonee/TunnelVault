@@ -347,6 +347,7 @@ def print_summary(
     tunnels: Sequence[tuple[str, bool, str]],
     checks: Sequence[tuple[str, str, str]],  # (label, status, detail)
     log_paths: dict[str, str],
+    profiles: Sequence[dict] | None = None,
 ) -> None:
     """Print the final summary box."""
     passed = sum(1 for _, s, _ in checks if s == "ok")
@@ -356,6 +357,26 @@ def print_summary(
     _box("┏", "┓")
     _center(t("ui.summary_title"))
     _box("┣", "┫")
+
+    # Profiles section (config files, logins, interfaces)
+    if profiles:
+        _header(t("ui.profiles"))
+        _row()
+        for p in profiles:
+            icon = "✅" if p.get("ok") else "❌"
+            name = p.get("name", "?")
+            vtype = p.get("type", "?")
+            _row(f"   {icon}  {BOLD}{name}{NC} {DIM}({vtype}){NC}")
+            if p.get("config_file"):
+                _row(f"       config   {DIM}{p['config_file']}{NC}")
+            if p.get("login"):
+                _row(f"       login    {p['login']}")
+            if p.get("host"):
+                _row(f"       server   {p['host']}")
+            if p.get("interface"):
+                _row(f"       iface    {p['interface']}")
+        _row()
+        _box("┣", "┫")
 
     _header(t("ui.tunnels"))
     _row()

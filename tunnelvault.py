@@ -24,16 +24,6 @@ from tv.vpn.base import TunnelConfig
 from tv.vpn.registry import get_plugin
 
 # Ensure all plugins are registered on import
-from tv.vpn import (
-    openvpn,
-    fortivpn,
-    openconnect,
-    singbox,
-    wireguard,
-    sshtunnel,
-    ipsec,
-    tailscale,
-)  # noqa: F401
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -626,11 +616,27 @@ def _log_summary(engine: Engine, check_results: list, ext_ip: str) -> None:
     engine.log.log("INFO", "=" * 40)
 
     summary_tunnels = []
+    profiles = []
     for tcfg, r in zip(engine.tunnels, engine.results):
         detail = r.detail or ("up" if r.ok else t("main.not_connected"))
         if tcfg.type == "openvpn" and r.ok and ext_ip:
             detail = detail if detail != "up" else ext_ip
         summary_tunnels.append((tcfg.name, r.ok, detail))
+
+        # Build profile info (non-sensitive only)
+        profile: dict = {"name": tcfg.name, "type": tcfg.type, "ok": r.ok}
+        if tcfg.config_file:
+            profile["config_file"] = tcfg.config_file
+        if tcfg.interface:
+            profile["interface"] = tcfg.interface
+        auth = tcfg.auth or {}
+        if auth.get("login"):
+            profile["login"] = auth["login"]
+        if auth.get("host"):
+            host = auth["host"]
+            port = auth.get("port", "")
+            profile["host"] = f"{host}:{port}" if port else host
+        profiles.append(profile)
 
     log_paths = {}
     for tcfg in engine.tunnels:
@@ -642,6 +648,7 @@ def _log_summary(engine: Engine, check_results: list, ext_ip: str) -> None:
         tunnels=summary_tunnels,
         checks=[(r.label, r.status, r.detail) for r in check_results],
         log_paths=log_paths,
+        profiles=profiles,
     )
 
 
