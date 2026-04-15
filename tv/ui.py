@@ -251,41 +251,20 @@ def logo() -> None:
         print(f"         {c}{line}{R}")
     print()
     print(nodes_bot)
-    ver_pad = 4 + max(
-        0, (50 - len(f"v{__version__} · multi-VPN connection manager")) // 2
-    )
+    title = f"v{__version__} · multi-VPN connection manager"
+    ver_pad = 4 + max(0, (50 - len(title)) // 2)
     print(
         f"{' ' * ver_pad}{_c(83)}v{__version__}{R} {_c(240)}·{R} {_c(243)}multi-VPN connection manager{R}"
     )
-    # Dynamic protocol line from registry
-    proto_line = _build_proto_line()
+    # Protocol line with versions inline: ▸ OpenVPN (2.7.0)
+    proto_line = _build_proto_line(with_versions=True)
     print(f"{' ' * 12}{proto_line}")
-    # VPN client versions
-    versions = _get_vpn_versions()
-    if versions:
-        print(f"{' ' * ver_pad}{_c(240)}{versions}{R}")
     print()
     print(bar)
     print()
 
 
-def _get_vpn_versions() -> str:
-    """Get version strings for all available VPN plugins."""
-    from tv.vpn.registry import available_types, get_plugin
-
-    parts = []
-    for type_name in available_types():
-        try:
-            plugin_cls = get_plugin(type_name)
-            ver = plugin_cls.get_version()
-            if ver:
-                parts.append(ver)
-        except (KeyError, Exception):
-            pass
-    return " · ".join(parts)
-
-
-def _build_proto_line() -> str:
+def _build_proto_line(*, with_versions: bool = False) -> str:
     """Build protocol display line from registered plugins."""
     from tv.vpn.registry import available_types, get_plugin
 
@@ -308,7 +287,20 @@ def _build_proto_line() -> str:
             display = plugin_cls.type_display_name or type_name
         except KeyError:
             display = type_name
-        parts.append(f"{color}▸{R} {_c(243)}{display}{R}")
+        entry = f"{color}▸{R} {_c(243)}{display}{R}"
+        if with_versions:
+            try:
+                ver = plugin_cls.get_version()
+                if ver:
+                    # Extract just the version number from strings like "OpenVPN 2.7.0"
+                    import re
+
+                    m = re.search(r"(\d+\.\d+[\.\d]*\S*)", ver)
+                    short_ver = m.group(1) if m else ver
+                    entry += f" {_c(240)}({short_ver}){R}"
+            except Exception:
+                pass
+        parts.append(entry)
 
     return "  ".join(parts)
 
