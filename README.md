@@ -7,10 +7,10 @@
 <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
 <a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux_|_Windows-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
-<a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.3.0-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
-<img src="https://img.shields.io/badge/tests-934_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
+<a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.5.0-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
+<img src="https://img.shields.io/badge/tests-1152_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
 
-<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>OpenConnect</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>+ your plugin</kbd>
+<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>OpenConnect</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>IPsec/IKEv2</kbd> &nbsp; <kbd>Tailscale</kbd> &nbsp; <kbd>SSH tunnel</kbd> &nbsp; <kbd>+ your plugin</kbd>
 
 <a href="#-quick-start">Quick Start</a> · <a href="#-how-it-works">How It Works</a> · <a href="#-configuration">Configuration</a> · <a href="#-cli">CLI</a> · <a href="#-plugin-system">Plugins</a>
 
@@ -52,7 +52,7 @@ Parameters are resolved through: `config.toml` ──▸ `ENV` ──▸ `wizard
 **4. Bypass routes** — Same mechanism for IPs/domains from `[global.bypass_routes]` that must always skip VPN. Domain suffix bypass starts a DNS proxy (see below).
 
 **5. Connect** — For each tunnel in `order`:
-- Spawn daemon (`openvpn` / `openfortivpn` / `sing-box`) with config
+- Spawn daemon (`openvpn` / `openfortivpn` / `sing-box` / `wg-quick` / `swanctl` / `tailscale` / `ssh`) with config
 - Wait for interface (`tun0`, `ppp0`, `utun99`) to appear
 - Add routes from `[tunnels.<name>.routes]`:
   - macOS: `route add -net <cidr> -interface <iface>` / `route add -host <ip> <gw>`
@@ -127,7 +127,7 @@ All injected routes are cleaned up on disconnect.
 4. Stop DNS proxy, delete injected routes
 5. Restore IPv6
 
-`--reset` — emergency mode: `pkill` all known process names (`openvpn`, `openfortivpn`, `sing-box`) without config context.
+`--reset` — emergency mode: `pkill` all known process names (`openvpn`, `openfortivpn`, `sing-box`, `wg-quick`, `charon`, `tailscaled`, `ssh`, `sshuttle`) without config context.
 
 <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>SIGTERM</kbd> triggers graceful disconnect. Broken state falls back to emergency kill.
 
@@ -297,6 +297,9 @@ class MyVPNPlugin(TunnelPlugin):
 | **OpenConnect** | `openconnect` | `tun1` | FortiGate via TUN (replaces PPP), SAML/cert auth |
 | **sing-box** | `sing-box` | `utun99` | JSON config, custom interface |
 | **WireGuard** | `wg-quick` | `wg0` | Client mode, config via `wg0.conf` |
+| **IPsec/IKEv2** | `swanctl` | xfrm | strongSwan, PSK/cert auth, corporate VPN |
+| **Tailscale** | `tailscale` | `tailscale0` | Mesh VPN, Headscale support, auth-key, exit nodes |
+| **SSH tunnel** | `ssh` | - | SOCKS proxy (`ssh -D`) or transparent routing (`sshuttle`) |
 
 <details>
 <summary><strong>sing-box: multiple outbounds with auto-failover</strong></summary>
@@ -327,6 +330,9 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 
 - [x] WireGuard plugin - client mode via `wg-quick`
 - [x] OpenConnect plugin - FortiGate via TUN interface
+- [x] IPsec/IKEv2 plugin - strongSwan `swanctl`, PSK/cert auth
+- [x] Tailscale plugin - mesh VPN, Headscale support, auth-key
+- [x] SSH tunnel plugin - SOCKS proxy + sshuttle transparent routing
 - [x] IPC daemon - unix socket between daemon and CLI
 - [x] Auto-reconnect - network wait with debounce after sleep/wake
 - [x] Single `config.toml` for all settings
@@ -340,7 +346,7 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 
 ## <img src="https://img.shields.io/badge/📋_Requirements-FF8C00?style=for-the-badge" alt="Requirements">
 
-**Python 3.10+** · **macOS, Linux, or Windows** · **sudo / Run as Administrator** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`)
+**Python 3.10+** · **macOS, Linux, or Windows** · **sudo / Run as Administrator** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`, `wg-quick`, `swanctl`, `tailscale`, `ssh`)
 
 > [!WARNING]
 > TunnelVault modifies routing tables and DNS configuration. Review your `config.toml` before running. Use `--validate` to dry-run.
