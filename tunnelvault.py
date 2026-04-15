@@ -24,7 +24,16 @@ from tv.vpn.base import TunnelConfig
 from tv.vpn.registry import get_plugin
 
 # Ensure all plugins are registered on import
-from tv.vpn import openvpn, fortivpn, openconnect, singbox, wireguard, ipsec, tailscale, sshtunnel  # noqa: F401
+from tv.vpn import (
+    openvpn,
+    fortivpn,
+    openconnect,
+    singbox,
+    wireguard,
+    ipsec,
+    tailscale,
+    sshtunnel,
+)  # noqa: F401
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -334,14 +343,7 @@ def main() -> None:
     check_results, ext_ip = engine.check_all(quiet=engine.quiet)
 
     # --- Summary ---
-    if not engine.quiet:
-        _log_summary(engine, check_results, ext_ip)
-    else:
-        # Minimal logging only
-        engine.log.log("INFO", "=== Summary ===")
-        for tcfg, r in zip(engine.tunnels, engine.results):
-            engine.log.log("INFO", f"{tcfg.name}: ok={r.ok}")
-        engine.log.log("INFO", f"Log: {engine.log.log_path}")
+    _log_summary(engine, check_results, ext_ip)
 
     # --- Keepalive / daemon mode ---
     if args.no_daemon:

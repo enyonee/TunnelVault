@@ -292,12 +292,13 @@ def _build_proto_line(*, with_versions: bool = False) -> str:
             try:
                 ver = plugin_cls.get_version()
                 if ver:
-                    # Extract just the version number from strings like "OpenVPN 2.7.0"
                     import re
 
-                    m = re.search(r"(\d+\.\d+[\.\d]*\S*)", ver)
-                    short_ver = m.group(1) if m else ver
-                    entry += f" {_c(240)}({short_ver}){R}"
+                    # Extract clean version: "2.7.0", "1.12.22", "9.12"
+                    # Strip noise: "unknown", trailing commas, ssh suffix
+                    m = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", ver)
+                    if m:
+                        entry += f" {_c(240)}({m.group(1)}){R}"
             except Exception:
                 pass
         parts.append(entry)

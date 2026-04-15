@@ -253,8 +253,8 @@ class TestPrepare:
         assert len(e.tunnels) == 1
         assert e.quiet is True
         out = capsys.readouterr().out
-        assert "Profiles:" in out
         assert "openvpn" in out
+        assert "client.ovpn" in out
 
     def test_prepare_setup_forces_wizard(self, tmp_dir, mock_net, logger):
         """--setup flag: wizard runs even with all params."""

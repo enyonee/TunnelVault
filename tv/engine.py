@@ -181,8 +181,20 @@ class Engine:
         defaults_mod.validate_config_files(self.tunnels)
 
         if quiet:
-            names = [t_.name for t_ in self.tunnels]
-            ui.info(f"📋 {t('engine.profiles', names=', '.join(names))}")
+            print()
+            for t_ in self.tunnels:
+                cfg_file = t_.config_file or ""
+                host = (t_.auth or {}).get("host", "")
+                login = (t_.auth or {}).get("login", "")
+                parts = [f"{ui.BOLD}{t_.name}{ui.NC} {ui.DIM}({t_.type}){ui.NC}"]
+                if cfg_file:
+                    parts.append(f"  {ui.DIM}{cfg_file}{ui.NC}")
+                if host:
+                    port = (t_.auth or {}).get("port", "")
+                    parts.append(f"  {host}:{port}" if port else f"  {host}")
+                if login:
+                    parts.append(f"  user={login}")
+                ui.info(f"📋 {''.join(parts)}")
         else:
             config.save_tunnel_settings(self.tunnels, self.script_dir)
             print()
