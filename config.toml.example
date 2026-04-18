@@ -13,6 +13,16 @@
 # [global]
 # kill_switch = true
 
+# IPv6 opt-in (EXPERIMENTAL, issue #5).
+# По умолчанию tunnelvault отключает IPv6 чтобы не было утечек (IPv4-only VPN).
+# ipv6 = true отключает этот defense: tunnelvault НЕ трогает IPv6 стек системы.
+# ВНИМАНИЕ: это НЕ маршрутизирует IPv6 через VPN. IPv6 трафик идёт мимо туннеля
+# через default gateway провайдера. Ваш реальный IPv6 адрес виден внешним сайтам.
+# Полноценный IPv6 support (routes/kill switch/DNS) будет в PR#2-4.
+# FortiVPN: флаг игнорируется, IPv6 форсированно отключается (openfortivpn IPv4-only).
+# [global]
+# ipv6 = false
+
 # Host routes к VPN-серверам через default GW (до старта туннелей)
 [global.vpn_server_routes]
 hosts = ["203.0.113.10", "203.0.113.20"]

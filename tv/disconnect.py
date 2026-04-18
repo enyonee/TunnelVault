@@ -44,6 +44,17 @@ def get_kill_switch_enabled(defs: dict) -> bool:
     return bool(defs.get("global", {}).get("kill_switch", False))
 
 
+def get_ipv6_enabled(defs: dict) -> bool:
+    """Check if IPv6 is opt-in enabled (experimental, default False).
+
+    GH-5 PR#1 Foundation: при True tunnelvault НЕ отключает IPv6.
+    Это НЕ маршрутизация IPv6 через VPN - это только skip disable_ipv6().
+    IPv6 трафик идёт мимо туннеля через default gateway провайдера.
+    Полноценная поддержка IPv6 будет в PR#2-4 (см. issue #5).
+    """
+    return bool(defs.get("global", {}).get("ipv6", False))
+
+
 def cleanup_global_routes(
     net: NetManager,
     log: Optional[Logger],
@@ -147,8 +158,11 @@ def _cleanup_routes_and_ipv6(
 
     cleanup_global_routes(net, log, defs)
 
-    print(f"🌐 {t('disc.restore_ipv6')}")
-    _safe(lambda: net.restore_ipv6(), "restore IPv6", log)
+    # GH-5: при ipv6=true disable_ipv6 не вызывался -> restore тоже пропускаем
+    # (на macOS restore_ipv6 = networksetup -setv6automatic, перезаписывает кастомные настройки)
+    if not get_ipv6_enabled(defs):
+        print(f"🌐 {t('disc.restore_ipv6')}")
+        _safe(lambda: net.restore_ipv6(), "restore IPv6", log)
 
     print(f"✅ {t('disc.all_disconnected')}")
     if log:
