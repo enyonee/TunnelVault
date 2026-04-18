@@ -82,7 +82,7 @@ def parse_tunnels(defs: dict) -> list[TunnelConfig]:
     """Parse [tunnels.*] sections into TunnelConfig list.
 
     Returns list sorted by order, filtered by enabled=True.
-    Order: parse -> log defaults -> config_file defaults -> singbox interfaces -> validate.
+    Order: parse -> log defaults -> config_file defaults -> tun interfaces -> validate.
     """
     tunnels_section = defs.get("tunnels", {})
     if not tunnels_section:
@@ -141,7 +141,7 @@ def parse_tunnels(defs: dict) -> list[TunnelConfig]:
 
     # Resolve defaults early so validation catches collisions at startup
     _apply_config_defaults(enabled)
-    _assign_singbox_interfaces(enabled)
+    _assign_tun_interfaces(enabled)
 
     _validate_tunnels(enabled)
     return enabled
@@ -198,6 +198,7 @@ def _apply_config_defaults(tunnels: list[TunnelConfig]) -> None:
     """Fill in default config_file for tunnels that don't specify one."""
     type_defaults = {
         "singbox": cfg.defaults.singbox_config,
+        "xray": cfg.defaults.xray_config,
         "openvpn": cfg.defaults.openvpn_config,
         "wireguard": cfg.defaults.wireguard_config,
     }
@@ -207,20 +208,39 @@ def _apply_config_defaults(tunnels: list[TunnelConfig]) -> None:
             tc._auto_config_file = True
 
 
-def _assign_singbox_interfaces(tunnels: list[TunnelConfig]) -> None:
-    """Auto-assign unique interfaces to singbox tunnels without one."""
-    used = {tc.interface for tc in tunnels if tc.interface}
-    base = cfg.defaults.singbox_interface  # "utun99"
-    prefix, counter = _parse_iface_name(base)
+# Типы плагинов с TUN-интерфейсом и дефолтным базовым именем
+_TUN_TYPE_BASES: dict[str, str] = {
+    "singbox": "singbox_interface",
+    "xray": "xray_interface",
+}
 
-    for tc in tunnels:
-        if tc.type != "singbox" or tc.interface:
-            continue
-        while f"{prefix}{counter}" in used:
+
+def _assign_tun_interfaces(tunnels: list[TunnelConfig]) -> None:
+    """Auto-assign unique TUN interfaces to tunnels without one.
+
+    Каждый TUN-тип (singbox, xray) имеет свою базу:
+      - singbox: utun99 (обратная совместимость)
+      - xray: utun98
+    Для xray в proxy mode interface не используется - поле остаётся пустым.
+    """
+    used = {tc.interface for tc in tunnels if tc.interface}
+
+    # По каждому TUN-типу - свой счётчик от базового interface
+    for tun_type, base_attr in _TUN_TYPE_BASES.items():
+        base = getattr(cfg.defaults, base_attr)
+        prefix, counter = _parse_iface_name(base)
+
+        for tc in tunnels:
+            if tc.type != tun_type or tc.interface:
+                continue
+            # xray в proxy mode не требует interface
+            if tun_type == "xray" and tc.extra.get("mode") == "proxy":
+                continue
+            while f"{prefix}{counter}" in used:
+                counter += 1
+            tc.interface = f"{prefix}{counter}"
+            used.add(tc.interface)
             counter += 1
-        tc.interface = f"{prefix}{counter}"
-        used.add(tc.interface)
-        counter += 1
 
 
 def _validate_tunnels(tunnels: list[TunnelConfig]) -> None:

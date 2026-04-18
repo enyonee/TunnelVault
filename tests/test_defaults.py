@@ -467,6 +467,55 @@ class TestSingboxInterfaceAssignment:
 
 
 # =========================================================================
+# Multi-instance: xray interface auto-assignment
+# =========================================================================
+
+
+class TestXrayInterfaceAssignment:
+    def test_single_xray_gets_utun98(self):
+        """Один xray без interface -> utun98 (своя база, не пересекается с singbox)."""
+        defs = {
+            "tunnels": {
+                "x": {
+                    "type": "xray",
+                    "order": 1,
+                    "config_file": "xray.json",
+                }
+            }
+        }
+        tunnels = parse_tunnels(defs)
+        assert tunnels[0].interface == "utun98"
+
+    def test_xray_and_singbox_coexist_on_defaults(self):
+        """xray и singbox вместе: каждый на своей базе (utun98 / utun99)."""
+        defs = {
+            "tunnels": {
+                "x": {"type": "xray", "order": 1, "config_file": "xray.json"},
+                "s": {"type": "singbox", "order": 2, "config_file": "sb.json"},
+            }
+        }
+        tunnels = parse_tunnels(defs)
+        ifaces = {t.name: t.interface for t in tunnels}
+        assert ifaces["x"] == "utun98"
+        assert ifaces["s"] == "utun99"
+
+    def test_xray_proxy_mode_skipped(self):
+        """xray c mode=proxy не получает interface (proxy-inbound без TUN)."""
+        defs = {
+            "tunnels": {
+                "x": {
+                    "type": "xray",
+                    "order": 1,
+                    "config_file": "xray.json",
+                    "mode": "proxy",
+                }
+            }
+        }
+        tunnels = parse_tunnels(defs)
+        assert tunnels[0].interface == ""
+
+
+# =========================================================================
 # _auto_config_file tracking on TunnelConfig
 # =========================================================================
 
