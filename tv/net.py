@@ -70,6 +70,36 @@ class NetManager(ABC):
     @abstractmethod
     def add_iface_route(self, target: str, iface: str, host: bool = True) -> bool: ...
 
+    # ---- IPv6 primitives (PR#2 IPv6 foundation) ----
+    # Default: no-op для backward compat. Реализации Darwin/Linux/Windows переопределяют.
+    # На Darwin add_iface_route6 НЕ использует ppp_peer (IPv4-only) - сразу
+    # -interface <utun*> для TUN интерфейсов. На Linux используется
+    # 'ip -6 route replace' (не add) - безопаснее для ::/0 при наличии RA.
+
+    def add_host_route6(self, ip: str, gateway: str) -> bool:
+        return False
+
+    def add_net_route6(self, network: str, gateway: str) -> bool:
+        return False
+
+    def add_iface_route6(self, target: str, iface: str, host: bool = True) -> bool:
+        return False
+
+    def delete_host_route6(self, ip: str) -> bool:
+        return False
+
+    def delete_net_route6(self, network: str) -> bool:
+        return False
+
+    def set_dns6(
+        self,
+        domains: list[str],
+        nameservers: list[str],
+        interface: str = "",
+    ) -> dict[str, bool]:
+        """Set IPv6-nameservers для доменов. Пустой nameservers - no-op (не сбрасывает)."""
+        return {d: False for d in domains}
+
     @abstractmethod
     def setup_dns_resolver(
         self,
@@ -348,6 +378,64 @@ class DarwinNet(NetManager):
         r = _run(["sudo", "route", "delete", "-net", network])
         return r.returncode == 0
 
+    # ---- IPv6 primitives ----
+
+    def add_host_route6(self, ip: str, gateway: str) -> bool:
+        r = _run(["sudo", "route", "add", "-inet6", "-host", ip, gateway])
+        return r.returncode == 0
+
+    def add_net_route6(self, network: str, gateway: str) -> bool:
+        r = _run(["sudo", "route", "add", "-inet6", "-net", network, gateway])
+        return r.returncode == 0
+
+    def add_iface_route6(self, target: str, iface: str, host: bool = True) -> bool:
+        """На Darwin IPv6 route через TUN: -inet6 -host/-net <target> -interface <iface>.
+
+        НЕ использует ppp_peer (IPv4-only: парсит 'inet X --> Y'). Для IPv6
+        на утилитах macOS 'route add -inet6 <cidr> -interface utunN' работает
+        без gateway - ядро автоматически находит next-hop через interface.
+        """
+        flag = "-host" if host else "-net"
+        r = _run(["sudo", "route", "add", "-inet6", flag, target, "-interface", iface])
+        return r.returncode == 0
+
+    def delete_host_route6(self, ip: str) -> bool:
+        r = _run(["sudo", "route", "delete", "-inet6", "-host", ip])
+        return r.returncode == 0
+
+    def delete_net_route6(self, network: str) -> bool:
+        r = _run(["sudo", "route", "delete", "-inet6", "-net", network])
+        return r.returncode == 0
+
+    def set_dns6(
+        self,
+        domains: list[str],
+        nameservers: list[str],
+        interface: str = "",
+    ) -> dict[str, bool]:
+        """Пишет IPv6 nameserver в /etc/resolver/<domain>.
+
+        macOS BIND resolver формат: 'nameserver 2001:db8::1' без скобок.
+        Пустой nameservers - no-op (не сбрасывает существующий файл).
+        """
+        if not nameservers:
+            return {d: False for d in domains}
+        resolver_dir = cfg.paths.resolver_dir
+        _run(["sudo", "mkdir", "-p", resolver_dir])
+        content = (
+            "# tunnelvault\n"
+            + "\n".join(f"nameserver {ns}" for ns in nameservers)
+            + "\n"
+        )
+        results: dict[str, bool] = {}
+        for domain in domains:
+            r = _run(
+                ["sudo", "tee", f"{resolver_dir}/{domain}"],
+                input=content,
+            )
+            results[domain] = r.returncode == 0
+        return results
+
     def route_table(self, lines: int | None = None) -> str:
         if lines is None:
             lines = cfg.display.route_table_lines
@@ -495,6 +583,58 @@ class LinuxNet(NetManager):
     def delete_net_route(self, network: str) -> bool:
         r = _run(["sudo", "ip", "route", "del", network])
         return r.returncode == 0
+
+    # ---- IPv6 primitives ----
+
+    def add_host_route6(self, ip: str, gateway: str) -> bool:
+        # replace вместо add: безопаснее при существующем маршруте (напр. RA ::/0).
+        r = _run(["sudo", "ip", "-6", "route", "replace", f"{ip}/128", "via", gateway])
+        return r.returncode == 0
+
+    def add_net_route6(self, network: str, gateway: str) -> bool:
+        r = _run(["sudo", "ip", "-6", "route", "replace", network, "via", gateway])
+        return r.returncode == 0
+
+    def add_iface_route6(self, target: str, iface: str, host: bool = True) -> bool:
+        t = f"{target}/128" if host else target
+        r = _run(["sudo", "ip", "-6", "route", "replace", t, "dev", iface])
+        return r.returncode == 0
+
+    def delete_host_route6(self, ip: str) -> bool:
+        r = _run(["sudo", "ip", "-6", "route", "del", f"{ip}/128"])
+        return r.returncode == 0
+
+    def delete_net_route6(self, network: str) -> bool:
+        r = _run(["sudo", "ip", "-6", "route", "del", network])
+        return r.returncode == 0
+
+    def set_dns6(
+        self,
+        domains: list[str],
+        nameservers: list[str],
+        interface: str = "",
+    ) -> dict[str, bool]:
+        """resolvectl принимает IPv6 nameservers без кавычек.
+
+        Пустой nameservers - no-op (иначе resolvectl dns iface без аргументов
+        СБРОСИТ существующие DNS для интерфейса, это не no-op).
+        """
+        results: dict[str, bool] = {d: False for d in domains}
+        if not nameservers:
+            return results
+        iface = interface
+        if not iface:
+            return results
+        if not shutil.which("resolvectl"):
+            return results
+        r = _run(["ip", "link", "show", iface])
+        if r.returncode != 0:
+            return results
+        _run(["sudo", "resolvectl", "dns", iface] + nameservers)
+        for domain in domains:
+            r3 = _run(["sudo", "resolvectl", "domain", iface, domain])
+            results[domain] = r3.returncode == 0
+        return results
 
     def route_table(self, lines: int | None = None) -> str:
         if lines is None:
@@ -804,6 +944,85 @@ class WindowsNet(NetManager):
         net_addr = network.split("/")[0] if "/" in network else network
         r = _run(["route", "DELETE", net_addr])
         return r.returncode == 0
+
+    # ---- IPv6 primitives ----
+
+    def add_host_route6(self, ip: str, gateway: str) -> bool:
+        r = _run(
+            [
+                "netsh",
+                "interface",
+                "ipv6",
+                "add",
+                "route",
+                f"{ip}/128",
+                f"nexthop={gateway}",
+            ]
+        )
+        return r.returncode == 0
+
+    def add_net_route6(self, network: str, gateway: str) -> bool:
+        if "/" not in network:
+            return False
+        r = _run(
+            [
+                "netsh",
+                "interface",
+                "ipv6",
+                "add",
+                "route",
+                network,
+                f"nexthop={gateway}",
+            ]
+        )
+        return r.returncode == 0
+
+    def add_iface_route6(self, target: str, iface: str, host: bool = True) -> bool:
+        prefix = (
+            f"{target}/128" if host else (target if "/" in target else f"{target}/128")
+        )
+        r = _run(
+            [
+                "netsh",
+                "interface",
+                "ipv6",
+                "add",
+                "route",
+                prefix,
+                f"interface={iface}",
+            ]
+        )
+        return r.returncode == 0
+
+    def delete_host_route6(self, ip: str) -> bool:
+        r = _run(["netsh", "interface", "ipv6", "delete", "route", f"{ip}/128"])
+        return r.returncode == 0
+
+    def delete_net_route6(self, network: str) -> bool:
+        if "/" not in network:
+            return False
+        r = _run(["netsh", "interface", "ipv6", "delete", "route", network])
+        return r.returncode == 0
+
+    def set_dns6(
+        self,
+        domains: list[str],
+        nameservers: list[str],
+        interface: str = "",
+    ) -> dict[str, bool]:
+        """Windows NRPT принимает IPv6 nameservers. Пустой nameservers - no-op."""
+        results: dict[str, bool] = {d: False for d in domains}
+        if not nameservers:
+            return results
+        ns_list = ",".join(f"'{ns}'" for ns in nameservers)
+        for domain in domains:
+            ps_cmd = (
+                f"Add-DnsClientNrptRule -Namespace '.{domain}' "
+                f"-NameServers {ns_list} -Comment 'tunnelvault'"
+            )
+            r = _run(["powershell", "-Command", ps_cmd])
+            results[domain] = r.returncode == 0
+        return results
 
     def route_table(self, lines: int | None = None) -> str:
         if lines is None:

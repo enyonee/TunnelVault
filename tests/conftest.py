@@ -77,6 +77,13 @@ def mock_net() -> MagicMock:
     net.restore_ipv6.return_value = True
     net.delete_host_route.return_value = True
     net.delete_net_route.return_value = True
+    # IPv6 primitives (PR#2)
+    net.add_host_route6.return_value = True
+    net.add_net_route6.return_value = True
+    net.add_iface_route6.return_value = True
+    net.delete_host_route6.return_value = True
+    net.delete_net_route6.return_value = True
+    net.set_dns6.return_value = {"alpha.local": True}
     net.route_table.return_value = "default via 192.168.1.1 dev en0"
     net.iface_info.return_value = ""
     net.ppp_peer.return_value = ""
