@@ -194,6 +194,112 @@ class TestTunnelPluginABC:
         dummy_plugin.net.delete_host_route.assert_called_once_with("1.2.3.4")
         dummy_plugin.net.delete_net_route.assert_called_once_with("10.0.0.0/8")
 
+    # ---- IPv6 dispatch (PR#2, H1 mitigation) ----
+
+    def test_add_routes_dispatches_ipv4_vs_ipv6_with_gateway(
+        self, make_dummy, mock_net
+    ):
+        """IPv6 CIDR/host идут в *route6 методы, IPv4 - в обычные (H1)."""
+        p = make_dummy(
+            name="mixed",
+            type="dummy",
+            routes={
+                "hosts": ["1.2.3.4", "2001:db8::1"],
+                "networks": ["10.0.0.0/8", "2001:db8::/32"],
+            },
+        )
+        p.add_routes(gateway="192.168.1.1")
+        # IPv4 через старые методы
+        mock_net.add_host_route.assert_called_once_with("1.2.3.4", "192.168.1.1")
+        mock_net.add_net_route.assert_called_once_with("10.0.0.0/8", "192.168.1.1")
+        # IPv6 через новые методы
+        mock_net.add_host_route6.assert_called_once_with("2001:db8::1", "192.168.1.1")
+        mock_net.add_net_route6.assert_called_once_with("2001:db8::/32", "192.168.1.1")
+
+    def test_add_routes_dispatches_ipv4_vs_ipv6_with_interface(
+        self, make_dummy, mock_net
+    ):
+        p = make_dummy(
+            name="tun",
+            type="dummy",
+            interface="utun99",
+            routes={
+                "hosts": ["1.2.3.4", "2001:db8::1"],
+                "networks": ["10.0.0.0/8", "2001:db8::/32"],
+            },
+        )
+        p.add_routes()
+        mock_net.add_iface_route.assert_any_call("1.2.3.4", "utun99", host=True)
+        mock_net.add_iface_route.assert_any_call("10.0.0.0/8", "utun99", host=False)
+        mock_net.add_iface_route6.assert_any_call("2001:db8::1", "utun99", host=True)
+        mock_net.add_iface_route6.assert_any_call("2001:db8::/32", "utun99", host=False)
+
+    def test_delete_routes_dispatches_ipv6(self, make_dummy, mock_net):
+        """H1: delete_routes ТОЖЕ должен dispatcher иначе IPv6 leak при disconnect."""
+        p = make_dummy(
+            name="mixed",
+            type="dummy",
+            routes={
+                "hosts": ["1.2.3.4", "2001:db8::1"],
+                "networks": ["10.0.0.0/8", "2001:db8::/32"],
+            },
+        )
+        p.delete_routes()
+        mock_net.delete_host_route.assert_called_once_with("1.2.3.4")
+        mock_net.delete_net_route.assert_called_once_with("10.0.0.0/8")
+        mock_net.delete_host_route6.assert_called_once_with("2001:db8::1")
+        mock_net.delete_net_route6.assert_called_once_with("2001:db8::/32")
+
+    def test_add_routes_invalid_network_skipped(self, make_dummy, mock_net):
+        """M8: невалидный CIDR не падает с ValueError - WARN + skip."""
+        p = make_dummy(
+            name="t",
+            type="dummy",
+            interface="utun99",
+            routes={"networks": ["not-a-cidr", "", "10.0.0.0/8"]},
+        )
+        p.add_routes()
+        # Только валидный 10.0.0.0/8 попал в add_iface_route
+        mock_net.add_iface_route.assert_called_once_with(
+            "10.0.0.0/8", "utun99", host=False
+        )
+        mock_net.add_iface_route6.assert_not_called()
+
+    def test_add_routes_invalid_host_skipped(self, make_dummy, mock_net):
+        p = make_dummy(
+            name="t",
+            type="dummy",
+            routes={"hosts": ["bad-host", "1.2.3.4"]},
+        )
+        p.add_routes(gateway="192.168.1.1")
+        mock_net.add_host_route.assert_called_once_with("1.2.3.4", "192.168.1.1")
+
+    def test_backward_compat_ipv4_only_identical(self, make_dummy, mock_net):
+        """AC8 invariant: только IPv4 config работает идентично pre-PR.
+
+        НЕ должны вызываться новые *_route6 методы при чисто IPv4 config."""
+        p = make_dummy(
+            name="v4",
+            type="dummy",
+            interface="utun99",
+            routes={"hosts": ["1.2.3.4"], "networks": ["10.0.0.0/8"]},
+        )
+        p.add_routes()
+        p.delete_routes()
+
+        # IPv4 методы вызваны
+        mock_net.add_iface_route.assert_any_call("1.2.3.4", "utun99", host=True)
+        mock_net.add_iface_route.assert_any_call("10.0.0.0/8", "utun99", host=False)
+        mock_net.delete_host_route.assert_called_once_with("1.2.3.4")
+        mock_net.delete_net_route.assert_called_once_with("10.0.0.0/8")
+
+        # IPv6 методы НЕ вызваны (только IPv4 config)
+        mock_net.add_iface_route6.assert_not_called()
+        mock_net.add_host_route6.assert_not_called()
+        mock_net.add_net_route6.assert_not_called()
+        mock_net.delete_host_route6.assert_not_called()
+        mock_net.delete_net_route6.assert_not_called()
+
     def test_default_log_path_from_cfg(self, make_dummy):
         """_default_log_path uses cfg.log when set."""
         p = make_dummy(name="test", type="dummy", log="/var/log/my.log")
