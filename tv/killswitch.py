@@ -14,9 +14,11 @@ from __future__ import annotations
 import ipaddress
 import platform
 import re
+import shutil
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from tv import ui
 from tv.logger import Logger
 from tv.net import _run
 
@@ -161,8 +163,13 @@ class KillSwitch(ABC):
         vpn_server_ips: list[str],
         bypass_ips: list[str],
         bypass_networks: list[str],
+        ipv6_enabled: bool = False,
     ) -> bool:
-        """Apply firewall rules. Returns True on success."""
+        """Apply firewall rules. Returns True on success.
+
+        ipv6_enabled=False (default) - backward compat: существующие вызовы
+        (engine.py и тесты) работают идентично pre-PR, IPv6 rules не применяются.
+        ipv6_enabled=True - применяются IPv6 block rules (ip6tables/pfctl inet6/netsh IPv6)."""
 
     @abstractmethod
     def disable(self) -> bool:
@@ -206,6 +213,7 @@ class DarwinKillSwitch(KillSwitch):
         vpn_server_ips: list[str],
         bypass_ips: list[str],
         bypass_networks: list[str],
+        ipv6_enabled: bool = False,
     ) -> bool:
         vpn_interfaces, vpn_server_ips, bypass_ips, bypass_networks = self._sanitize(
             vpn_interfaces=vpn_interfaces,
@@ -213,11 +221,20 @@ class DarwinKillSwitch(KillSwitch):
             bypass_ips=bypass_ips,
             bypass_networks=bypass_networks,
         )
+        # Разделяем на IPv4/IPv6 для раздельных pfctl inet/inet6 правил
+        v4_server_ips, v6_server_ips = _split_by_family(vpn_server_ips)
+        v4_bypass_ips, v6_bypass_ips = _split_by_family(bypass_ips)
+        v4_bypass_nets, v6_bypass_nets = _split_networks_by_family(bypass_networks)
+
         rules = _build_pf_rules(
             vpn_interfaces=vpn_interfaces,
-            vpn_server_ips=vpn_server_ips,
-            bypass_ips=bypass_ips,
-            bypass_networks=bypass_networks,
+            vpn_server_ips=v4_server_ips,
+            bypass_ips=v4_bypass_ips,
+            bypass_networks=v4_bypass_nets,
+            ipv6_enabled=ipv6_enabled,
+            vpn_server_ips6=v6_server_ips,
+            bypass_ips6=v6_bypass_ips,
+            bypass_networks6=v6_bypass_nets,
         )
 
         # Load rules into anchor
@@ -297,8 +314,20 @@ def _build_pf_rules(
     vpn_server_ips: list[str],
     bypass_ips: list[str],
     bypass_networks: list[str],
+    ipv6_enabled: bool = False,
+    vpn_server_ips6: Optional[list[str]] = None,
+    bypass_ips6: Optional[list[str]] = None,
+    bypass_networks6: Optional[list[str]] = None,
 ) -> str:
-    """Build pf rules for kill switch anchor."""
+    """Build pf rules for kill switch anchor.
+
+    ipv6_enabled=False (default): идентично pre-PR - только inet правила.
+    ipv6_enabled=True: добавляются inet6 правила параллельно + block in/out inet6 all.
+    """
+    vpn_server_ips6 = vpn_server_ips6 or []
+    bypass_ips6 = bypass_ips6 or []
+    bypass_networks6 = bypass_networks6 or []
+
     lines: list[str] = [
         "# tunnelvault kill switch - auto-generated, do not edit",
         "# Allow loopback (in + out)",
@@ -329,6 +358,19 @@ def _build_pf_rules(
     for iface in vpn_interfaces:
         lines.append(f"pass quick on {iface} all")
 
+    # --- IPv6 outbound rules (только при ipv6_enabled=True) ---
+    if ipv6_enabled:
+        for ip in vpn_server_ips6:
+            lines.append(f"pass out quick inet6 proto {{ tcp, udp }} to {ip}")
+        for ip in bypass_ips6:
+            lines.append(f"pass out quick inet6 to {ip}")
+        for net in bypass_networks6:
+            lines.append(f"pass out quick inet6 to {net}")
+        # DHCPv6 (ULA/link-local)
+        lines.append("pass out quick inet6 proto udp from any port 546 to any port 547")
+        # Allow DNS IPv6 loopback
+        lines.append("pass out quick inet6 proto { tcp, udp } to ::1 port 53")
+
     # --- Inbound rules ---
 
     # Allow inbound from VPN server IPs (tunnel establishment responses)
@@ -338,9 +380,18 @@ def _build_pf_rules(
     # Allow DHCP responses
     lines.append("pass in quick inet proto udp from any port 67 to any port 68")
 
+    # --- IPv6 inbound rules ---
+    if ipv6_enabled:
+        for ip in vpn_server_ips6:
+            lines.append(f"pass in quick inet6 proto {{ tcp, udp }} from {ip}")
+        lines.append("pass in quick inet6 proto udp from any port 547 to any port 546")
+
     # Block everything else (out + in)
     lines.append("block out inet all")
     lines.append("block in inet all")
+    if ipv6_enabled:
+        lines.append("block out inet6 all")
+        lines.append("block in inet6 all")
 
     return "\n".join(lines) + "\n"
 
@@ -354,7 +405,11 @@ _IPTABLES_CHAIN_IN = "TUNNELVAULT_KS_IN"
 
 
 class LinuxKillSwitch(KillSwitch):
-    """Linux kill switch using iptables chains on OUTPUT and INPUT."""
+    """Linux kill switch using iptables chains on OUTPUT and INPUT.
+
+    Для IPv6 (ipv6_enabled=True): параллельные ip6tables цепочки с теми же именами.
+    shutil.which('ip6tables') guard - если отсутствует (Alpine, minimal), выводим
+    visible warning вместо silent skip (M6)."""
 
     def enable(
         self,
@@ -363,6 +418,7 @@ class LinuxKillSwitch(KillSwitch):
         vpn_server_ips: list[str],
         bypass_ips: list[str],
         bypass_networks: list[str],
+        ipv6_enabled: bool = False,
     ) -> bool:
         vpn_interfaces, vpn_server_ips, bypass_ips, bypass_networks = self._sanitize(
             vpn_interfaces=vpn_interfaces,
@@ -370,6 +426,14 @@ class LinuxKillSwitch(KillSwitch):
             bypass_ips=bypass_ips,
             bypass_networks=bypass_networks,
         )
+        # Разделяем IPv4/IPv6 для раздельных iptables/ip6tables правил
+        v4_server_ips, v6_server_ips = _split_by_family(vpn_server_ips)
+        v4_bypass_ips, v6_bypass_ips = _split_by_family(bypass_ips)
+        v4_bypass_nets, v6_bypass_nets = _split_networks_by_family(bypass_networks)
+        # Для backward compat: оригинальный iptables только IPv4 IP/net (как pre-PR)
+        vpn_server_ips = v4_server_ips
+        bypass_ips = v4_bypass_ips
+        bypass_networks = v4_bypass_nets
         # Clean up any previous rules first
         self._flush_chain()
 
@@ -534,12 +598,168 @@ class LinuxKillSwitch(KillSwitch):
         # Insert jump to our chain at the top of INPUT
         _run(["sudo", "iptables", "-I", "INPUT", "1", "-j", _IPTABLES_CHAIN_IN])
 
+        # --- IPv6: ip6tables зеркальные цепочки (опционально) ---
+        if ipv6_enabled:
+            if not shutil.which("ip6tables"):
+                # M6: visible warn (не silent). Пользователь должен знать что
+                # IPv6 killswitch недоступен, несмотря на ipv6=true.
+                msg = (
+                    "IPv6 killswitch unavailable - ip6tables missing. "
+                    "Install iptables-ipv6 package or disable ipv6 in config."
+                )
+                self._log("WARN", msg)
+                try:
+                    ui.warn(msg)
+                except Exception:
+                    pass
+            else:
+                self._apply_ip6tables(
+                    vpn_server_ips6=v6_server_ips,
+                    bypass_ips6=v6_bypass_ips,
+                    bypass_networks6=v6_bypass_nets,
+                )
+
         self._active = True
         self._log("INFO", "enabled (iptables)")
         return True
 
+    def _apply_ip6tables(
+        self,
+        *,
+        vpn_server_ips6: list[str],
+        bypass_ips6: list[str],
+        bypass_networks6: list[str],
+    ) -> None:
+        """Параллельно iptables: ip6tables chains для IPv6 трафика.
+
+        Схема зеркалирует IPv4: OUTPUT/INPUT chains, loopback allow, VPN server
+        allow, bypass allow, VPN interface wildcards (tun+/ppp+), DROP fallback."""
+        # Flush предыдущие ip6tables chains (идемпотентно)
+        _run(["sudo", "ip6tables", "-D", "OUTPUT", "-j", _IPTABLES_CHAIN])
+        _run(["sudo", "ip6tables", "-D", "INPUT", "-j", _IPTABLES_CHAIN_IN])
+        _run(["sudo", "ip6tables", "-F", _IPTABLES_CHAIN])
+        _run(["sudo", "ip6tables", "-X", _IPTABLES_CHAIN])
+        _run(["sudo", "ip6tables", "-F", _IPTABLES_CHAIN_IN])
+        _run(["sudo", "ip6tables", "-X", _IPTABLES_CHAIN_IN])
+
+        # --- OUTPUT chain ---
+        _run(["sudo", "ip6tables", "-N", _IPTABLES_CHAIN])
+        _run(["sudo", "ip6tables", "-A", _IPTABLES_CHAIN, "-o", "lo", "-j", "ACCEPT"])
+        for ip in vpn_server_ips6:
+            _run(["sudo", "ip6tables", "-A", _IPTABLES_CHAIN, "-d", ip, "-j", "ACCEPT"])
+        for ip in bypass_ips6:
+            _run(["sudo", "ip6tables", "-A", _IPTABLES_CHAIN, "-d", ip, "-j", "ACCEPT"])
+        for net in bypass_networks6:
+            _run(
+                [
+                    "sudo",
+                    "ip6tables",
+                    "-A",
+                    _IPTABLES_CHAIN,
+                    "-d",
+                    net,
+                    "-j",
+                    "ACCEPT",
+                ]
+            )
+        # DHCPv6
+        _run(
+            [
+                "sudo",
+                "ip6tables",
+                "-A",
+                _IPTABLES_CHAIN,
+                "-p",
+                "udp",
+                "--sport",
+                "546",
+                "--dport",
+                "547",
+                "-j",
+                "ACCEPT",
+            ]
+        )
+        # Allow VPN interface families
+        for prefix in ("tun+", "ppp+"):
+            _run(
+                [
+                    "sudo",
+                    "ip6tables",
+                    "-A",
+                    _IPTABLES_CHAIN,
+                    "-o",
+                    prefix,
+                    "-j",
+                    "ACCEPT",
+                ]
+            )
+        _run(["sudo", "ip6tables", "-A", _IPTABLES_CHAIN, "-j", "DROP"])
+        _run(["sudo", "ip6tables", "-I", "OUTPUT", "1", "-j", _IPTABLES_CHAIN])
+
+        # --- INPUT chain ---
+        _run(["sudo", "ip6tables", "-N", _IPTABLES_CHAIN_IN])
+        _run(
+            [
+                "sudo",
+                "ip6tables",
+                "-A",
+                _IPTABLES_CHAIN_IN,
+                "-i",
+                "lo",
+                "-j",
+                "ACCEPT",
+            ]
+        )
+        for prefix in ("tun+", "ppp+"):
+            _run(
+                [
+                    "sudo",
+                    "ip6tables",
+                    "-A",
+                    _IPTABLES_CHAIN_IN,
+                    "-i",
+                    prefix,
+                    "-j",
+                    "ACCEPT",
+                ]
+            )
+        for ip in vpn_server_ips6:
+            _run(
+                [
+                    "sudo",
+                    "ip6tables",
+                    "-A",
+                    _IPTABLES_CHAIN_IN,
+                    "-s",
+                    ip,
+                    "-j",
+                    "ACCEPT",
+                ]
+            )
+        _run(
+            [
+                "sudo",
+                "ip6tables",
+                "-A",
+                _IPTABLES_CHAIN_IN,
+                "-p",
+                "udp",
+                "--sport",
+                "547",
+                "--dport",
+                "546",
+                "-j",
+                "ACCEPT",
+            ]
+        )
+        _run(["sudo", "ip6tables", "-A", _IPTABLES_CHAIN_IN, "-j", "DROP"])
+        _run(["sudo", "ip6tables", "-I", "INPUT", "1", "-j", _IPTABLES_CHAIN_IN])
+
     def disable(self) -> bool:
         ok = self._flush_chain()
+        # Также чистим ip6tables chains (безопасно - silent fail если нет)
+        if shutil.which("ip6tables"):
+            self._flush_chain6()
         self._active = False
         self._log("INFO", "disabled (iptables)")
         return ok
@@ -559,6 +779,18 @@ class LinuxKillSwitch(KillSwitch):
         ok2 = r2.returncode == 0 or "No chain" in (r2.stderr or "")
         return ok1 and ok2
 
+    def _flush_chain6(self) -> bool:
+        """Cleanup ip6tables chains (best-effort, silent)."""
+        _run(["sudo", "ip6tables", "-D", "OUTPUT", "-j", _IPTABLES_CHAIN])
+        _run(["sudo", "ip6tables", "-D", "INPUT", "-j", _IPTABLES_CHAIN_IN])
+        _run(["sudo", "ip6tables", "-F", _IPTABLES_CHAIN])
+        r1 = _run(["sudo", "ip6tables", "-X", _IPTABLES_CHAIN])
+        _run(["sudo", "ip6tables", "-F", _IPTABLES_CHAIN_IN])
+        r2 = _run(["sudo", "ip6tables", "-X", _IPTABLES_CHAIN_IN])
+        ok1 = r1.returncode == 0 or "No chain" in (r1.stderr or "")
+        ok2 = r2.returncode == 0 or "No chain" in (r2.stderr or "")
+        return ok1 and ok2
+
 
 # ---------------------------------------------------------------------------
 # Windows - netsh advfirewall
@@ -568,7 +800,10 @@ _WIN_RULE_PREFIX = "TunnelVault-KS"
 
 
 class WindowsKillSwitch(KillSwitch):
-    """Windows kill switch using netsh advfirewall rules."""
+    """Windows kill switch using netsh advfirewall rules.
+
+    Для IPv6 (ipv6_enabled=True): дополнительно AllowLoopbackIPv6 (::1/128)
+    и AllowVPNServers6 (remoteip принимает IPv6 без скобок)."""
 
     def enable(
         self,
@@ -577,6 +812,7 @@ class WindowsKillSwitch(KillSwitch):
         vpn_server_ips: list[str],
         bypass_ips: list[str],
         bypass_networks: list[str],
+        ipv6_enabled: bool = False,
     ) -> bool:
         vpn_interfaces, vpn_server_ips, bypass_ips, bypass_networks = self._sanitize(
             vpn_interfaces=vpn_interfaces,
@@ -584,6 +820,13 @@ class WindowsKillSwitch(KillSwitch):
             bypass_ips=bypass_ips,
             bypass_networks=bypass_networks,
         )
+        # Разделяем для raw IPv4 / IPv6 allow lists
+        v4_server_ips, v6_server_ips = _split_by_family(vpn_server_ips)
+        v4_bypass_ips, v6_bypass_ips = _split_by_family(bypass_ips)
+        v4_bypass_nets, v6_bypass_nets = _split_networks_by_family(bypass_networks)
+        vpn_server_ips = v4_server_ips
+        bypass_ips = v4_bypass_ips
+        bypass_networks = v4_bypass_nets
         # Clean up previous rules
         self.disable()
 
@@ -735,6 +978,81 @@ class WindowsKillSwitch(KillSwitch):
             ]
         )
 
+        # --- IPv6 rules ---
+        # M9: IPv6 loopback (::1/128) - всегда разрешаем, независимо от ipv6_enabled.
+        # Приложения часто используют IPv6 localhost - блокировка сломает их.
+        _run(
+            [
+                "netsh",
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={_WIN_RULE_PREFIX}-AllowLoopback6",
+                "dir=out",
+                "action=allow",
+                "remoteip=::1/128",
+            ]
+        )
+        _run(
+            [
+                "netsh",
+                "advfirewall",
+                "firewall",
+                "add",
+                "rule",
+                f"name={_WIN_RULE_PREFIX}-AllowLoopback6In",
+                "dir=in",
+                "action=allow",
+                "remoteip=::1/128",
+            ]
+        )
+
+        if ipv6_enabled:
+            # Allow IPv6 VPN servers (netsh remoteip принимает IPv6 без скобок)
+            if v6_server_ips:
+                _run(
+                    [
+                        "netsh",
+                        "advfirewall",
+                        "firewall",
+                        "add",
+                        "rule",
+                        f"name={_WIN_RULE_PREFIX}-AllowVPNServers6",
+                        "dir=out",
+                        "action=allow",
+                        f"remoteip={','.join(v6_server_ips)}",
+                    ]
+                )
+                _run(
+                    [
+                        "netsh",
+                        "advfirewall",
+                        "firewall",
+                        "add",
+                        "rule",
+                        f"name={_WIN_RULE_PREFIX}-AllowVPNServers6In",
+                        "dir=in",
+                        "action=allow",
+                        f"remoteip={','.join(v6_server_ips)}",
+                    ]
+                )
+            allow6_list = v6_bypass_ips + v6_bypass_nets
+            if allow6_list:
+                _run(
+                    [
+                        "netsh",
+                        "advfirewall",
+                        "firewall",
+                        "add",
+                        "rule",
+                        f"name={_WIN_RULE_PREFIX}-AllowBypass6",
+                        "dir=out",
+                        "action=allow",
+                        f"remoteip={','.join(allow6_list)}",
+                    ]
+                )
+
         self._active = True
         self._log("INFO", "enabled (netsh)")
         return True
@@ -760,6 +1078,12 @@ class WindowsKillSwitch(KillSwitch):
             "AllowLoopbackIn",
             "AllowVPNServersIn",
             "AllowDHCPIn",
+            # IPv6 rules (PR#2)
+            "AllowLoopback6",
+            "AllowLoopback6In",
+            "AllowVPNServers6",
+            "AllowVPNServers6In",
+            "AllowBypass6",
         ):
             _run(
                 [

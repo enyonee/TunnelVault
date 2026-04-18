@@ -217,6 +217,67 @@ class TestBuildPfRules:
         assert "block out inet all" in rules
         assert "block in inet all" in rules
 
+    # ---- IPv6 rules (PR#2, only when ipv6_enabled=True) ----
+
+    def test_ipv6_disabled_by_default(self):
+        """Backward compat: ipv6_enabled=False (default) - нет inet6 rules."""
+        rules = _build_pf_rules(
+            vpn_interfaces=["utun99"],
+            vpn_server_ips=["1.2.3.4"],
+            bypass_ips=[],
+            bypass_networks=[],
+        )
+        assert "inet6" not in rules
+        assert "block out inet6" not in rules
+
+    def test_ipv6_enabled_adds_block(self):
+        rules = _build_pf_rules(
+            vpn_interfaces=["utun99"],
+            vpn_server_ips=["1.2.3.4"],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+        )
+        assert "block out inet6 all" in rules
+        assert "block in inet6 all" in rules
+
+    def test_ipv6_enabled_allow_server(self):
+        rules = _build_pf_rules(
+            vpn_interfaces=["utun99"],
+            vpn_server_ips=[],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+            vpn_server_ips6=["2001:db8::1"],
+        )
+        assert "pass out quick inet6 proto { tcp, udp } to 2001:db8::1" in rules
+        assert "pass in quick inet6 proto { tcp, udp } from 2001:db8::1" in rules
+
+    def test_ipv6_enabled_allow_bypass_net(self):
+        rules = _build_pf_rules(
+            vpn_interfaces=[],
+            vpn_server_ips=[],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+            bypass_networks6=["2001:db8::/32"],
+        )
+        assert "pass out quick inet6 to 2001:db8::/32" in rules
+
+    def test_ipv6_dhcpv6_and_loopback_dns(self):
+        rules = _build_pf_rules(
+            vpn_interfaces=[],
+            vpn_server_ips=[],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+        )
+        # DHCPv6 ports 546/547
+        assert "port 546 to any port 547" in rules
+        assert "port 547 to any port 546" in rules
+        # IPv6 loopback DNS
+        assert "to ::1 port 53" in rules
+
 
 # =========================================================================
 # Darwin (pf) kill switch
@@ -253,6 +314,63 @@ class TestDarwinKillSwitch:
             if any("pfctl" in str(a) for a in c.args[0])
         ]
         assert len(pfctl_calls) >= 1
+
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_kwarg_passes_through(self, mock_run):
+        """ipv6_enabled=True раздельные inet/inet6 rules в pfctl ruleset."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = DarwinKillSwitch()
+
+        pf_content = "# Default pf.conf\n"
+        with patch("builtins.open", create=True) as mock_open:
+            mock_open.return_value.__enter__ = lambda s: s
+            mock_open.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value.read = MagicMock(return_value=pf_content)
+            mock_open.return_value.readlines = MagicMock(return_value=[pf_content])
+
+            ok = ks.enable(
+                vpn_interfaces=["utun99"],
+                vpn_server_ips=["1.2.3.4", "2001:db8::1"],
+                bypass_ips=[],
+                bypass_networks=["10.0.0.0/8", "2001:db8::/32"],
+                ipv6_enabled=True,
+            )
+        assert ok
+        # Проверим что pfctl -f stdin получил и inet и inet6 rules
+        stdin_input = None
+        for c in mock_run.call_args_list:
+            if c.kwargs.get("input") and "pfctl" in str(c.args[0]):
+                stdin_input = c.kwargs["input"]
+                break
+        assert stdin_input is not None
+        assert "to 1.2.3.4" in stdin_input  # IPv4 server
+        assert "to 2001:db8::1" in stdin_input  # IPv6 server
+        assert "block out inet6 all" in stdin_input
+
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_default_false(self, mock_run):
+        """Default ipv6_enabled=False - нет IPv6 rules (backward compat)."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = DarwinKillSwitch()
+        pf_content = "# Default pf.conf\n"
+        with patch("builtins.open", create=True) as mock_open:
+            mock_open.return_value.__enter__ = lambda s: s
+            mock_open.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open.return_value.read = MagicMock(return_value=pf_content)
+            mock_open.return_value.readlines = MagicMock(return_value=[pf_content])
+
+            ks.enable(
+                vpn_interfaces=["utun99"],
+                vpn_server_ips=["1.2.3.4"],
+                bypass_ips=[],
+                bypass_networks=[],
+            )
+        stdin_input = next(
+            c.kwargs["input"]
+            for c in mock_run.call_args_list
+            if c.kwargs.get("input") and "pfctl" in str(c.args[0])
+        )
+        assert "inet6" not in stdin_input
 
     @patch("tv.killswitch._run")
     def test_disable_flushes_anchor(self, mock_run):
@@ -363,6 +481,86 @@ class TestLinuxKillSwitch:
         ]
         assert len(delete_calls) == 2
 
+    @patch("tv.killswitch.shutil.which", return_value="/usr/sbin/ip6tables")
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_creates_ip6tables_chain(self, mock_run, mock_which):
+        """ipv6_enabled=True + ip6tables доступен -> ip6tables chains."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = LinuxKillSwitch()
+
+        ok = ks.enable(
+            vpn_interfaces=["tun0"],
+            vpn_server_ips=["1.2.3.4", "2001:db8::1"],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+        )
+        assert ok
+
+        # Проверим что ip6tables -N (создание chain) вызван
+        ip6_create = [
+            c
+            for c in mock_run.call_args_list
+            if "ip6tables" in c.args[0] and "-N" in c.args[0]
+        ]
+        assert len(ip6_create) == 2  # OUTPUT + INPUT chains
+
+        # Проверим что IPv6 server IP попал в ip6tables allow
+        ip6_server = [
+            c
+            for c in mock_run.call_args_list
+            if "ip6tables" in c.args[0]
+            and "2001:db8::1" in c.args[0]
+            and "ACCEPT" in c.args[0]
+        ]
+        assert len(ip6_server) >= 1
+
+        # IPv4 server НЕ должен попадать в ip6tables
+        ip6_v4 = [
+            c
+            for c in mock_run.call_args_list
+            if "ip6tables" in c.args[0] and "1.2.3.4" in c.args[0]
+        ]
+        assert len(ip6_v4) == 0
+
+    @patch("tv.killswitch.ui")
+    @patch("tv.killswitch.shutil.which", return_value=None)
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_missing_ip6tables_warns(self, mock_run, mock_which, mock_ui):
+        """M6: ip6tables отсутствует + ipv6_enabled=True -> visible ui.warn."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = LinuxKillSwitch()
+
+        ok = ks.enable(
+            vpn_interfaces=["tun0"],
+            vpn_server_ips=[],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+        )
+        assert ok  # IPv4 killswitch всё равно работает
+        # ui.warn вызван с сообщением про ip6tables
+        assert mock_ui.warn.called
+        warn_arg = mock_ui.warn.call_args[0][0]
+        assert "ip6tables missing" in warn_arg
+
+    @patch("tv.killswitch.shutil.which", return_value=None)
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_false_no_ip6tables_calls(self, mock_run, mock_which):
+        """ipv6_enabled=False (default) - нет ip6tables calls даже если which вернёт что-то."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = LinuxKillSwitch()
+        ks.enable(
+            vpn_interfaces=["tun0"],
+            vpn_server_ips=["1.2.3.4"],
+            bypass_ips=[],
+            bypass_networks=[],
+        )
+        ip6_calls = [c for c in mock_run.call_args_list if "ip6tables" in c.args[0]]
+        # Может быть только disable() flush - но в enable flow никаких ip6tables
+        # (mock_which return_value=None, не dostapan)
+        assert len(ip6_calls) == 0
+
     @patch("tv.killswitch._run")
     def test_enable_cleans_previous_first(self, mock_run):
         """Enable should flush any existing chain before creating new one."""
@@ -433,10 +631,122 @@ class TestWindowsKillSwitch:
         delete_calls = [c for c in mock_run.call_args_list if "delete" in c.args[0]]
         assert len(delete_calls) >= 2  # BlockAll + at least AllowLoopback
 
+    @patch("tv.killswitch._run")
+    def test_enable_loopback6_always_allowed(self, mock_run):
+        """M9: ::1/128 всегда разрешён независимо от ipv6_enabled."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = WindowsKillSwitch()
+        ks.enable(
+            vpn_interfaces=[],
+            vpn_server_ips=["1.2.3.4"],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=False,
+        )
+        loopback6 = [
+            c for c in mock_run.call_args_list if "remoteip=::1/128" in c.args[0]
+        ]
+        assert len(loopback6) == 2  # out + in
+
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_vpn_server(self, mock_run):
+        """ipv6_enabled=True + IPv6 VPN server -> AllowVPNServers6 rule."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = WindowsKillSwitch()
+        ks.enable(
+            vpn_interfaces=[],
+            vpn_server_ips=["1.2.3.4", "2001:db8::1"],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=True,
+        )
+        v6_rules = [
+            c for c in mock_run.call_args_list if "remoteip=2001:db8::1" in c.args[0]
+        ]
+        assert len(v6_rules) >= 1
+        # IPv4 server отдельно
+        v4_rules = [
+            c for c in mock_run.call_args_list if "remoteip=1.2.3.4" in c.args[0]
+        ]
+        assert len(v4_rules) >= 1
+
+    @patch("tv.killswitch._run")
+    def test_enable_ipv6_disabled_no_vpn6_rules(self, mock_run):
+        """ipv6_enabled=False - нет ADD AllowVPNServers6 (delete допустим для idempotent cleanup)."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = WindowsKillSwitch()
+        ks.enable(
+            vpn_interfaces=[],
+            vpn_server_ips=["1.2.3.4", "2001:db8::1"],
+            bypass_ips=[],
+            bypass_networks=[],
+            ipv6_enabled=False,
+        )
+        # Фильтруем только add rule (не delete - тот часть idempotent cleanup)
+        v6_server_add = [
+            c
+            for c in mock_run.call_args_list
+            if "AllowVPNServers6" in str(c.args[0]) and "add" in c.args[0]
+        ]
+        assert len(v6_server_add) == 0
+
+    @patch("tv.killswitch._run")
+    def test_disable_removes_ipv6_rules(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = WindowsKillSwitch()
+        ks._active = True
+        ks.disable()
+        # Проверим что IPv6 suffix-правила перечислены в delete
+        all_delete_names = [
+            str(c.args[0]) for c in mock_run.call_args_list if "delete" in c.args[0]
+        ]
+        joined = " ".join(all_delete_names)
+        assert "AllowLoopback6" in joined
+        assert "AllowVPNServers6" in joined
+
 
 # =========================================================================
 # Factory
 # =========================================================================
+
+
+class TestBackwardCompat:
+    """AC8 invariant: все существующие вызовы enable() БЕЗ ipv6_enabled
+    работают идентично pre-PR. ipv6_enabled default False - нет IPv6 rules."""
+
+    @patch("tv.killswitch._run")
+    def test_linux_enable_no_ipv6_kwarg_works(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = LinuxKillSwitch()
+        ok = ks.enable(
+            vpn_interfaces=["tun0"],
+            vpn_server_ips=["1.2.3.4"],
+            bypass_ips=[],
+            bypass_networks=[],
+        )
+        assert ok
+        # Нет ip6tables calls
+        ip6_calls = [c for c in mock_run.call_args_list if "ip6tables" in c.args[0]]
+        assert len(ip6_calls) == 0
+
+    @patch("tv.killswitch._run")
+    def test_windows_enable_no_ipv6_kwarg_works(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = WindowsKillSwitch()
+        ok = ks.enable(
+            vpn_interfaces=[],
+            vpn_server_ips=["1.2.3.4"],
+            bypass_ips=[],
+            bypass_networks=[],
+        )
+        assert ok
+        # Только ADD AllowVPNServers6 не должно быть (delete - idempotent cleanup)
+        v6_server_add = [
+            c
+            for c in mock_run.call_args_list
+            if "AllowVPNServers6" in str(c.args[0]) and "add" in c.args[0]
+        ]
+        assert len(v6_server_add) == 0
 
 
 class TestFactory:
