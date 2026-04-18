@@ -250,29 +250,34 @@ class TestTunnelPluginABC:
         mock_net.delete_host_route6.assert_called_once_with("2001:db8::1")
         mock_net.delete_net_route6.assert_called_once_with("2001:db8::/32")
 
-    def test_add_routes_invalid_network_skipped(self, make_dummy, mock_net):
-        """M8: невалидный CIDR не падает с ValueError - WARN + skip."""
+    def test_add_routes_invalid_cidr_routed_as_v4(self, make_dummy, mock_net):
+        """M8: невалидный CIDR НЕ падает с ValueError - идёт в IPv4 методы
+        (backward compat с pre-PR: add_net_route молча вернёт False).
+
+        НЕ в *_route6 методы - это важно: мусор никогда не попадает в IPv6 dispatch."""
         p = make_dummy(
             name="t",
             type="dummy",
             interface="utun99",
-            routes={"networks": ["not-a-cidr", "", "10.0.0.0/8"]},
+            routes={"networks": ["not-a-cidr", "10.0.0.0/8"]},
         )
         p.add_routes()
-        # Только валидный 10.0.0.0/8 попал в add_iface_route
-        mock_net.add_iface_route.assert_called_once_with(
-            "10.0.0.0/8", "utun99", host=False
-        )
+        # Обе записи попали в add_iface_route (IPv4 метод)
+        assert mock_net.add_iface_route.call_count == 2
         mock_net.add_iface_route6.assert_not_called()
 
-    def test_add_routes_invalid_host_skipped(self, make_dummy, mock_net):
+    def test_add_routes_hostname_goes_to_ipv4(self, make_dummy, mock_net):
+        """Backward compat: hostname (не IP) идёт в IPv4 add_host_route - engine
+        resolve его через net.resolve_host. НЕ в add_host_route6."""
         p = make_dummy(
             name="t",
             type="dummy",
-            routes={"hosts": ["bad-host", "1.2.3.4"]},
+            routes={"hosts": ["git.test.local", "1.2.3.4"]},
         )
         p.add_routes(gateway="192.168.1.1")
-        mock_net.add_host_route.assert_called_once_with("1.2.3.4", "192.168.1.1")
+        mock_net.add_host_route.assert_any_call("git.test.local", "192.168.1.1")
+        mock_net.add_host_route.assert_any_call("1.2.3.4", "192.168.1.1")
+        mock_net.add_host_route6.assert_not_called()
 
     def test_backward_compat_ipv4_only_identical(self, make_dummy, mock_net):
         """AC8 invariant: только IPv4 config работает идентично pre-PR.

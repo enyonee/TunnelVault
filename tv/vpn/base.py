@@ -230,24 +230,25 @@ class TunnelPlugin(ABC):
     def add_routes(self, gateway: Optional[str] = None) -> None:
         """Add host and network routes from cfg.routes.
 
-        Dispatch IPv4/IPv6 через ipaddress.version (H1). Невалидный CIDR/IP -
-        WARN + skip (M8)."""
+        Dispatch IPv4/IPv6 через ipaddress.version (H1). Только IPv6 маршруты
+        идут в *_route6 методы. IPv4 И hostname (non-IP) - в обычные методы
+        (backward compat: hostname-routes как git.test.local обрабатываются
+        IPv4-пайплайном, engine resolve их через net.resolve_host)."""
         hosts = self.cfg.routes.get("hosts", [])
         networks = self.cfg.routes.get("networks", [])
         iface = self.cfg.interface
 
         for host in hosts:
             v = _ip_version(host)
-            if v is None:
-                self.log.log("WARN", f"invalid host (skip): {host!r}")
-                continue
+            # v == 6 -> IPv6, v == 4 или None (hostname) -> обычные IPv4 методы
+            is_v6 = v == 6
             if iface:
-                if v == 6:
+                if is_v6:
                     ok = self.net.add_iface_route6(host, iface, host=True)
                 else:
                     ok = self.net.add_iface_route(host, iface, host=True)
             elif gateway:
-                if v == 6:
+                if is_v6:
                     ok = self.net.add_host_route6(host, gateway)
                 else:
                     ok = self.net.add_host_route(host, gateway)
@@ -260,16 +261,16 @@ class TunnelPlugin(ABC):
 
         for network in networks:
             v = _cidr_version(network)
-            if v is None:
-                self.log.log("WARN", f"invalid network (skip): {network!r}")
-                continue
+            # v == 6 -> IPv6, v == 4 или None (плохой CIDR) -> IPv4 методы
+            # (как pre-PR: add_net_route молча вернёт False для некорректного).
+            is_v6 = v == 6
             if iface:
-                if v == 6:
+                if is_v6:
                     ok = self.net.add_iface_route6(network, iface, host=False)
                 else:
                     ok = self.net.add_iface_route(network, iface, host=False)
             elif gateway:
-                if v == 6:
+                if is_v6:
                     ok = self.net.add_net_route6(network, gateway)
                 else:
                     ok = self.net.add_net_route(network, gateway)
@@ -305,19 +306,16 @@ class TunnelPlugin(ABC):
     def delete_routes(self) -> None:
         """Remove routes added by add_routes().
 
-        Dispatch IPv4/IPv6 (H1): иначе IPv6 маршруты не удаляются при disconnect -
-        утечка трафика. Невалидные CIDR/IP молча skip (что добавлено невалидным,
-        того и так нет в routing table)."""
+        Dispatch IPv4/IPv6 (H1): IPv6 в *_route6, всё остальное (IPv4 и hostname)
+        в обычные методы. Симметрично add_routes: что добавили обычным методом
+        должны удалить им же."""
         for host in self.cfg.routes.get("hosts", []):
-            v = _ip_version(host)
-            if v == 6:
+            if _ip_version(host) == 6:
                 self.net.delete_host_route6(host)
-            elif v == 4:
+            else:
                 self.net.delete_host_route(host)
-            # v is None - skip
         for network in self.cfg.routes.get("networks", []):
-            v = _cidr_version(network)
-            if v == 6:
+            if _cidr_version(network) == 6:
                 self.net.delete_net_route6(network)
-            elif v == 4:
+            else:
                 self.net.delete_net_route(network)
