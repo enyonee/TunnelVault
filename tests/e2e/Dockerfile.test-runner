@@ -53,4 +53,4 @@ COPY tests/e2e/test-runner-entrypoint.sh /test-runner-entrypoint.sh
 RUN chmod +x /test-runner-entrypoint.sh
 
 ENTRYPOINT ["tini", "--", "/test-runner-entrypoint.sh"]
-CMD ["sleep", "infinity"]
+CMD ["uv", "run", "pytest", "tests/integration/", "-x", "-v", "--tb=short", "-o", "addopts=", "-p", "no:xdist"]
