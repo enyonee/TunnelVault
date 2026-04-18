@@ -457,3 +457,41 @@ class TestDomainSuffixCleanup:
         mock_net.cleanup_local_dns_resolvers.assert_called_once()
         out = capsys.readouterr().out
         assert "extra resolver" not in out.lower()
+
+
+# =========================================================================
+# IPv6 opt-in helper + emergency path (GH-5 PR#1)
+# =========================================================================
+
+
+class TestIPv6OptInHelper:
+    def test_get_ipv6_enabled_true(self):
+        from tv.disconnect import get_ipv6_enabled
+
+        assert get_ipv6_enabled({"global": {"ipv6": True}}) is True
+
+    def test_get_ipv6_enabled_false(self):
+        from tv.disconnect import get_ipv6_enabled
+
+        assert get_ipv6_enabled({"global": {"ipv6": False}}) is False
+
+    def test_get_ipv6_enabled_missing_default_false(self):
+        """Default=False обязательно для backward compat."""
+        from tv.disconnect import get_ipv6_enabled
+
+        assert get_ipv6_enabled({}) is False
+        assert get_ipv6_enabled({"global": {}}) is False
+
+    def test_emergency_run_skips_restore_ipv6_when_optin(self, mock_net, logger):
+        """disconnect.run() при ipv6=true в defs НЕ вызывает restore_ipv6."""
+        with patch("tv.disconnect.proc"):
+            run(net=mock_net, log=logger, defs={"global": {"ipv6": True}})
+
+        mock_net.restore_ipv6.assert_not_called()
+
+    def test_emergency_run_restores_ipv6_when_default(self, mock_net, logger):
+        """disconnect.run() без ipv6 флага - restore_ipv6 вызывается (backward compat)."""
+        with patch("tv.disconnect.proc"):
+            run(net=mock_net, log=logger, defs={})
+
+        mock_net.restore_ipv6.assert_called_once()

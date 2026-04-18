@@ -239,6 +239,26 @@ export VPN_XRAY_CONFIG="xray.json"
 
 </details>
 
+<details>
+<summary><strong>IPv6 (experimental opt-in)</strong></summary>
+
+By default TunnelVault disables IPv6 on the system to prevent leaks through the dual stack while only IPv4 traffic is routed via the VPN. This is intentional defense, not a bug.
+
+You can opt in to keep IPv6 enabled:
+
+```toml
+[global]
+ipv6 = true
+```
+
+**What this does NOT do:** routes IPv6 through the VPN tunnel. Your real IPv6 address stays visible to external sites - traffic goes out via your ISP's default gateway. Full IPv6 support (routes, kill switch, DNS) is tracked in [#5](https://github.com/enyonee/tunnelvault/issues/5).
+
+**FortiVPN limitation:** `openfortivpn` is IPv4-only, so the flag is ignored and IPv6 is force-disabled whenever a FortiVPN tunnel is present. Remove the FortiVPN tunnel or set `ipv6 = false` explicitly if you see the warning.
+
+When to enable: you have a custom IPv6 configuration (static, DHCPv6, link-local-only) on macOS that you do not want TunnelVault to touch. On macOS `restore_ipv6` (called on disconnect) runs `networksetup -setv6automatic`, which overwrites custom IPv6 settings.
+
+</details>
+
 ## <img src="https://img.shields.io/badge/🖥_CLI-FF8C00?style=for-the-badge" alt="CLI">
 
 <table>
@@ -379,6 +399,7 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 - [x] Windows support - routing, DNS, process management for Windows
 - [ ] Windows VPN plugins - adapt openvpn/sing-box plugins for Windows paths and adapters
 - [ ] Windows daemon - Task Scheduler integration for keepalive mode
+- [ ] IPv6 support - foundation opt-in flag in place ([#5](https://github.com/enyonee/tunnelvault/issues/5)), routing/kill-switch/DNS pending
 
 ## <img src="https://img.shields.io/badge/📋_Requirements-FF8C00?style=for-the-badge" alt="Requirements">
 
