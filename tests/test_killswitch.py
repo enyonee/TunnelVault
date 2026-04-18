@@ -15,11 +15,17 @@ from tv.killswitch import (
     _IPTABLES_CHAIN_IN,
     _WIN_RULE_PREFIX,
     _is_valid_ip,
+    _is_valid_ipv4,
+    _is_valid_ipv6,
     _is_valid_network,
+    _is_valid_ipv4_network,
+    _is_valid_ipv6_network,
     _is_valid_iface,
     _sanitize_ips,
     _sanitize_networks,
     _sanitize_ifaces,
+    _split_by_family,
+    _split_networks_by_family,
     create,
 )
 
@@ -75,6 +81,75 @@ class TestSanitization:
     def test_sanitize_ifaces_filters(self):
         result = _sanitize_ifaces(["utun99", "bad iface", "tun0"])
         assert result == ["utun99", "tun0"]
+
+    # ---- IPv6 support (pre-existing regression fix + new helpers) ----
+
+    def test_is_valid_ip_accepts_ipv4_and_ipv6(self):
+        """_is_valid_ip принимает IPv4 И IPv6. Фикс критичного бага:
+        при IPv6 VPN server адресе _sanitize_ips выкидывал его, killswitch
+        блокировал VPN handshake."""
+        assert _is_valid_ip("1.2.3.4")
+        assert _is_valid_ip("2001:db8::1")
+        assert _is_valid_ip("fe80::1")
+        assert _is_valid_ip("::1")
+        assert _is_valid_ip("2001:0db8:85a3:0000:0000:8a2e:0370:7334")
+        # Не принимает CIDR и мусор
+        assert not _is_valid_ip("2001:db8::/32")
+        assert not _is_valid_ip("1.2.3.4/32")
+        assert not _is_valid_ip("not-an-ip")
+        assert not _is_valid_ip("")
+
+    def test_is_valid_ipv4_strict(self):
+        assert _is_valid_ipv4("1.2.3.4")
+        assert not _is_valid_ipv4("2001:db8::1")
+        assert not _is_valid_ipv4("::1")
+
+    def test_is_valid_ipv6_strict(self):
+        assert _is_valid_ipv6("2001:db8::1")
+        assert _is_valid_ipv6("::1")
+        assert _is_valid_ipv6("fe80::1")
+        assert not _is_valid_ipv6("1.2.3.4")
+
+    def test_is_valid_network_accepts_ipv4_and_ipv6(self):
+        assert _is_valid_network("10.0.0.0/8")
+        assert _is_valid_network("2001:db8::/32")
+        assert _is_valid_network("fe80::/10")
+        assert _is_valid_network("::/0")
+        assert not _is_valid_network("not-a-net")
+
+    def test_is_valid_ipv4_network_strict(self):
+        assert _is_valid_ipv4_network("10.0.0.0/8")
+        assert not _is_valid_ipv4_network("2001:db8::/32")
+
+    def test_is_valid_ipv6_network_strict(self):
+        assert _is_valid_ipv6_network("2001:db8::/32")
+        assert _is_valid_ipv6_network("::/0")
+        assert not _is_valid_ipv6_network("10.0.0.0/8")
+
+    def test_sanitize_ips_accepts_ipv6(self):
+        """После фикса IPv6 VPN server IP больше не выкидывается."""
+        result = _sanitize_ips(["1.2.3.4", "2001:db8::1", "bad"])
+        assert result == ["1.2.3.4", "2001:db8::1"]
+
+    def test_sanitize_networks_accepts_ipv6(self):
+        result = _sanitize_networks(["10.0.0.0/8", "2001:db8::/32", "bad"])
+        assert result == ["10.0.0.0/8", "2001:db8::/32"]
+
+    def test_split_by_family(self):
+        v4, v6 = _split_by_family(["1.2.3.4", "2001:db8::1", "5.6.7.8", "::1"])
+        assert v4 == ["1.2.3.4", "5.6.7.8"]
+        assert v6 == ["2001:db8::1", "::1"]
+
+    def test_split_by_family_empty(self):
+        v4, v6 = _split_by_family([])
+        assert v4 == [] and v6 == []
+
+    def test_split_networks_by_family(self):
+        v4, v6 = _split_networks_by_family(
+            ["10.0.0.0/8", "2001:db8::/32", "192.168.0.0/16", "fe80::/10"]
+        )
+        assert v4 == ["10.0.0.0/8", "192.168.0.0/16"]
+        assert v6 == ["2001:db8::/32", "fe80::/10"]
 
 
 # =========================================================================

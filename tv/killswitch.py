@@ -22,7 +22,16 @@ from tv.net import _run
 
 
 def _is_valid_ip(s: str) -> bool:
-    """Validate IPv4 address (no CIDR)."""
+    """Validate IP address (IPv4 или IPv6, без CIDR)."""
+    try:
+        ipaddress.ip_address(s)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_valid_ipv4(s: str) -> bool:
+    """Validate IPv4 address (строго IPv4, без CIDR)."""
     try:
         ipaddress.IPv4Address(s)
         return True
@@ -30,10 +39,37 @@ def _is_valid_ip(s: str) -> bool:
         return False
 
 
+def _is_valid_ipv6(s: str) -> bool:
+    """Validate IPv6 address (строго IPv6, без CIDR)."""
+    try:
+        ipaddress.IPv6Address(s)
+        return True
+    except ValueError:
+        return False
+
+
 def _is_valid_network(s: str) -> bool:
-    """Validate IPv4 network in CIDR notation."""
+    """Validate network in CIDR notation (IPv4 или IPv6)."""
+    try:
+        ipaddress.ip_network(s, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_valid_ipv4_network(s: str) -> bool:
+    """Validate IPv4 network in CIDR notation (строго IPv4)."""
     try:
         ipaddress.IPv4Network(s, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_valid_ipv6_network(s: str) -> bool:
+    """Validate IPv6 network in CIDR notation (строго IPv6)."""
+    try:
+        ipaddress.IPv6Network(s, strict=False)
         return True
     except ValueError:
         return False
@@ -75,6 +111,30 @@ def _sanitize_ifaces(ifaces: list[str], log_fn=None) -> list[str]:
         elif log_fn:
             log_fn("WARN", f"rejected invalid interface: {i!r}")
     return result
+
+
+def _split_by_family(ips: list[str]) -> tuple[list[str], list[str]]:
+    """Разделить список IP на (ipv4, ipv6). Игнорирует уже невалидные."""
+    v4: list[str] = []
+    v6: list[str] = []
+    for ip in ips:
+        if _is_valid_ipv4(ip):
+            v4.append(ip)
+        elif _is_valid_ipv6(ip):
+            v6.append(ip)
+    return v4, v6
+
+
+def _split_networks_by_family(nets: list[str]) -> tuple[list[str], list[str]]:
+    """Разделить список CIDR на (ipv4, ipv6). Игнорирует невалидные."""
+    v4: list[str] = []
+    v6: list[str] = []
+    for n in nets:
+        if _is_valid_ipv4_network(n):
+            v4.append(n)
+        elif _is_valid_ipv6_network(n):
+            v6.append(n)
+    return v4, v6
 
 
 # ---------------------------------------------------------------------------
