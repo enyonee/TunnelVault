@@ -497,7 +497,8 @@ class TestLinuxKillSwitch:
         ks._active = True
         ks.disable()
         ip6_x = [
-            c for c in mock_run.call_args_list
+            c
+            for c in mock_run.call_args_list
             if c.args[0][:2] == ["sudo", "ip6tables"] and "-X" in c.args[0]
         ]
         assert len(ip6_x) == 2
