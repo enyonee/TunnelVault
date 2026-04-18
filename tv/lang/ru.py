@@ -115,6 +115,8 @@ STRINGS: dict[str, str] = {
     "engine.no_available_tunnels": "Нет доступных туннелей - все необходимые VPN-пакеты отсутствуют",
     "engine.kill_switch_enabled": "Kill switch включен (non-VPN трафик заблокирован)",
     "engine.kill_switch_failed": "Kill switch не удалось включить",
+    "engine.ipv6_warning": "IPv6 opt-in включен (экспериментально). IPv6 трафик НЕ идёт через VPN - ваш реальный IPv6 адрес виден внешним сайтам. Полная поддержка IPv6 в работе (issue #5).",
+    "engine.ipv6_fortivpn_force": "Обнаружен FortiVPN, IPv6 принудительно отключен (openfortivpn не поддерживает IPv6 routes). Уберите fortivpn туннель или поставьте ipv6=false.",
     # --- disconnect.py ---
     "disc.deleting_routes": "Удаляю маршруты...",
     "disc.deleting_bypass": "Удаляю bypass-маршруты...",
