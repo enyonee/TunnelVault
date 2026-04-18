@@ -461,8 +461,13 @@ class TestLinuxKillSwitch:
         ]
         assert len(lo_calls) >= 1
 
+    @patch("tv.killswitch.shutil.which", return_value=None)
     @patch("tv.killswitch._run")
-    def test_disable_removes_chain(self, mock_run):
+    def test_disable_removes_chain(self, mock_run, mock_which):
+        """Без ip6tables (which=None): только IPv4 chain cleanup.
+
+        С ip6tables (реальная Linux) также чистится ip6tables - это покрыто
+        test_disable_also_cleans_ip6tables_if_available."""
         mock_run.return_value = MagicMock(returncode=0, stderr="")
         ks = LinuxKillSwitch()
         ks._active = True
@@ -472,14 +477,30 @@ class TestLinuxKillSwitch:
         assert ok
         assert not ks.active
 
-        # Verify both chains deleted
+        # Только IPv4 iptables -X вызовы (ip6tables skipped т.к. which=None)
         delete_calls = [
             c
             for c in mock_run.call_args_list
-            if "-X" in c.args[0]
+            if c.args[0][:2] == ["sudo", "iptables"]
+            and "-X" in c.args[0]
             and (_IPTABLES_CHAIN in c.args[0] or _IPTABLES_CHAIN_IN in c.args[0])
         ]
         assert len(delete_calls) == 2
+
+    @patch("tv.killswitch.shutil.which", return_value="/usr/sbin/ip6tables")
+    @patch("tv.killswitch._run")
+    def test_disable_also_cleans_ip6tables_if_available(self, mock_run, mock_which):
+        """disable() всегда чистит ip6tables если утилита доступна - избегаем
+        dangling rules если раньше был enable(ipv6_enabled=True)."""
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        ks = LinuxKillSwitch()
+        ks._active = True
+        ks.disable()
+        ip6_x = [
+            c for c in mock_run.call_args_list
+            if c.args[0][:2] == ["sudo", "ip6tables"] and "-X" in c.args[0]
+        ]
+        assert len(ip6_x) == 2
 
     @patch("tv.killswitch.shutil.which", return_value="/usr/sbin/ip6tables")
     @patch("tv.killswitch._run")
