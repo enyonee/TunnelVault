@@ -414,6 +414,92 @@ class TestSetup:
 
 
 # =========================================================================
+# IPv6 opt-in (GH-5 PR#1 Foundation)
+# =========================================================================
+
+
+class TestIPv6OptIn:
+    """Regression + new flows для ipv6 opt-in флага в [global].
+
+    Инвариант: restore_ipv6 вызывается только если disable_ipv6 был вызван.
+    """
+
+    def test_ipv6_disabled_by_default_calls_disable(self, engine, _skip_setup_io):
+        """Default (ipv6 не указан): disable_ipv6 вызывается, restore парный.
+
+        Backward compat: все существующие пользователи без ipv6 в конфиге.
+        """
+        engine.tunnels = []
+        engine.setup()
+        engine.disconnect_all()
+
+        engine.net.disable_ipv6.assert_called_once()
+        engine.net.restore_ipv6.assert_called_once()
+        assert engine._ipv6_was_disabled is True
+
+    def test_ipv6_optin_skips_disable_and_restore(self, engine, _skip_setup_io, capsys):
+        """ipv6=true + нет fortivpn: disable/restore НЕ вызываются, warning показан."""
+        engine.defs = {"global": {"ipv6": True}}
+        engine.tunnels = []
+        engine.setup()
+        engine.disconnect_all()
+
+        engine.net.disable_ipv6.assert_not_called()
+        engine.net.restore_ipv6.assert_not_called()
+        assert engine._ipv6_was_disabled is False
+        # Warning через ui.warn -> stdout
+        out = capsys.readouterr().out
+        assert "NOT routed through VPN" in out
+
+    def test_ipv6_optin_with_fortivpn_soft_warn(self, engine, _skip_setup_io, capsys):
+        """ipv6=true + fortivpn: warning + disable_ipv6 всё равно вызывается (force)."""
+        engine.defs = {"global": {"ipv6": True}}
+        engine.tunnels = [TunnelConfig(name="forti", type="fortivpn")]
+        engine.setup()
+
+        # FortiVPN force: disable вызван несмотря на opt-in
+        engine.net.disable_ipv6.assert_called_once()
+        assert engine._ipv6_was_disabled is True
+        # Warning про fortivpn force
+        out = capsys.readouterr().out
+        assert "FortiVPN" in out
+        assert "IPv6 forced disabled" in out
+
+    def test_ipv6_warning_shown_in_quiet_mode(self, engine, _skip_setup_io, capsys):
+        """ipv6=true: warning виден даже в quiet (security-critical сообщение)."""
+        engine.defs = {"global": {"ipv6": True}}
+        engine.tunnels = []
+        engine.setup(quiet=True)
+
+        out = capsys.readouterr().out
+        assert "NOT routed through VPN" in out
+
+    def test_disconnect_all_without_setup_restores_ipv6_default(self, engine):
+        """Edge case: disconnect_all без setup (default state) - restore вызывается.
+
+        Backward compat: emergency path без setup сохраняет старое поведение
+        при отсутствии opt-in в defs.
+        """
+        engine.plugins = []
+        engine.tunnels = []
+        engine.disconnect_all()
+
+        engine.net.restore_ipv6.assert_called_once()
+
+    def test_disconnect_all_without_setup_skips_restore_if_optin(self, engine):
+        """Edge case: disconnect_all без setup + ipv6=true - restore НЕ вызывается.
+
+        Защита от macOS networksetup -setv6automatic при кастомных IPv6 настройках.
+        """
+        engine.defs = {"global": {"ipv6": True}}
+        engine.plugins = []
+        engine.tunnels = []
+        engine.disconnect_all()
+
+        engine.net.restore_ipv6.assert_not_called()
+
+
+# =========================================================================
 # Connect all
 # =========================================================================
 
