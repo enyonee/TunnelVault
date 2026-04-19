@@ -372,3 +372,83 @@ class TestResolveHostFallbacks:
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name not found")):
             ips = win_net.resolve_host("nonexistent.test")
         assert ips == []
+
+
+# =========================================================================
+# WindowsNet IPv6 primitives (PR#2)
+# =========================================================================
+
+
+class TestWindowsIPv6:
+    """Windows IPv6 routes: 'netsh interface ipv6 add route <cidr> nexthop=<gw>'."""
+
+    @patch("subprocess.run")
+    def test_add_host_route6(self, mock_run, win_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = win_net.add_host_route6("2001:db8::1", "fe80::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args[:5] == ["netsh", "interface", "ipv6", "add", "route"]
+        assert "2001:db8::1/128" in args
+        assert "nexthop=fe80::1" in args
+
+    @patch("subprocess.run")
+    def test_add_net_route6(self, mock_run, win_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = win_net.add_net_route6("2001:db8::/32", "fe80::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert "2001:db8::/32" in args
+        assert "nexthop=fe80::1" in args
+
+    @patch("subprocess.run")
+    def test_add_net_route6_invalid_no_slash(self, mock_run, win_net):
+        """network без CIDR - False, нет subprocess call."""
+        ok = win_net.add_net_route6("2001:db8::1", "fe80::1")
+        assert ok is False
+        mock_run.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_add_iface_route6(self, mock_run, win_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = win_net.add_iface_route6("2001:db8::/32", "VPN Adapter", host=False)
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args[:5] == ["netsh", "interface", "ipv6", "add", "route"]
+        assert "2001:db8::/32" in args
+        assert "interface=VPN Adapter" in args
+
+    @patch("subprocess.run")
+    def test_delete_host_route6(self, mock_run, win_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = win_net.delete_host_route6("2001:db8::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args[:5] == ["netsh", "interface", "ipv6", "delete", "route"]
+        assert "2001:db8::1/128" in args
+
+    @patch("subprocess.run")
+    def test_delete_net_route6(self, mock_run, win_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        win_net.delete_net_route6("2001:db8::/32")
+        args = mock_run.call_args[0][0]
+        assert "2001:db8::/32" in args
+
+    @patch("subprocess.run")
+    def test_set_dns6_nrpt(self, mock_run, win_net):
+        """NRPT принимает IPv6 nameserver (без скобок)."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        results = win_net.set_dns6(["test.local"], ["2001:db8::1"])
+        assert results["test.local"] is True
+        ps_call = mock_run.call_args_list[0]
+        ps_cmd = ps_call[0][0][2]  # powershell -Command <cmd>
+        assert "Add-DnsClientNrptRule" in ps_cmd
+        assert "'2001:db8::1'" in ps_cmd
+        assert ".test.local" in ps_cmd
+
+    @patch("subprocess.run")
+    def test_set_dns6_empty_nameservers_noop(self, mock_run, win_net):
+        """Защита M7: пустой nameservers - no-op."""
+        results = win_net.set_dns6(["test.local"], [])
+        assert results == {"test.local": False}
+        mock_run.assert_not_called()

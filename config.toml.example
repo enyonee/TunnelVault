@@ -27,6 +27,9 @@
 [global.vpn_server_routes]
 hosts = ["203.0.113.10", "203.0.113.20"]
 resolve = ["vpn.example.com"]
+# IPv6 support experimental, требует [global] ipv6 = true.
+# IPv6 адреса можно указывать вместе с IPv4 (разделяются автоматически):
+# hosts = ["203.0.113.10", "2001:db8::1"]
 
 # Bypass - домены/хосты, которые должны идти мимо VPN (через default GW).
 # domain_suffix инжектится в sing-box route rules как outbound "direct",
@@ -34,6 +37,9 @@ resolve = ["vpn.example.com"]
 # [global.bypass]
 # domain_suffix = [".ru", ".su", ".xn--p1ai"]
 # upstream_dns = "77.88.8.8"
+# IPv6 примеры (experimental, требует ipv6 = true):
+# networks = ["2001:db8::/32", "fe80::/10"]
+# hosts = ["2001:db8::1"]
 
 # === Туннели ===
 
@@ -126,6 +132,9 @@ log = "/tmp/sing-box.log"
 [tunnels.singbox.routes]
 hosts = ["203.0.113.30"]
 networks = ["172.18.0.0/16"]
+# IPv6 (experimental - требует [global] ipv6 = true):
+# networks = ["172.18.0.0/16", "2001:db8:1::/48"]
+# hosts = ["203.0.113.30", "2001:db8::dead:beef"]
 
 [tunnels.singbox.checks]
 ports = [{ host = "203.0.113.30", port = 443 }]

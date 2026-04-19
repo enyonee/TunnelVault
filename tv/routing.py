@@ -17,6 +17,11 @@ _IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 _CIDR_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
 _WILDCARD_RE = re.compile(r"^\*\.(.+)$")
 
+# IPv6: hex digits + ':' (минимум один ':', иначе hostname).
+# Покрывает full/compressed/scoped формы. Валидируем через ipaddress.IPv6Address.
+_IPv6_RE = re.compile(r"^[0-9a-fA-F:]+$")
+_IPv6_CIDR_RE = re.compile(r"^[0-9a-fA-F:]+/\d{1,3}$")
+
 
 @dataclass
 class ParsedTargets:
@@ -53,6 +58,23 @@ def validate_target(target: str) -> tuple[str, str]:
     if _IP_RE.match(target):
         try:
             ipaddress.ip_address(target)
+        except ValueError:
+            return "", t("routing.invalid_ip", target=target)
+        return "host", ""
+
+    # IPv6 ветки ДО hostname fallback (иначе '2001:db8::1' с двоеточиями
+    # валится в hostname - гарантированно invalid по regex, но '::1' прошёл бы
+    # raw fallback если раньше существовал).
+    if _IPv6_CIDR_RE.match(target):
+        try:
+            ipaddress.IPv6Network(target, strict=False)
+        except ValueError:
+            return "", t("routing.invalid_cidr", target=target)
+        return "network", ""
+
+    if _IPv6_RE.match(target) and ":" in target:
+        try:
+            ipaddress.IPv6Address(target)
         except ValueError:
             return "", t("routing.invalid_ip", target=target)
         return "host", ""
@@ -101,6 +123,25 @@ def parse_targets(targets: list[str]) -> ParsedTargets:
         if _IP_RE.match(entry):
             try:
                 ipaddress.ip_address(entry)
+            except ValueError:
+                continue
+            hosts.append(entry)
+            continue
+
+        # IPv6 ветки ДО fallback (H4): '2001:db8::1' содержит ':' не попадает
+        # под hostname regex, но без этих веток попал бы в hosts как raw string,
+        # а engine пытался бы resolve его через getaddrinfo.
+        if _IPv6_CIDR_RE.match(entry):
+            try:
+                ipaddress.IPv6Network(entry, strict=False)
+            except ValueError:
+                continue
+            networks.append(entry)
+            continue
+
+        if _IPv6_RE.match(entry) and ":" in entry:
+            try:
+                ipaddress.IPv6Address(entry)
             except ValueError:
                 continue
             hosts.append(entry)

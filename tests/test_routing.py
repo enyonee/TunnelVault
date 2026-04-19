@@ -73,6 +73,102 @@ class TestParseTargets:
 
 
 # =========================================================================
+# IPv6 parsing (PR#2)
+# =========================================================================
+
+
+class TestParseTargetsIPv6:
+    """IPv6 CIDR/addresses парсятся в networks/hosts.
+
+    КРИТИЧНО: существующие IPv4 тесты не должны сломаться - IPv6 regex
+    добавлены ПЕРЕД hostname fallback, но ПОСЛЕ IPv4 regex (H4).
+    """
+
+    @pytest.mark.parametrize(
+        "inputs,domains,networks,hosts",
+        [
+            # CIDR IPv6
+            (["2001:db8::/32"], [], ["2001:db8::/32"], []),
+            (["fe80::/10"], [], ["fe80::/10"], []),
+            (["::/0"], [], ["::/0"], []),
+            # Адреса IPv6
+            (["2001:db8::1"], [], [], ["2001:db8::1"]),
+            (["fe80::1"], [], [], ["fe80::1"]),
+            (["::1"], [], [], ["::1"]),
+            # Full form
+            (
+                ["2001:0db8:85a3:0000:0000:8a2e:0370:7334"],
+                [],
+                [],
+                ["2001:0db8:85a3:0000:0000:8a2e:0370:7334"],
+            ),
+            # Невалидный IPv6 prefix - попадает в hostname fallback (existing flow)
+            (["2001:db8::gggg"], [], [], ["2001:db8::gggg"]),
+            # Невалидный IPv6 CIDR (prefix > 128) - отвергается, пустой результат
+            (["2001:db8::/130"], [], [], []),
+            # Mixed IPv4 + IPv6
+            (
+                ["10.0.0.0/8", "2001:db8::/32", "192.168.1.1", "fe80::1"],
+                [],
+                ["10.0.0.0/8", "2001:db8::/32"],
+                ["192.168.1.1", "fe80::1"],
+            ),
+        ],
+    )
+    def test_parse_ipv6(self, inputs, domains, networks, hosts):
+        result = parse_targets(inputs)
+        assert result.domains == domains
+        assert result.networks == networks
+        assert result.hosts == hosts
+
+    def test_ipv4_pattern_preserved(self):
+        """Backward compat: '10.0.0.0/8' идентично pre-PR (IPv4 ветка срабатывает первой)."""
+        result = parse_targets(["10.0.0.0/8"])
+        assert result.networks == ["10.0.0.0/8"]
+        assert result.hosts == []
+        assert result.domains == []
+
+    def test_hostname_with_colon_in_middle_rejected(self):
+        """'host:port' не IPv6 (есть нехекс символы) - попадает в hostname.
+
+        Regex IPv6_RE требует только [0-9a-fA-F:], поэтому 'server:port' не match.
+        Но ':' в такой строке есть - hostname regex тоже не match - попадёт в hosts
+        как bare entry (существующее поведение)."""
+        result = parse_targets(["server:8080"])
+        # 'server:8080' - не IPv4, не IPv6 (есть 's', 'r', 'v', не hex).
+        # Проходит как hostname fallback (bare string - engine попробует resolve).
+        assert "server:8080" in result.hosts
+
+    def test_ipv6_before_hostname_fallback(self):
+        """'2001:db8::1' должен попасть в hosts как IPv6, а НЕ bare hostname."""
+        result = parse_targets(["2001:db8::1"])
+        assert result.hosts == ["2001:db8::1"]
+        assert result.networks == []
+
+
+class TestValidateTargetIPv6:
+    @pytest.mark.parametrize(
+        "target,expected_kind,err_contains",
+        [
+            ("2001:db8::/32", "network", ""),
+            ("2001:db8::1", "host", ""),
+            ("fe80::1", "host", ""),
+            ("::1", "host", ""),
+            ("::/0", "network", ""),
+            ("2001:db8::/130", "", "invalid CIDR"),
+            ("2001:db8::gggg", "", "unrecognized"),
+        ],
+    )
+    def test_validate_ipv6(self, target, expected_kind, err_contains):
+        kind, err = validate_target(target)
+        assert kind == expected_kind
+        if err_contains:
+            assert err_contains in err
+        else:
+            assert err == ""
+
+
+# =========================================================================
 # validate_target
 # =========================================================================
 
