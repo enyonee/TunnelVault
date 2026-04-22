@@ -562,9 +562,23 @@ class Engine:
         if not quiet:
             ui.info(f"🔌 {t('engine.host_routes', gw=gw)}")
 
+        cache_path = config.resolve_log_dir(self.script_dir) / "resolved-route-cache.json"
+
+        # Читаем кеш — DNS может быть недоступен если уже запущен другой туннель
+        cached: dict[str, list[str]] = {}
+        try:
+            cached = json.loads(cache_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            pass
+
         resolved_ips: dict[str, list[str]] = {}
         for hostname in resolve_hosts:
-            ips = self.net.resolve_host(hostname)
+            if hostname in cached:
+                ips = cached[hostname]
+                self.log.log("INFO", f"resolve {hostname} -> {ips} (cached)")
+            else:
+                ips = self.net.resolve_host(hostname)
+                self.log.log("INFO", f"resolve {hostname} -> {ips}")
             resolved_ips[hostname] = ips
             for ip in ips:
                 ok = self.net.add_host_route(ip, gw)
@@ -573,11 +587,11 @@ class Engine:
                     f"route add {ip} ({hostname}) -> {gw} {'OK' if ok else 'FAIL'}",
                 )
 
-        # Кешируем resolved IPs чтобы disconnect не делал DNS-запросы
-        if resolved_ips:
-            cache_path = config.resolve_log_dir(self.script_dir) / "resolved-route-cache.json"
+        # Обновляем кеш только если был свежий resolve
+        new_resolved = {h: ips for h, ips in resolved_ips.items() if h not in cached and ips}
+        if new_resolved:
             try:
-                cache_path.write_text(json.dumps(resolved_ips))
+                cache_path.write_text(json.dumps({**cached, **new_resolved}))
             except OSError:
                 pass
 
