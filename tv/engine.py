@@ -577,8 +577,8 @@ class Engine:
                 ips = cached[hostname]
                 self.log.log("INFO", f"resolve {hostname} -> {ips} (cached)")
             else:
-                ips = self.net.resolve_host(hostname)
-                self.log.log("INFO", f"resolve {hostname} -> {ips}")
+                ips = self.net.resolve_host(hostname, timeout=3)
+                self.log.log("INFO" if ips else "WARN", f"resolve {hostname} -> {ips or 'failed'}")
             resolved_ips[hostname] = ips
             for ip in ips:
                 ok = self.net.add_host_route(ip, gw)

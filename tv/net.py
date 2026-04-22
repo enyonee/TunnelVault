@@ -119,10 +119,12 @@ class NetManager(ABC):
         """Remove system-wide proxy settings. Default no-op (Linux)."""
         return True
 
-    def resolve_host(self, hostname: str) -> list[str]:
+    def resolve_host(self, hostname: str, timeout: int | None = None) -> list[str]:
         """Resolve hostname to IPs (dig -> host -> getent fallback)."""
+        t = timeout if timeout is not None else cfg.timeouts.net_command
+
         if shutil.which("dig"):
-            r = _run(["dig", "+short", hostname])
+            r = _run(["dig", "+short", f"+time={t}", f"+tries=1", hostname], timeout=t + 1)
             if r.returncode == 0 and r.stdout.strip():
                 ips = []
                 for line in r.stdout.strip().splitlines():
@@ -133,7 +135,7 @@ class NetManager(ABC):
                     return ips
 
         if shutil.which("host"):
-            r = _run(["host", hostname])
+            r = _run(["host", "-W", str(t), hostname], timeout=t + 1)
             if r.returncode == 0:
                 ips = []
                 for line in r.stdout.splitlines():
@@ -143,7 +145,7 @@ class NetManager(ABC):
                     return ips
 
         if shutil.which("getent"):
-            r = _run(["getent", "ahosts", hostname])
+            r = _run(["getent", "ahosts", hostname], timeout=t)
             if r.returncode == 0:
                 for line in r.stdout.splitlines():
                     if "STREAM" in line:
@@ -151,7 +153,7 @@ class NetManager(ABC):
 
         # nslookup fallback (available on Windows)
         if shutil.which("nslookup"):
-            r = _run(["nslookup", hostname])
+            r = _run(["nslookup", hostname], timeout=t)
             if r.returncode == 0:
                 ips = []
                 in_answer = False

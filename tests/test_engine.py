@@ -390,7 +390,7 @@ class TestSetup:
         # Static host route (10.20.30.40 from defs)
         engine.net.add_host_route.assert_any_call("10.20.30.40", "192.168.1.1")
         # Resolved host route (1.2.3.4 from mock_net.resolve_host)
-        engine.net.resolve_host.assert_called_with("vpn.test.com")
+        engine.net.resolve_host.assert_called_with("vpn.test.com", timeout=3)
         engine.net.add_host_route.assert_any_call("1.2.3.4", "192.168.1.1")
 
     def test_prepares_log_files(self, engine, tmp_dir, _skip_setup_io):
