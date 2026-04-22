@@ -168,19 +168,31 @@ class NetManager(ABC):
                     return ips
 
         # socket.getaddrinfo ultimate fallback (pure Python, all platforms)
-        try:
-            infos = socket.getaddrinfo(hostname, None, socket.AF_INET)
+        # Wrapped in a thread because getaddrinfo ignores socket.setdefaulttimeout on macOS
+        import threading
+
+        _infos: list = []
+        _exc: list = []
+
+        def _resolve() -> None:
+            try:
+                _infos.extend(socket.getaddrinfo(hostname, None, socket.AF_INET))
+            except socket.gaierror as e:
+                _exc.append(e)
+
+        _t = threading.Thread(target=_resolve, daemon=True)
+        _t.start()
+        _t.join(timeout=t)
+        if not _exc and _infos:
             seen: set[str] = set()
             ips = []
-            for info in infos:
+            for info in _infos:
                 addr = info[4][0]
                 if addr not in seen:
                     seen.add(addr)
                     ips.append(addr)
             if ips:
                 return ips
-        except socket.gaierror:
-            pass
 
         return []
 
