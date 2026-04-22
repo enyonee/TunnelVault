@@ -524,6 +524,7 @@ class Engine:
                 self.log,
                 self.defs,
                 skip_dns_suffix=True,
+                script_dir=self.script_dir,
             )
             self.net.restore_ipv6()
 
@@ -561,13 +562,24 @@ class Engine:
         if not quiet:
             ui.info(f"🔌 {t('engine.host_routes', gw=gw)}")
 
+        resolved_ips: dict[str, list[str]] = {}
         for hostname in resolve_hosts:
-            for ip in self.net.resolve_host(hostname):
+            ips = self.net.resolve_host(hostname)
+            resolved_ips[hostname] = ips
+            for ip in ips:
                 ok = self.net.add_host_route(ip, gw)
                 self.log.log(
                     "INFO" if ok else "WARN",
                     f"route add {ip} ({hostname}) -> {gw} {'OK' if ok else 'FAIL'}",
                 )
+
+        # Кешируем resolved IPs чтобы disconnect не делал DNS-запросы
+        if resolved_ips:
+            cache_path = config.resolve_log_dir(self.script_dir) / "resolved-route-cache.json"
+            try:
+                cache_path.write_text(json.dumps(resolved_ips))
+            except OSError:
+                pass
 
         for static_ip in static_hosts:
             ok = self.net.add_host_route(static_ip, gw)

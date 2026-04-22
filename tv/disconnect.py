@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import json
 import os
 import sys
 from pathlib import Path
@@ -50,6 +51,7 @@ def cleanup_global_routes(
     defs: dict,
     *,
     skip_dns_suffix: bool = False,
+    script_dir: Optional[Path] = None,
 ) -> None:
     """Delete global VPN server routes, bypass routes, and DNS resolver files.
 
@@ -66,14 +68,18 @@ def cleanup_global_routes(
         print(f"🧹 {t('disc.deleting_routes')}")
         for ip in static_hosts:
             _safe(lambda ip=ip: net.delete_host_route(ip), f"del route {ip}", log)
+        # Читаем кеш resolved IPs — DNS при disconnect не нужен
+        resolved_cache: dict[str, list[str]] = {}
+        if script_dir is not None:
+            from tv.app_config import cfg as _cfg
+            cache_path = script_dir / _cfg.paths.log_dir / "resolved-route-cache.json"
+            try:
+                resolved_cache = json.loads(cache_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                pass
         for hostname in resolve_hosts:
-            _safe(
-                lambda h=hostname: [
-                    net.delete_host_route(ip) for ip in net.resolve_host(h)
-                ],
-                f"del resolved {hostname}",
-                log,
-            )
+            for ip in resolved_cache.get(hostname, []):
+                _safe(lambda ip=ip: net.delete_host_route(ip), f"del resolved {hostname} ({ip})", log)
 
     # Cleanup bypass routes
     bypass_cfg = get_bypass_routes(defs)
@@ -137,6 +143,7 @@ def _cleanup_routes_and_ipv6(
     net: NetManager,
     log: Optional[Logger],
     defs: dict,
+    script_dir: Optional[Path] = None,
 ) -> None:
     """Shared cleanup: global routes + kill switch + IPv6 restore."""
     # Disable kill switch before restoring routes
@@ -145,7 +152,7 @@ def _cleanup_routes_and_ipv6(
     ks = create_killswitch(log)
     _safe(lambda: ks.disable(), "disable kill switch", log)
 
-    cleanup_global_routes(net, log, defs)
+    cleanup_global_routes(net, log, defs, script_dir=script_dir)
 
     print(f"🌐 {t('disc.restore_ipv6')}")
     _safe(lambda: net.restore_ipv6(), "restore IPv6", log)
@@ -205,7 +212,7 @@ def run(
     # Always clean up system proxy (leaked proxy = all HTTP broken)
     _safe(lambda: net.cleanup_system_proxy(), "cleanup system proxy", log)
 
-    _cleanup_routes_and_ipv6(net, log, defs)
+    _cleanup_routes_and_ipv6(net, log, defs, script_dir=script_dir)
 
 
 def _discover_pid(tcfg, plugin_cls, script_dir) -> Optional[int]:
@@ -251,7 +258,7 @@ def run_plugins(
     # Clean up system proxy (safety net for crash/partial disconnect)
     _safe(lambda: net.cleanup_system_proxy(), "cleanup system proxy", log)
 
-    _cleanup_routes_and_ipv6(net, log, defs)
+    _cleanup_routes_and_ipv6(net, log, defs, script_dir=script_dir)
 
 
 class _NullLogger:

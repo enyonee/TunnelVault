@@ -84,17 +84,31 @@ class TestDisconnect:
         deleted_hosts = [c[0][0] for c in mock_net.delete_host_route.call_args_list]
         assert "203.0.113.10" in deleted_hosts
 
-    def test_resolves_and_removes_routes(self, mock_net, logger, v3_defs):
-        """Resolves VPN hostnames and removes routes."""
-        mock_net.resolve_host.return_value = ["5.6.7.8", "9.10.11.12"]
+    def test_resolves_and_removes_routes(self, mock_net, logger, v3_defs, tmp_path):
+        """Читает resolved IPs из кеша при disconnect — DNS не вызывается."""
+        import json
+        from tv.app_config import cfg as _cfg
+        cache_dir = tmp_path / _cfg.paths.log_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / "resolved-route-cache.json"
+        cache_file.write_text(json.dumps({"vpn.test.local": ["5.6.7.8", "9.10.11.12"]}))
 
         with patch("tv.disconnect.proc"):
-            run(net=mock_net, log=logger, defs=v3_defs)
+            run(net=mock_net, log=logger, defs=v3_defs, script_dir=tmp_path)
 
-        mock_net.resolve_host.assert_called_with("vpn.test.local")
+        mock_net.resolve_host.assert_not_called()
         deleted_hosts = [c[0][0] for c in mock_net.delete_host_route.call_args_list]
         assert "5.6.7.8" in deleted_hosts
         assert "9.10.11.12" in deleted_hosts
+
+    def test_resolves_skipped_without_cache(self, mock_net, logger, v3_defs, tmp_path):
+        """Без кеша resolved-маршруты не удаляются — DNS не вызывается."""
+        with patch("tv.disconnect.proc"):
+            run(net=mock_net, log=logger, defs=v3_defs, script_dir=tmp_path)
+
+        mock_net.resolve_host.assert_not_called()
+        deleted_hosts = [c[0][0] for c in mock_net.delete_host_route.call_args_list]
+        assert "5.6.7.8" not in deleted_hosts
 
     def test_global_format_routes(self, mock_net, logger, global_defs):
         """Routes from global.vpn_server_routes format."""
