@@ -120,79 +120,89 @@ class NetManager(ABC):
         return True
 
     def resolve_host(self, hostname: str, timeout: int | None = None) -> list[str]:
-        """Resolve hostname to IPs (dig -> host -> getent fallback)."""
-        t = timeout if timeout is not None else cfg.timeouts.net_command
+        """Resolve hostname to IPs (dig -> host -> getent -> nslookup -> socket fallback).
 
-        if shutil.which("dig"):
-            r = _run(["dig", "+short", f"+time={t}", f"+tries=1", hostname], timeout=t + 1)
-            if r.returncode == 0 and r.stdout.strip():
-                ips = []
-                for line in r.stdout.strip().splitlines():
-                    line = line.strip()
-                    if re.match(r"\d+\.\d+\.\d+\.\d+$", line):
-                        ips.append(line)
-                if ips:
-                    return ips
-
-        if shutil.which("host"):
-            r = _run(["host", "-W", str(t), hostname], timeout=t + 1)
-            if r.returncode == 0:
-                ips = []
-                for line in r.stdout.splitlines():
-                    if "has address" in line:
-                        ips.append(line.split()[-1])
-                if ips:
-                    return ips
-
-        if shutil.which("getent"):
-            r = _run(["getent", "ahosts", hostname], timeout=t)
-            if r.returncode == 0:
-                for line in r.stdout.splitlines():
-                    if "STREAM" in line:
-                        return [line.split()[0]]
-
-        # nslookup fallback (available on Windows)
-        if shutil.which("nslookup"):
-            r = _run(["nslookup", hostname], timeout=t)
-            if r.returncode == 0:
-                ips = []
-                in_answer = False
-                for line in r.stdout.splitlines():
-                    if "Name:" in line:
-                        in_answer = True
-                    elif in_answer and "Address:" in line:
-                        addr = line.split("Address:")[-1].strip()
-                        if re.match(r"\d+\.\d+\.\d+\.\d+$", addr):
-                            ips.append(addr)
-                if ips:
-                    return ips
-
-        # socket.getaddrinfo ultimate fallback (pure Python, all platforms)
-        # Wrapped in a thread because getaddrinfo ignores socket.setdefaulttimeout on macOS
+        Весь fallback-цикл выполняется в отдельном потоке с общим таймаутом `t`,
+        чтобы зависание одного инструмента не блокировало весь процесс.
+        """
         import threading
 
-        _infos: list = []
-        _exc: list = []
+        t = timeout if timeout is not None else cfg.timeouts.net_command
+        result: list[list[str]] = []
 
-        def _resolve() -> None:
+        def _do_resolve() -> None:
+            per_tool = max(1, t // 2)
+
+            if shutil.which("dig"):
+                r = _run(
+                    ["dig", "+short", f"+time={per_tool}", "+tries=1", hostname],
+                    timeout=per_tool + 1,
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    ips = [
+                        ln.strip()
+                        for ln in r.stdout.strip().splitlines()
+                        if re.match(r"\d+\.\d+\.\d+\.\d+$", ln.strip())
+                    ]
+                    if ips:
+                        result.append(ips)
+                        return
+
+            if shutil.which("host"):
+                r = _run(["host", "-W", str(per_tool), hostname], timeout=per_tool + 1)
+                if r.returncode == 0:
+                    ips = [
+                        ln.split()[-1]
+                        for ln in r.stdout.splitlines()
+                        if "has address" in ln
+                    ]
+                    if ips:
+                        result.append(ips)
+                        return
+
+            if shutil.which("getent"):
+                r = _run(["getent", "ahosts", hostname], timeout=per_tool)
+                if r.returncode == 0:
+                    for ln in r.stdout.splitlines():
+                        if "STREAM" in ln:
+                            result.append([ln.split()[0]])
+                            return
+
+            if shutil.which("nslookup"):
+                r = _run(["nslookup", hostname], timeout=per_tool)
+                if r.returncode == 0:
+                    ips = []
+                    in_answer = False
+                    for ln in r.stdout.splitlines():
+                        if "Name:" in ln:
+                            in_answer = True
+                        elif in_answer and "Address:" in ln:
+                            addr = ln.split("Address:")[-1].strip()
+                            if re.match(r"\d+\.\d+\.\d+\.\d+$", addr):
+                                ips.append(addr)
+                    if ips:
+                        result.append(ips)
+                        return
+
+            # socket.getaddrinfo - last resort, no configurable timeout on macOS
             try:
-                _infos.extend(socket.getaddrinfo(hostname, None, socket.AF_INET))
-            except socket.gaierror as e:
-                _exc.append(e)
+                infos = socket.getaddrinfo(hostname, None, socket.AF_INET)
+                seen: set[str] = set()
+                ips = []
+                for info in infos:
+                    addr = info[4][0]
+                    if addr not in seen:
+                        seen.add(addr)
+                        ips.append(addr)
+                if ips:
+                    result.append(ips)
+            except socket.gaierror:
+                pass
 
-        _t = threading.Thread(target=_resolve, daemon=True)
-        _t.start()
-        _t.join(timeout=t)
-        if not _exc and _infos:
-            seen: set[str] = set()
-            ips = []
-            for info in _infos:
-                addr = info[4][0]
-                if addr not in seen:
-                    seen.add(addr)
-                    ips.append(addr)
-            if ips:
-                return ips
+        thread = threading.Thread(target=_do_resolve, daemon=True)
+        thread.start()
+        thread.join(timeout=t)
+        return result[0] if result else []
 
         return []
 
