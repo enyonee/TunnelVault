@@ -222,15 +222,18 @@ class Engine:
             f"IPv6 {'disabled' if ipv6_ok else 'failed to disable'}",
         )
 
+        self.log.log("INFO", "--- Getting default gateway ---")
         gw = self.net.default_gateway()
+        self.log.log("INFO", f"Gateway: {gw}")
+        self.log.log("INFO", "--- VPN server routes ---")
         self._setup_vpn_server_routes(gw, quiet=quiet)
+        self.log.log("INFO", "--- Bypass routes ---")
         self._setup_bypass_routes(gw, quiet=quiet)
+        self.log.log("INFO", "--- DNS proxy ---")
         self._start_dns_proxy(gw, quiet=quiet)
-
-        # Enable kill switch (before connect, after routes are set up)
+        self.log.log("INFO", "--- Kill switch ---")
         self._enable_kill_switch(quiet=quiet)
-
-        # Pre-create log files with correct ownership (readable without sudo)
+        self.log.log("INFO", "--- Prepare log files ---")
         config.prepare_log_files(self.tunnels)
         self.log.log("INFO", "VPN logs prepared")
 
