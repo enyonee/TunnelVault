@@ -13,10 +13,23 @@
 # [global]
 # kill_switch = true
 
+# IPv6 opt-in (EXPERIMENTAL, issue #5).
+# По умолчанию tunnelvault отключает IPv6 чтобы не было утечек (IPv4-only VPN).
+# ipv6 = true отключает этот defense: tunnelvault НЕ трогает IPv6 стек системы.
+# ВНИМАНИЕ: это НЕ маршрутизирует IPv6 через VPN. IPv6 трафик идёт мимо туннеля
+# через default gateway провайдера. Ваш реальный IPv6 адрес виден внешним сайтам.
+# Полноценный IPv6 support (routes/kill switch/DNS) будет в PR#2-4.
+# FortiVPN: флаг игнорируется, IPv6 форсированно отключается (openfortivpn IPv4-only).
+# [global]
+# ipv6 = false
+
 # Host routes к VPN-серверам через default GW (до старта туннелей)
 [global.vpn_server_routes]
 hosts = ["203.0.113.10", "203.0.113.20"]
 resolve = ["vpn.example.com"]
+# IPv6 support experimental, требует [global] ipv6 = true.
+# IPv6 адреса можно указывать вместе с IPv4 (разделяются автоматически):
+# hosts = ["203.0.113.10", "2001:db8::1"]
 
 # Bypass - домены/хосты, которые должны идти мимо VPN (через default GW).
 # domain_suffix инжектится в sing-box route rules как outbound "direct",
@@ -24,6 +37,9 @@ resolve = ["vpn.example.com"]
 # [global.bypass]
 # domain_suffix = [".ru", ".su", ".xn--p1ai"]
 # upstream_dns = "77.88.8.8"
+# IPv6 примеры (experimental, требует ipv6 = true):
+# networks = ["2001:db8::/32", "fe80::/10"]
+# hosts = ["2001:db8::1"]
 
 # === Туннели ===
 
@@ -116,6 +132,9 @@ log = "/tmp/sing-box.log"
 [tunnels.singbox.routes]
 hosts = ["203.0.113.30"]
 networks = ["172.18.0.0/16"]
+# IPv6 (experimental - требует [global] ipv6 = true):
+# networks = ["172.18.0.0/16", "2001:db8:1::/48"]
+# hosts = ["203.0.113.30", "2001:db8::dead:beef"]
 
 [tunnels.singbox.checks]
 ports = [{ host = "203.0.113.30", port = 443 }]

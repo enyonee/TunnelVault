@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import shutil
 import subprocess
 import time
@@ -15,6 +16,25 @@ from tv.app_config import cfg
 from tv.i18n import t
 from tv.logger import Logger
 from tv.net import NetManager
+
+
+def _cidr_version(cidr: str) -> Optional[int]:
+    """Безопасно определить version IP-network. None если невалидно.
+
+    M8 митигация: try/except ValueError - не падаем на плохом конфиге,
+    логирование и skip (то же поведение что add_net_route возвращает False)."""
+    try:
+        return ipaddress.ip_network(cidr, strict=False).version
+    except ValueError:
+        return None
+
+
+def _ip_version(ip: str) -> Optional[int]:
+    """Определить version IP-адреса. None если невалидно."""
+    try:
+        return ipaddress.ip_address(ip).version
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -208,16 +228,30 @@ class TunnelPlugin(ABC):
             self._kill_by_pattern()
 
     def add_routes(self, gateway: Optional[str] = None) -> None:
-        """Add host and network routes from cfg.routes."""
+        """Add host and network routes from cfg.routes.
+
+        Dispatch IPv4/IPv6 через ipaddress.version (H1). Только IPv6 маршруты
+        идут в *_route6 методы. IPv4 И hostname (non-IP) - в обычные методы
+        (backward compat: hostname-routes как git.test.local обрабатываются
+        IPv4-пайплайном, engine resolve их через net.resolve_host)."""
         hosts = self.cfg.routes.get("hosts", [])
         networks = self.cfg.routes.get("networks", [])
         iface = self.cfg.interface
 
         for host in hosts:
+            v = _ip_version(host)
+            # v == 6 -> IPv6, v == 4 или None (hostname) -> обычные IPv4 методы
+            is_v6 = v == 6
             if iface:
-                ok = self.net.add_iface_route(host, iface, host=True)
+                if is_v6:
+                    ok = self.net.add_iface_route6(host, iface, host=True)
+                else:
+                    ok = self.net.add_iface_route(host, iface, host=True)
             elif gateway:
-                ok = self.net.add_host_route(host, gateway)
+                if is_v6:
+                    ok = self.net.add_host_route6(host, gateway)
+                else:
+                    ok = self.net.add_host_route(host, gateway)
             else:
                 continue
             self.log.log(
@@ -226,10 +260,20 @@ class TunnelPlugin(ABC):
             )
 
         for network in networks:
+            v = _cidr_version(network)
+            # v == 6 -> IPv6, v == 4 или None (плохой CIDR) -> IPv4 методы
+            # (как pre-PR: add_net_route молча вернёт False для некорректного).
+            is_v6 = v == 6
             if iface:
-                ok = self.net.add_iface_route(network, iface, host=False)
+                if is_v6:
+                    ok = self.net.add_iface_route6(network, iface, host=False)
+                else:
+                    ok = self.net.add_iface_route(network, iface, host=False)
             elif gateway:
-                ok = self.net.add_net_route(network, gateway)
+                if is_v6:
+                    ok = self.net.add_net_route6(network, gateway)
+                else:
+                    ok = self.net.add_net_route(network, gateway)
             else:
                 continue
             self.log.log(
@@ -260,8 +304,18 @@ class TunnelPlugin(ABC):
             self.net.cleanup_dns_resolver(domains, self.cfg.interface)
 
     def delete_routes(self) -> None:
-        """Remove routes added by add_routes()."""
+        """Remove routes added by add_routes().
+
+        Dispatch IPv4/IPv6 (H1): IPv6 в *_route6, всё остальное (IPv4 и hostname)
+        в обычные методы. Симметрично add_routes: что добавили обычным методом
+        должны удалить им же."""
         for host in self.cfg.routes.get("hosts", []):
-            self.net.delete_host_route(host)
+            if _ip_version(host) == 6:
+                self.net.delete_host_route6(host)
+            else:
+                self.net.delete_host_route(host)
         for network in self.cfg.routes.get("networks", []):
-            self.net.delete_net_route(network)
+            if _cidr_version(network) == 6:
+                self.net.delete_net_route6(network)
+            else:
+                self.net.delete_net_route(network)

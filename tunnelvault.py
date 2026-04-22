@@ -24,16 +24,15 @@ from tv.vpn.base import TunnelConfig
 from tv.vpn.registry import get_plugin
 
 # Ensure all plugins are registered on import
-from tv.vpn import (
-    openvpn,
-    fortivpn,
-    openconnect,
-    singbox,
-    wireguard,
-    ipsec,
-    tailscale,
-    sshtunnel,
-)  # noqa: F401
+from tv.vpn import openvpn  # noqa: F401
+from tv.vpn import fortivpn  # noqa: F401
+from tv.vpn import openconnect  # noqa: F401
+from tv.vpn import singbox  # noqa: F401
+from tv.vpn import xray  # noqa: F401
+from tv.vpn import wireguard  # noqa: F401
+from tv.vpn import ipsec  # noqa: F401
+from tv.vpn import tailscale  # noqa: F401
+from tv.vpn import sshtunnel  # noqa: F401
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -462,6 +461,7 @@ _TYPE_PREFIXES: dict[str, list[str]] = {
     "openconnect": ["tun", "utun"] if not IS_WINDOWS else [],
     "openvpn": ["tun", "utun"] if not IS_WINDOWS else [],
     "singbox": ["utun"] if not IS_WINDOWS else [],
+    "xray": ["utun"] if not IS_WINDOWS else [],
 }
 
 

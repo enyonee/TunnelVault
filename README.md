@@ -8,9 +8,9 @@
 <a href="#-cross-platform"><img src="https://img.shields.io/badge/macOS_|_Linux_|_Windows-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
 <a href="pyproject.toml"><img src="https://img.shields.io/badge/v1.5.0-00B4AB?style=for-the-badge&logo=semantic-release&logoColor=white" alt="Version"></a>
-<img src="https://img.shields.io/badge/tests-1152_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
+<img src="https://img.shields.io/badge/tests-1296_passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Tests">
 
-<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>OpenConnect</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>IPsec/IKEv2</kbd> &nbsp; <kbd>Tailscale</kbd> &nbsp; <kbd>SSH tunnel</kbd> &nbsp; <kbd>+ your plugin</kbd>
+<kbd>OpenVPN</kbd> &nbsp; <kbd>FortiVPN</kbd> &nbsp; <kbd>OpenConnect</kbd> &nbsp; <kbd>sing-box</kbd> &nbsp; <kbd>xray-core</kbd> &nbsp; <kbd>WireGuard</kbd> &nbsp; <kbd>IPsec/IKEv2</kbd> &nbsp; <kbd>Tailscale</kbd> &nbsp; <kbd>SSH tunnel</kbd> &nbsp; <kbd>+ your plugin</kbd>
 
 <a href="#-quick-start">Quick Start</a> · <a href="#-how-it-works">How It Works</a> · <a href="#-configuration">Configuration</a> · <a href="#-cli">CLI</a> · <a href="#-plugin-system">Plugins</a>
 
@@ -127,7 +127,7 @@ All injected routes are cleaned up on disconnect.
 4. Stop DNS proxy, delete injected routes
 5. Restore IPv6
 
-`--reset` — emergency mode: `pkill` all known process names (`openvpn`, `openfortivpn`, `sing-box`, `wg-quick`, `charon`, `tailscaled`, `ssh`, `sshuttle`) without config context.
+`--reset` — emergency mode: `pkill` all known process names (`openvpn`, `openfortivpn`, `sing-box`, `xray`, `wg-quick`, `charon`, `tailscaled`, `ssh`, `sshuttle`) without config context.
 
 <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>SIGTERM</kbd> triggers graceful disconnect. Broken state falls back to emergency kill.
 
@@ -191,6 +191,28 @@ networks = ["172.18.0.0/16"]
 
 [tunnels.singbox.checks]
 ports = [{ host = "203.0.113.30", port = 443 }]
+
+# ─── xray-core (TUN mode) ─────────────────────────────────────
+[tunnels.xray]
+type = "xray"
+order = 4
+config_file = "xray.json"
+interface = "utun98"
+# mode = "tun"              # default; requires tun inbound in xray.json + sudo
+
+[tunnels.xray.routes]
+networks = ["172.19.0.0/16"]
+
+[tunnels.xray.checks]
+ports = [{ host = "203.0.113.40", port = 443 }]
+
+# ─── xray-core (SOCKS proxy mode, no sudo) ────────────────────
+[tunnels.xray-proxy]
+type = "xray"
+order = 5
+config_file = "xray-proxy.json"
+mode = "proxy"              # xray.json must declare socks/http inbound on 127.0.0.1:socks_port
+socks_port = 10808
 ```
 
 </details>
@@ -212,7 +234,28 @@ export VPN_CERT_MODE="auto"
 export VPN_TRUSTED_CERT="sha256hash..."
 export VPN_OVPN_CONFIG="client.ovpn"
 export VPN_SINGBOX_CONFIG="singbox.json"
+export VPN_XRAY_CONFIG="xray.json"
 ```
+
+</details>
+
+<details>
+<summary><strong>IPv6 (experimental opt-in)</strong></summary>
+
+By default TunnelVault disables IPv6 on the system to prevent leaks through the dual stack while only IPv4 traffic is routed via the VPN. This is intentional defense, not a bug.
+
+You can opt in to keep IPv6 enabled:
+
+```toml
+[global]
+ipv6 = true
+```
+
+**What this does NOT do:** routes IPv6 through the VPN tunnel. Your real IPv6 address stays visible to external sites - traffic goes out via your ISP's default gateway. Full IPv6 support (routes, kill switch, DNS) is tracked in [#5](https://github.com/enyonee/tunnelvault/issues/5).
+
+**FortiVPN limitation:** `openfortivpn` is IPv4-only, so the flag is ignored and IPv6 is force-disabled whenever a FortiVPN tunnel is present. Remove the FortiVPN tunnel or set `ipv6 = false` explicitly if you see the warning.
+
+When to enable: you have a custom IPv6 configuration (static, DHCPv6, link-local-only) on macOS that you do not want TunnelVault to touch. On macOS `restore_ipv6` (called on disconnect) runs `networksetup -setv6automatic`, which overwrites custom IPv6 settings.
 
 </details>
 
@@ -296,6 +339,7 @@ class MyVPNPlugin(TunnelPlugin):
 | **FortiVPN** | `openfortivpn` | `ppp0` | Auto cert trust, PPP gateway discovery, split routing |
 | **OpenConnect** | `openconnect` | `tun1` | FortiGate via TUN (replaces PPP), SAML/cert auth |
 | **sing-box** | `sing-box` | `utun99` | JSON config, custom interface |
+| **xray-core** (XTLS/Xray-core) | `xray` | `utun98` | VMess/VLESS/Trojan/Shadowsocks, REALITY, XTLS, TUN + SOCKS proxy modes |
 | **WireGuard** | `wg-quick` | `wg0` | Client mode, config via `wg0.conf` |
 | **IPsec/IKEv2** | `swanctl` | xfrm | strongSwan, PSK/cert auth, corporate VPN |
 | **Tailscale** | `tailscale` | `tailscale0` | Mesh VPN, Headscale support, auth-key, exit nodes |
@@ -308,6 +352,18 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 
 > [!IMPORTANT]
 > Add **all** outbound server IPs to `[global.vpn_server_routes].hosts` in `config.toml` - otherwise tunnel traffic loops through itself.
+
+</details>
+
+<details>
+<summary><strong>xray-core: TUN vs SOCKS proxy mode</strong></summary>
+
+**TUN mode** (default, `mode = "tun"`): requires `sudo`, xray `config.json` must declare a `tun` inbound (Xray 1.8.x+), routes/DNS applied through `interface`.
+
+**SOCKS proxy mode** (`mode = "proxy"`): no `sudo`, xray `config.json` must declare a `socks` (or `http`) inbound on `127.0.0.1:<socks_port>`. Plugin does not patch config - it only waits for the port to open and reports success. No routes/DNS are set; clients must opt in via `SOCKS5://127.0.0.1:<port>` or `all_proxy=socks5://...`.
+
+> [!TIP]
+> Proxy mode is easier to set up (no TUN inbound, no sudo) but requires per-app proxy configuration. TUN mode is transparent for all traffic routed through the interface.
 
 </details>
 
@@ -343,10 +399,11 @@ Use [`urltest`](https://sing-box.sagernet.org/configuration/outbound/urltest/) o
 - [x] Windows support - routing, DNS, process management for Windows
 - [ ] Windows VPN plugins - adapt openvpn/sing-box plugins for Windows paths and adapters
 - [ ] Windows daemon - Task Scheduler integration for keepalive mode
+- [ ] IPv6 support - foundation opt-in flag in place ([#5](https://github.com/enyonee/tunnelvault/issues/5)), routing/kill-switch/DNS pending
 
 ## <img src="https://img.shields.io/badge/📋_Requirements-FF8C00?style=for-the-badge" alt="Requirements">
 
-**Python 3.10+** · **macOS, Linux, or Windows** · **sudo / Run as Administrator** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`, `wg-quick`, `swanctl`, `tailscale`, `ssh`)
+**Python 3.10+** · **macOS, Linux, or Windows** · **sudo / Run as Administrator** · VPN tools you need (`openvpn`, `openfortivpn`, `sing-box`, `xray`, `wg-quick`, `swanctl`, `tailscale`, `ssh`)
 
 > [!WARNING]
 > TunnelVault modifies routing tables and DNS configuration. Review your `config.toml` before running. Use `--validate` to dry-run.

@@ -15,6 +15,7 @@ from tv.disconnect import (
     get_vpn_server_routes,
     get_bypass_routes,
     get_kill_switch_enabled,
+    get_ipv6_enabled,
 )
 from tv import defaults as defaults_mod
 from tv.killswitch import KillSwitch, create as create_killswitch
@@ -82,6 +83,14 @@ class Engine:
         self.quiet: bool = False  # set by prepare()
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
         self._killswitch: KillSwitch = create_killswitch(self.log)
+        # GH-5: трекаем был ли вызван disable_ipv6 в этой сессии.
+        # restore_ipv6 в disconnect_all вызываем только если disable был.
+        # На macOS restore_ipv6 = networksetup -setv6automatic перезаписывает
+        # кастомные IPv6 настройки пользователя (static, DHCPv6, link-local-only).
+        # Default True: backward compat для flow disconnect_all без setup
+        # (emergency / pre-setup disconnect) - там тоже восстанавливаем, т.к.
+        # раньше restore был безусловным. setup() с ipv6=true переключит в False.
+        self._ipv6_was_disabled: bool = True
 
     # --- Hooks ---
 
@@ -209,14 +218,36 @@ class Engine:
             config.prepare_log_files(self.tunnels)
             return
 
-        if not quiet:
-            ui.info(f"🌐 {t('engine.disable_ipv6')}")
-        self.log.log("INFO", "--- Disabling IPv6 ---")
-        ipv6_ok = self.net.disable_ipv6()
-        self.log.log(
-            "INFO" if ipv6_ok else "WARN",
-            f"IPv6 {'disabled' if ipv6_ok else 'failed to disable'}",
-        )
+        # GH-5: IPv6 opt-in. Default=False -> disable_ipv6 (backward compat).
+        # True -> skip + warning. FortiVPN форсирует disable (openfortivpn IPv4-only).
+        ipv6_opt_in = get_ipv6_enabled(self.defs)
+        has_fortivpn = any(t_.type == "fortivpn" for t_ in self.tunnels)
+
+        if ipv6_opt_in and has_fortivpn:
+            ui.warn(t("engine.ipv6_fortivpn_force"))
+            self.log.log(
+                "WARN",
+                "IPv6 opt-in ignored: FortiVPN in tunnels forces IPv6 disable",
+            )
+            ipv6_opt_in = False
+
+        if ipv6_opt_in:
+            ui.warn(t("engine.ipv6_warning"))
+            self.log.log(
+                "WARN",
+                "IPv6 opt-in enabled: disable_ipv6 skipped (experimental, NOT routed through VPN)",
+            )
+            self._ipv6_was_disabled = False
+        else:
+            if not quiet:
+                ui.info(f"🌐 {t('engine.disable_ipv6')}")
+            self.log.log("INFO", "--- Disabling IPv6 ---")
+            ipv6_ok = self.net.disable_ipv6()
+            self.log.log(
+                "INFO" if ipv6_ok else "WARN",
+                f"IPv6 {'disabled' if ipv6_ok else 'failed to disable'}",
+            )
+            self._ipv6_was_disabled = True
 
         self.log.log("INFO", "--- Getting default gateway ---")
         gw = self.net.default_gateway()
@@ -516,7 +547,11 @@ class Engine:
                 self.defs,
                 script_dir=self.script_dir,
             )
-            self.net.restore_ipv6()
+            # GH-5: restore_ipv6 только если disable_ipv6 был вызван в setup()
+            # И ipv6 НЕ opt-in. Иначе на macOS перезапишем кастомные IPv6
+            # настройки пользователя (networksetup -setv6automatic).
+            if self._ipv6_was_disabled and not get_ipv6_enabled(self.defs):
+                self.net.restore_ipv6()
 
         self._clean_watch_state()
 

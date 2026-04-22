@@ -588,3 +588,273 @@ class TestLinuxNetInverse:
             subprocess.CompletedProcess([], 1, "", ""),
         ]
         assert linux_net.ppp_peer("ppp0") == ""
+
+
+# =========================================================================
+# IPv6 primitives (PR#2)
+# =========================================================================
+
+
+class TestDarwinIPv6:
+    """macOS IPv6 routes: 'route add -inet6 <target> -interface <iface>'.
+
+    ВАЖНО: add_iface_route6 НЕ использует ppp_peer (IPv4-only) - сразу
+    -interface utunN прямо. macOS ядро находит next-hop через интерфейс.
+    """
+
+    @patch("subprocess.run")
+    def test_add_host_route6(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = darwin_net.add_host_route6("2001:db8::1", "fe80::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args == [
+            "sudo",
+            "route",
+            "add",
+            "-inet6",
+            "-host",
+            "2001:db8::1",
+            "fe80::1",
+        ]
+
+    @patch("subprocess.run")
+    def test_add_net_route6(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = darwin_net.add_net_route6("2001:db8::/32", "fe80::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert "-inet6" in args and "-net" in args and "2001:db8::/32" in args
+
+    @patch("subprocess.run")
+    def test_add_iface_route6_tun_uses_interface_flag(self, mock_run, darwin_net):
+        """IPv6 на utun* идёт через -interface (НЕ ppp_peer, который IPv4-only)."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = darwin_net.add_iface_route6("2001:db8::/32", "utun99", host=False)
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args == [
+            "sudo",
+            "route",
+            "add",
+            "-inet6",
+            "-net",
+            "2001:db8::/32",
+            "-interface",
+            "utun99",
+        ]
+
+    @patch("subprocess.run")
+    def test_add_iface_route6_host(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        darwin_net.add_iface_route6("2001:db8::1", "utun99", host=True)
+        args = mock_run.call_args[0][0]
+        assert "-host" in args and "2001:db8::1" in args
+
+    @patch("subprocess.run")
+    def test_delete_host_route6(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = darwin_net.delete_host_route6("2001:db8::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args == ["sudo", "route", "delete", "-inet6", "-host", "2001:db8::1"]
+
+    @patch("subprocess.run")
+    def test_delete_net_route6(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        darwin_net.delete_net_route6("2001:db8::/32")
+        args = mock_run.call_args[0][0]
+        assert args == ["sudo", "route", "delete", "-inet6", "-net", "2001:db8::/32"]
+
+    @patch("subprocess.run")
+    def test_set_dns6_writes_resolver_file(self, mock_run, darwin_net):
+        """IPv6 nameserver без скобок: 'nameserver 2001:db8::1'."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        results = darwin_net.set_dns6(["test.local"], ["2001:db8::1"])
+        assert results["test.local"] is True
+        # Проверим что tee получил правильный content (IPv6 без brackets)
+        tee_call = next(c for c in mock_run.call_args_list if "tee" in c[0][0])
+        content = tee_call.kwargs.get("input", "")
+        assert "nameserver 2001:db8::1" in content
+        assert "[" not in content  # без скобок
+
+    @patch("subprocess.run")
+    def test_set_dns6_empty_nameservers_noop(self, mock_run, darwin_net):
+        """Пустой nameservers - no-op, нет subprocess calls (защита M7)."""
+        results = darwin_net.set_dns6(["test.local"], [])
+        assert results == {"test.local": False}
+        mock_run.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_set_dns6_empty_domains_noop(self, mock_run, darwin_net):
+        results = darwin_net.set_dns6([], ["2001:db8::1"])
+        assert results == {}
+
+
+class TestLinuxIPv6:
+    """Linux IPv6: 'ip -6 route replace' (не add - безопаснее при существующем ::/0 от RA)."""
+
+    @patch("subprocess.run")
+    def test_add_host_route6_via_ip6_replace(self, mock_run, linux_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = linux_net.add_host_route6("2001:db8::1", "fe80::1")
+        assert ok
+        args = mock_run.call_args[0][0]
+        assert args == [
+            "sudo",
+            "ip",
+            "-6",
+            "route",
+            "replace",
+            "2001:db8::1/128",
+            "via",
+            "fe80::1",
+        ]
+
+    @patch("subprocess.run")
+    def test_add_net_route6_replace(self, mock_run, linux_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        linux_net.add_net_route6("2001:db8::/32", "fe80::1")
+        args = mock_run.call_args[0][0]
+        assert "replace" in args and "2001:db8::/32" in args
+        assert "via" in args and "fe80::1" in args
+
+    @patch("subprocess.run")
+    def test_add_iface_route6_dev(self, mock_run, linux_net):
+        """ip -6 route replace <cidr> dev <iface> - обходит RA-conflict."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        linux_net.add_iface_route6("2001:db8::/32", "tun0", host=False)
+        args = mock_run.call_args[0][0]
+        assert args == [
+            "sudo",
+            "ip",
+            "-6",
+            "route",
+            "replace",
+            "2001:db8::/32",
+            "dev",
+            "tun0",
+        ]
+
+    @patch("subprocess.run")
+    def test_add_iface_route6_host_uses_128(self, mock_run, linux_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        linux_net.add_iface_route6("2001:db8::1", "tun0", host=True)
+        args = mock_run.call_args[0][0]
+        assert "2001:db8::1/128" in args
+
+    @patch("subprocess.run")
+    def test_delete_host_route6_uses_128(self, mock_run, linux_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        linux_net.delete_host_route6("2001:db8::1")
+        args = mock_run.call_args[0][0]
+        assert args == ["sudo", "ip", "-6", "route", "del", "2001:db8::1/128"]
+
+    @patch("subprocess.run")
+    def test_delete_net_route6(self, mock_run, linux_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        linux_net.delete_net_route6("2001:db8::/32")
+        args = mock_run.call_args[0][0]
+        assert args == ["sudo", "ip", "-6", "route", "del", "2001:db8::/32"]
+
+    @patch("tv.net.shutil.which", return_value="/usr/bin/resolvectl")
+    @patch("subprocess.run")
+    def test_set_dns6_resolvectl(self, mock_run, mock_which, linux_net):
+        """resolvectl принимает IPv6 nameservers без кавычек."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        results = linux_net.set_dns6(["test.local"], ["2001:db8::1"], "tun0")
+        assert results["test.local"] is True
+        # Проверим что resolvectl dns tun0 2001:db8::1 (без кавычек)
+        dns_call = next(
+            c
+            for c in mock_run.call_args_list
+            if "resolvectl" in c[0][0] and "dns" in c[0][0]
+        )
+        args = dns_call[0][0]
+        assert "2001:db8::1" in args
+        # Без quoting - IPv6 адрес прямо как аргумент
+        assert "'2001:db8::1'" not in args
+
+    @patch("subprocess.run")
+    def test_set_dns6_empty_nameservers_noop(self, mock_run, linux_net):
+        """Защита M7: пустой nameservers - no-op (иначе resolvectl СБРАСЫВАЕТ DNS)."""
+        results = linux_net.set_dns6(["test.local"], [], "tun0")
+        assert results == {"test.local": False}
+        mock_run.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_set_dns6_no_interface_noop(self, mock_run, linux_net):
+        results = linux_net.set_dns6(["test.local"], ["2001:db8::1"], "")
+        assert results == {"test.local": False}
+        mock_run.assert_not_called()
+
+    @patch("tv.net.shutil.which", return_value=None)
+    @patch("subprocess.run")
+    def test_set_dns6_no_resolvectl_noop(self, mock_run, mock_which, linux_net):
+        results = linux_net.set_dns6(["test.local"], ["2001:db8::1"], "tun0")
+        assert results == {"test.local": False}
+        mock_run.assert_not_called()
+
+
+class TestIPv6Defaults:
+    """NetManager ABC: defaults для IPv6 методов - backward compat для stub реализаций."""
+
+    def test_add_host_route6_default_false(self):
+        """Базовый класс: add_host_route6 возвращает False (no-op)."""
+        # Используем DarwinNet, но вызовем через super(), чтобы проверить ABC default.
+        # Проще: создадим mock класс на базе NetManager без переопределения IPv6.
+        from tv.net import NetManager
+
+        class MinimalNet(NetManager):
+            def default_gateway(self):
+                return None
+
+            def interfaces(self):
+                return {}
+
+            def check_interface(self, name):
+                return False
+
+            def add_host_route(self, ip, gateway):
+                return False
+
+            def add_net_route(self, net, gateway):
+                return False
+
+            def add_iface_route(self, target, iface, host=True):
+                return False
+
+            def setup_dns_resolver(self, domains, nameservers, interface=""):
+                return {}
+
+            def cleanup_dns_resolver(self, domains, interface=""):
+                return None
+
+            def disable_ipv6(self):
+                return False
+
+            def restore_ipv6(self):
+                return False
+
+            def delete_host_route(self, ip):
+                return False
+
+            def delete_net_route(self, net):
+                return False
+
+            def route_table(self, lines=None):
+                return ""
+
+            def iface_info(self, name):
+                return ""
+
+            def ppp_peer(self, name):
+                return ""
+
+        n = MinimalNet()
+        assert n.add_host_route6("2001:db8::1", "fe80::1") is False
+        assert n.add_net_route6("2001:db8::/32", "fe80::1") is False
+        assert n.add_iface_route6("2001:db8::/32", "tun0") is False
+        assert n.delete_host_route6("2001:db8::1") is False
+        assert n.delete_net_route6("2001:db8::/32") is False
+        assert n.set_dns6(["test.local"], ["2001:db8::1"]) == {"test.local": False}

@@ -21,6 +21,7 @@ class Timeouts:
     fortivpn_ppp: int = 20
     openconnect_tun: int = 20
     singbox_iface: int = 15
+    xray_iface: int = 15
     wireguard_iface: int = 10
     ipsec_sa: int = 20
     sshtunnel_connect: int = 15
@@ -77,6 +78,9 @@ class Defaults:
     openvpn_config: str = "client.ovpn"
     singbox_config: str = "singbox.json"
     singbox_interface: str = "utun99"
+    xray_config: str = "xray.json"
+    xray_interface: str = "utun98"
+    xray_socks_port: int = 10808
     wireguard_config: str = "wg0.conf"
     ipsec_config: str = "swanctl.conf"
     ipsec_connection: str = "vpn"

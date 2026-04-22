@@ -21,6 +21,7 @@ class TestDefaults:
             ("timeouts", "openvpn_init", 30),
             ("timeouts", "fortivpn_ppp", 20),
             ("timeouts", "singbox_iface", 15),
+            ("timeouts", "xray_iface", 15),
             ("timeouts", "fortivpn_gw_poll", 0.5),
             ("timeouts", "fortivpn_gw_attempts", 10),
             ("timeouts", "check_subprocess", 15),
@@ -46,6 +47,8 @@ class TestDefaults:
             ("defaults", "openvpn_config", "client.ovpn"),
             ("defaults", "singbox_config", "singbox.json"),
             ("defaults", "singbox_interface", "utun99"),
+            ("defaults", "xray_config", "xray.json"),
+            ("defaults", "xray_interface", "utun98"),
             ("defaults", "network_service", "Wi-Fi"),
             # display
             ("display", "route_table_lines", 30),

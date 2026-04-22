@@ -145,7 +145,7 @@ def run(net: Optional[NetManager] = None) -> None:
         net = create()
 
     # Ensure plugins are registered
-    from tv.vpn import openvpn, fortivpn, openconnect, singbox  # noqa: F401
+    from tv.vpn import openvpn, fortivpn, openconnect, singbox, xray  # noqa: F401
 
     print(f"\n  {ui.BOLD}{t('status.title')}{ui.NC}")
 
