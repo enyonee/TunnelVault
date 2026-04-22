@@ -18,7 +18,6 @@ from tv.disconnect import (
 )
 from tv import defaults as defaults_mod
 from tv.killswitch import KillSwitch, create as create_killswitch
-from tv.dns_proxy import BypassDNSProxy
 from tv.i18n import t
 from tv.logger import Logger
 from tv.net import NetManager, create as create_net
@@ -82,9 +81,6 @@ class Engine:
         self.skipped_binaries: dict[str, str] = {}  # {tunnel_name: binary}
         self.quiet: bool = False  # set by prepare()
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
-        self._dns_proxy: Optional[BypassDNSProxy] = None
-        self._dns_proxy_zones: list[str] = []
-        self._dns_proxy_upstream: str = ""
         self._killswitch: KillSwitch = create_killswitch(self.log)
 
     # --- Hooks ---
@@ -229,8 +225,6 @@ class Engine:
         self._setup_vpn_server_routes(gw, quiet=quiet)
         self.log.log("INFO", "--- Bypass routes ---")
         self._setup_bypass_routes(gw, quiet=quiet)
-        self.log.log("INFO", "--- DNS proxy ---")
-        self._start_dns_proxy(gw, quiet=quiet)
         self.log.log("INFO", "--- Kill switch ---")
         self._enable_kill_switch(quiet=quiet)
         self.log.log("INFO", "--- Prepare log files ---")
@@ -355,11 +349,6 @@ class Engine:
             os.rename(tmp_path, str(path))
         except OSError:
             pass
-
-    def restart_dns_proxy_thread(self) -> None:
-        """Restart DNS proxy thread after fork (socket survives, thread does not)."""
-        if self._dns_proxy is not None:
-            self._dns_proxy.restart_thread()
 
     def check_alive(self) -> list[tuple[TunnelConfig, int | None]]:
         """Return list of (tunnel_config, dead_pid) for tunnels with dead processes."""
@@ -516,7 +505,6 @@ class Engine:
             self.log.log("INFO", "System proxy disabled")
             ui.info(f"🌐 {t('main.proxy_removed')}")
 
-        self._stop_dns_proxy()
         self._disable_kill_switch()
 
         if cfg.mode != "proxy-only":
@@ -526,7 +514,6 @@ class Engine:
                 self.net,
                 self.log,
                 self.defs,
-                skip_dns_suffix=True,
                 script_dir=self.script_dir,
             )
             self.net.restore_ipv6()
@@ -645,101 +632,6 @@ class Engine:
                 f"bypass net {network} -> {gw} {'OK' if ok else 'FAIL'}",
             )
 
-    def _start_dns_proxy(self, gw: str | None, *, quiet: bool = False) -> None:
-        """Start DNS bypass proxy if domain_suffix is configured."""
-        if self._dns_proxy is not None:
-            self._stop_dns_proxy()
-
-        bypass_cfg = get_bypass_routes(self.defs)
-        suffixes = bypass_cfg.get("domain_suffix", [])
-        if not suffixes:
-            return
-
-        upstream = bypass_cfg.get("upstream_dns", "8.8.8.8")
-
-        if not gw:
-            self.log.log("WARN", "dns_proxy: default gateway not found, skipping")
-            return
-
-        # Route upstream DNS through default GW (before VPN takes over)
-        ok = self.net.add_host_route(upstream, gw)
-        self.log.log(
-            "INFO" if ok else "WARN",
-            f"upstream DNS route {upstream} -> {gw} {'OK' if ok else 'FAIL'}",
-        )
-
-        proxy = BypassDNSProxy(
-            suffixes=suffixes,
-            upstream_dns=upstream,
-            net=self.net,
-            logger=self.log,
-            gateway=gw,
-        )
-        try:
-            proxy.start()
-        except OSError as e:
-            self.log.log("WARN", f"dns_proxy bind failed: {e}")
-            ui.warn(t("engine.dns_proxy_failed", error=e))
-            self.net.delete_host_route(upstream)
-            return
-
-        self._dns_proxy = proxy
-        zones = self._suffix_zones(suffixes)
-        self._dns_proxy_zones = zones
-        self._dns_proxy_upstream = upstream
-
-        # Create /etc/resolver/{zone} files pointing to 127.0.0.1
-        for zone in zones:
-            result = self.net.setup_dns_resolver(
-                domains=[zone],
-                nameservers=["127.0.0.1"],
-            )
-            self.log.log(
-                "INFO" if result.get(zone) else "WARN",
-                f"resolver {zone} -> 127.0.0.1 {'OK' if result.get(zone) else 'FAIL'}",
-            )
-
-        if not quiet:
-            ui.info(f"🔀 {t('engine.dns_bypass_proxy', suffixes=', '.join(suffixes))}")
-
-    def _stop_dns_proxy(self) -> None:
-        """Stop DNS bypass proxy and clean up resolver files and routes."""
-        if self._dns_proxy is None:
-            return
-
-        zones = self._dns_proxy_zones
-        upstream = self._dns_proxy_upstream
-
-        # 1. Remove resolver files (no new queries from system DNS)
-        try:
-            if zones:
-                self.net.cleanup_dns_resolver(zones)
-        except Exception as e:
-            self.log.log("WARN", f"dns_proxy cleanup resolvers: {e}")
-
-        # 2. Stop proxy thread (set frozen after this)
-        try:
-            self._dns_proxy.stop()
-        except Exception as e:
-            self.log.log("WARN", f"dns_proxy stop: {e}")
-
-        # 3. Delete injected routes (safe - no new entries possible)
-        try:
-            for ip in self._dns_proxy.injected_routes():
-                self.net.delete_host_route(ip)
-        except Exception as e:
-            self.log.log("WARN", f"dns_proxy cleanup injected routes: {e}")
-
-        # 4. Delete upstream DNS route
-        try:
-            self.net.delete_host_route(upstream)
-        except Exception as e:
-            self.log.log("WARN", f"dns_proxy cleanup upstream route: {e}")
-
-        self._dns_proxy = None
-        self._dns_proxy_zones = []
-        self._dns_proxy_upstream = ""
-
     def _enable_kill_switch(self, *, quiet: bool = False) -> None:
         """Enable kill switch if configured in [global]."""
         if not get_kill_switch_enabled(self.defs):
@@ -777,12 +669,4 @@ class Engine:
         if self._killswitch.active:
             self._killswitch.disable()
 
-    @staticmethod
-    def _suffix_zones(suffixes: list[str]) -> list[str]:
-        """Convert suffixes like '.ru' or '.example' to resolver zone names."""
-        zones = []
-        for s in suffixes:
-            zone = s.lstrip(".").rstrip(".")
-            if zone:
-                zones.append(zone)
-        return zones
+

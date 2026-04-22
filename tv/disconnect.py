@@ -50,15 +50,12 @@ def cleanup_global_routes(
     log: Optional[Logger],
     defs: dict,
     *,
-    skip_dns_suffix: bool = False,
     script_dir: Optional[Path] = None,
 ) -> None:
-    """Delete global VPN server routes, bypass routes, and DNS resolver files.
+    """Delete global VPN server routes and bypass routes.
 
     Called from engine.disconnect_all() and emergency disconnect.
     Does NOT restore IPv6 - caller handles that separately.
-
-    skip_dns_suffix: skip domain_suffix resolver cleanup (engine._stop_dns_proxy handles it).
     """
     routes_cfg = get_vpn_server_routes(defs)
     static_hosts = routes_cfg.get("hosts", [])
@@ -106,37 +103,6 @@ def cleanup_global_routes(
                 log,
             )
 
-    # Cleanup domain_suffix resolver files and upstream DNS route
-    # (skip when engine._stop_dns_proxy already handled this)
-    if not skip_dns_suffix:
-        domain_suffix = bypass_cfg.get("domain_suffix", [])
-        upstream_dns = bypass_cfg.get("upstream_dns", "8.8.8.8")
-        if domain_suffix:
-            zones = [
-                s.lstrip(".").rstrip(".")
-                for s in domain_suffix
-                if s.lstrip(".").rstrip(".")
-            ]
-            if zones:
-                print(f"🧹 {t('disc.deleting_dns_bypass')}")
-                _safe(
-                    lambda: net.cleanup_dns_resolver(zones), "del suffix resolvers", log
-                )
-            _safe(
-                lambda: net.delete_host_route(upstream_dns),
-                f"del upstream DNS route {upstream_dns}",
-                log,
-            )
-
-        # Safety net: scan /etc/resolver/ for leftover tunnelvault files
-        def _scan_resolvers():
-            cleaned = net.cleanup_local_dns_resolvers()
-            if cleaned:
-                print(f"🧹 {t('disc.extra_resolvers', files=', '.join(cleaned))}")
-                if log:
-                    log.log("INFO", f"Cleaned leftover resolvers: {cleaned}")
-
-        _safe(_scan_resolvers, "scan local resolvers", log)
 
 
 def _cleanup_routes_and_ipv6(

@@ -387,9 +387,6 @@ def main() -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
-    # Restart DNS proxy thread (socket survives fork, thread does not)
-    engine.restart_dns_proxy_thread()
-
     engine.log.log("INFO", f"Daemonized (PID={os.getpid()})")
 
     ipc_srv, _ = start_server_thread(engine, ipc_path, engine.log, _reconnect_lock)
