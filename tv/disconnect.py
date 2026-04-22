@@ -120,6 +120,10 @@ def _cleanup_routes_and_ipv6(
 
     cleanup_global_routes(net, log, defs, script_dir=script_dir)
 
+    # Сбрасываем system DNS - VPN-клиенты выставляют его через networksetup,
+    # без сброса DNS остаётся указывать на VPN-внутренние серверы
+    _safe(lambda: net.reset_system_dns(), "reset system DNS", log)
+
     print(f"🌐 {t('disc.restore_ipv6')}")
     _safe(lambda: net.restore_ipv6(), "restore IPv6", log)
 

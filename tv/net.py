@@ -119,6 +119,10 @@ class NetManager(ABC):
         """Remove system-wide proxy settings. Default no-op (Linux)."""
         return True
 
+    def reset_system_dns(self) -> bool:
+        """Reset system DNS to DHCP defaults. Default no-op (Linux)."""
+        return True
+
     def resolve_host(self, hostname: str, timeout: int | None = None) -> list[str]:
         """Resolve hostname to IPs (dig -> host -> getent -> nslookup -> socket fallback).
 
@@ -130,23 +134,54 @@ class NetManager(ABC):
         t = timeout if timeout is not None else cfg.timeouts.net_command
         result: list[list[str]] = []
 
+        def _try_dig(args: list[str], per: int) -> list[str]:
+            r = _run(args, timeout=per + 1)
+            if r.returncode == 0 and r.stdout.strip():
+                return [
+                    ln.strip()
+                    for ln in r.stdout.strip().splitlines()
+                    if re.match(r"\d+\.\d+\.\d+\.\d+$", ln.strip())
+                ]
+            return []
+
         def _do_resolve() -> None:
-            per_tool = max(1, t // 2)
+            # Короткий per_tool чтобы успеть попробовать несколько методов
+            per_tool = max(1, t // 3)
 
             if shutil.which("dig"):
-                r = _run(
-                    ["dig", "+short", f"+time={per_tool}", "+tries=1", hostname],
-                    timeout=per_tool + 1,
-                )
-                if r.returncode == 0 and r.stdout.strip():
-                    ips = [
-                        ln.strip()
-                        for ln in r.stdout.strip().splitlines()
-                        if re.match(r"\d+\.\d+\.\d+\.\d+$", ln.strip())
-                    ]
-                    if ips:
-                        result.append(ips)
-                        return
+                # Запускаем системный DNS и публичный 1.1.1.1 параллельно —
+                # системный DNS может быть сломан (остатки VPN-конфига)
+                import concurrent.futures as _cf
+                with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+                    f_sys = ex.submit(
+                        _try_dig,
+                        ["dig", "+short", f"+time={per_tool}", "+tries=1", hostname],
+                        per_tool,
+                    )
+                    f_pub = ex.submit(
+                        _try_dig,
+                        ["dig", "@1.1.1.1", "+short", f"+time={per_tool}", "+tries=1", hostname],
+                        per_tool,
+                    )
+                    done, _ = _cf.wait(
+                        [f_sys, f_pub],
+                        timeout=per_tool + 1,
+                        return_when=_cf.FIRST_COMPLETED,
+                    )
+                    for f in done:
+                        ips = f.result()
+                        if ips:
+                            result.append(ips)
+                            return
+                    # Ждём второй если первый не дал результата
+                    for f in [f_sys, f_pub]:
+                        try:
+                            ips = f.result(timeout=per_tool + 1)
+                            if ips:
+                                result.append(ips)
+                                return
+                        except Exception:
+                            pass
 
             if shutil.which("host"):
                 r = _run(["host", "-W", str(per_tool), hostname], timeout=per_tool + 1)
@@ -203,8 +238,6 @@ class NetManager(ABC):
         thread.start()
         thread.join(timeout=t)
         return result[0] if result else []
-
-        return []
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +387,20 @@ class DarwinNet(NetManager):
         ok = True
         for svc in self._active_network_services():
             r = _run(["sudo", "networksetup", "-setv6automatic", svc])
+            if r.returncode != 0:
+                ok = False
+        return ok
+
+    def reset_system_dns(self) -> bool:
+        """Сбрасывает system DNS на DHCP-defaults для всех сетевых сервисов.
+
+        VPN-клиенты (openconnect, fortivpn) выставляют DNS через networksetup.
+        После disconnect без сброса DNS остаётся указывать на VPN-внутренние серверы,
+        что ломает разрешение имён до следующего реконнекта.
+        """
+        ok = True
+        for svc in self._active_network_services():
+            r = _run(["sudo", "networksetup", "-setdnsservers", svc, "Empty"])
             if r.returncode != 0:
                 ok = False
         return ok
