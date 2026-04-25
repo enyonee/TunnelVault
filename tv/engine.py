@@ -587,7 +587,9 @@ class Engine:
         if not quiet:
             ui.info(f"🔌 {t('engine.host_routes', gw=gw)}")
 
-        cache_path = config.resolve_log_dir(self.script_dir) / "resolved-route-cache.json"
+        cache_path = (
+            config.resolve_log_dir(self.script_dir) / "resolved-route-cache.json"
+        )
 
         # Читаем кеш — DNS может быть недоступен если уже запущен другой туннель
         cached: dict[str, list[str]] = {}
@@ -603,7 +605,10 @@ class Engine:
                 self.log.log("INFO", f"resolve {hostname} -> {ips} (cached)")
             else:
                 ips = self.net.resolve_host(hostname, timeout=3)
-                self.log.log("INFO" if ips else "WARN", f"resolve {hostname} -> {ips or 'failed'}")
+                self.log.log(
+                    "INFO" if ips else "WARN",
+                    f"resolve {hostname} -> {ips or 'failed'}",
+                )
             resolved_ips[hostname] = ips
             for ip in ips:
                 ok = self.net.add_host_route(ip, gw)
@@ -613,7 +618,9 @@ class Engine:
                 )
 
         # Обновляем кеш только если был свежий resolve
-        new_resolved = {h: ips for h, ips in resolved_ips.items() if h not in cached and ips}
+        new_resolved = {
+            h: ips for h, ips in resolved_ips.items() if h not in cached and ips
+        }
         if new_resolved:
             try:
                 cache_path.write_text(json.dumps({**cached, **new_resolved}))
@@ -703,5 +710,3 @@ class Engine:
         """Disable kill switch if active."""
         if self._killswitch.active:
             self._killswitch.disable()
-
-

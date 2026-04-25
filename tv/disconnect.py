@@ -80,6 +80,7 @@ def cleanup_global_routes(
         resolved_cache: dict[str, list[str]] = {}
         if script_dir is not None:
             from tv.app_config import cfg as _cfg
+
             cache_path = script_dir / _cfg.paths.log_dir / "resolved-route-cache.json"
             try:
                 resolved_cache = json.loads(cache_path.read_text())
@@ -87,7 +88,11 @@ def cleanup_global_routes(
                 pass
         for hostname in resolve_hosts:
             for ip in resolved_cache.get(hostname, []):
-                _safe(lambda ip=ip: net.delete_host_route(ip), f"del resolved {hostname} ({ip})", log)
+                _safe(
+                    lambda ip=ip: net.delete_host_route(ip),
+                    f"del resolved {hostname} ({ip})",
+                    log,
+                )
 
     # Cleanup bypass routes
     bypass_cfg = get_bypass_routes(defs)
@@ -113,7 +118,6 @@ def cleanup_global_routes(
                 f"del bypass net {network}",
                 log,
             )
-
 
 
 def _cleanup_routes_and_ipv6(

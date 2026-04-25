@@ -1013,4 +1013,3 @@ class TestQuietMode:
 
         mock_loud.assert_called_once()
         mock_quiet.assert_not_called()
-

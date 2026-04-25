@@ -88,6 +88,7 @@ class TestDisconnect:
         """Читает resolved IPs из кеша при disconnect — DNS не вызывается."""
         import json
         from tv.app_config import cfg as _cfg
+
         cache_dir = tmp_path / _cfg.paths.log_dir
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_file = cache_dir / "resolved-route-cache.json"
@@ -390,8 +391,6 @@ class TestBypassRoutesCleanup:
         out = capsys.readouterr().out
         assert "All disconnected" in out
         assert "bypass" not in out.lower()
-
-
 
 
 # =========================================================================
