@@ -116,9 +116,11 @@ class OpenConnectPlugin(TunnelPlugin):
         Generates pin-sha256:BASE64 via openssl (SPKI hash of server public key).
         """
         cert_mode = tcfg.auth.get("cert_mode", "")
-        if cert_mode != "auto":
+        if cert_mode not in ("auto", "always"):
             return
-        if tcfg.auth.get("servercert"):
+        # auto: один раз, если pin ещё не сгенерирован.
+        # always: каждый раз — для случая ротации server cert.
+        if cert_mode == "auto" and tcfg.auth.get("servercert"):
             return
 
         env_val = os.environ.get("VPN_SERVERCERT", "")
@@ -137,13 +139,18 @@ class OpenConnectPlugin(TunnelPlugin):
             print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
         pin = generate_spki_pin(host, port)
         if pin:
+            old_pin = tcfg.auth.get("servercert", "")
             if not quiet:
                 print(
                     f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=pin[:32])}"
                 )
+            if old_pin and old_pin != pin:
+                ui.warn(f"servercert rotated: {old_pin[:32]}... → {pin[:32]}...")
             tcfg.auth["servercert"] = pin
         else:
-            ui.warn(t("config.cert_unreachable", host=host, port=port))
+            # Если генерация упала, но старый pin есть — оставляем (graceful degrade).
+            if not tcfg.auth.get("servercert"):
+                ui.warn(t("config.cert_unreachable", host=host, port=port))
 
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:

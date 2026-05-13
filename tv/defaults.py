@@ -169,9 +169,18 @@ def _migrate_fortivpn_to_openconnect(tunnels: list[TunnelConfig]) -> None:
         auth = tc.auth
         auth.setdefault("protocol", "fortinet")
 
-        # Drop fortivpn trusted_cert - incompatible format (DER hash vs SPKI pin).
-        # Set cert_mode=auto so openconnect plugin generates correct pin-sha256.
-        auth.pop("trusted_cert", "")
+        # openfortivpn хранит trusted_cert как hex SHA256 от DER сертификата.
+        # openconnect --servercert принимает тот же hash в формате "sha256:<hex>",
+        # рядом с "pin-sha256:<base64>" (SPKI). Конвертируем, чтобы pin из config
+        # работал сразу, без обязательного online-вызова openssl при autopopulate
+        # (важно когда default route уже захвачен другим туннелем).
+        trusted_cert = auth.pop("trusted_cert", "")
+        if not auth.get("servercert") and trusted_cert:
+            # Если уже с префиксом (на случай ручного ввода) — не дублировать.
+            if trusted_cert.startswith(("sha256:", "sha1:", "pin-sha256:")):
+                auth["servercert"] = trusted_cert
+            else:
+                auth["servercert"] = f"sha256:{trusted_cert}"
         if not auth.get("servercert"):
             auth.setdefault("cert_mode", "auto")
 

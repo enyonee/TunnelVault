@@ -125,11 +125,13 @@ class FortiVPNPlugin(TunnelPlugin):
         *,
         quiet: bool = False,
     ) -> None:
-        """Auto-generate FortiVPN trusted cert if cert_mode=auto."""
+        """Auto-generate FortiVPN trusted cert if cert_mode=auto/always."""
         cert_mode = tcfg.auth.get("cert_mode", "")
-        if cert_mode != "auto":
+        if cert_mode not in ("auto", "always"):
             return
-        if tcfg.auth.get("trusted_cert"):
+        # auto: один раз, если pin ещё не сгенерирован.
+        # always: каждый раз — для случая ротации server cert.
+        if cert_mode == "auto" and tcfg.auth.get("trusted_cert"):
             return
 
         env_val = os.environ.get("VPN_TRUSTED_CERT", "")
@@ -148,16 +150,21 @@ class FortiVPNPlugin(TunnelPlugin):
             print(f"  🔑 {t('config.cert_generating', host=host, port=port)}")
         cert = generate_cert_sha256(host, port)
         if cert:
+            old_cert = tcfg.auth.get("trusted_cert", "")
             if not quiet:
                 print(
                     f"  {ui.GREEN}✅{ui.NC} {t('config.cert_generated', cert=cert[:24])}"
                 )
+            if old_cert and old_cert != cert:
+                ui.warn(f"trusted_cert rotated: {old_cert[:24]}... → {cert[:24]}...")
             tcfg.auth["trusted_cert"] = cert
         else:
-            ui.warn(t("config.cert_unreachable", host=host, port=port))
-            ui.info(
-                f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.defaults_file)}{ui.NC}"
-            )
+            # Если генерация упала, но старый pin есть — оставляем (graceful degrade).
+            if not tcfg.auth.get("trusted_cert"):
+                ui.warn(t("config.cert_unreachable", host=host, port=port))
+                ui.info(
+                    f"  {ui.DIM}{t('config.cert_hint', env='VPN_TRUSTED_CERT', file=cfg.paths.defaults_file)}{ui.NC}"
+                )
 
     @classmethod
     def config_schema(cls) -> list[ConfigParam]:

@@ -182,6 +182,7 @@ class NetManager(ABC):
                 # Запускаем системный DNS и публичный 1.1.1.1 параллельно —
                 # системный DNS может быть сломан (остатки VPN-конфига)
                 import concurrent.futures as _cf
+
                 with _cf.ThreadPoolExecutor(max_workers=2) as ex:
                     f_sys = ex.submit(
                         _try_dig,
@@ -190,7 +191,14 @@ class NetManager(ABC):
                     )
                     f_pub = ex.submit(
                         _try_dig,
-                        ["dig", "@1.1.1.1", "+short", f"+time={per_tool}", "+tries=1", hostname],
+                        [
+                            "dig",
+                            "@1.1.1.1",
+                            "+short",
+                            f"+time={per_tool}",
+                            "+tries=1",
+                            hostname,
+                        ],
                         per_tool,
                     )
                     done, _ = _cf.wait(

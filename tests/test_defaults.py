@@ -629,8 +629,8 @@ class TestMigrateFortivpnToOpenconnect:
         assert tunnels[0].auth["protocol"] == "fortinet"
 
     @patch("tv.defaults.platform.system", return_value="Darwin")
-    def test_trusted_cert_dropped_and_auto_mode_set(self, _mock):
-        """trusted_cert dropped (incompatible format), cert_mode=auto set."""
+    def test_trusted_cert_converted_to_servercert(self, _mock):
+        """trusted_cert (hex DER) → servercert='sha256:<hex>' для openconnect."""
         tunnels = [
             TunnelConfig(
                 name="corp",
@@ -640,7 +640,37 @@ class TestMigrateFortivpnToOpenconnect:
         ]
         _migrate_fortivpn_to_openconnect(tunnels)
         assert "trusted_cert" not in tunnels[0].auth
+        assert tunnels[0].auth["servercert"] == "sha256:aabbccdd1234"
+        # cert_mode не выставлен (servercert уже есть)
+        assert "cert_mode" not in tunnels[0].auth
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_no_trusted_cert_sets_auto_mode(self, _mock):
+        """Без trusted_cert и без servercert ставим cert_mode=auto."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={"host": "vpn.test"},
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert "trusted_cert" not in tunnels[0].auth
+        assert "servercert" not in tunnels[0].auth
         assert tunnels[0].auth["cert_mode"] == "auto"
+
+    @patch("tv.defaults.platform.system", return_value="Darwin")
+    def test_trusted_cert_with_prefix_passes_through(self, _mock):
+        """Если trusted_cert уже с префиксом — не дублировать sha256:."""
+        tunnels = [
+            TunnelConfig(
+                name="corp",
+                type="fortivpn",
+                auth={"host": "vpn.test", "trusted_cert": "sha256:aabbccdd"},
+            )
+        ]
+        _migrate_fortivpn_to_openconnect(tunnels)
+        assert tunnels[0].auth["servercert"] == "sha256:aabbccdd"
 
     @patch("tv.defaults.platform.system", return_value="Darwin")
     def test_existing_servercert_preserved(self, _mock):
