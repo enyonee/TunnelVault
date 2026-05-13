@@ -469,6 +469,18 @@ class Engine:
 
         time.sleep(cfg.timeouts.keepalive_reconnect_pause)
 
+        # Re-establish host routes к VPN-серверам через default gateway.
+        # macOS routing flushing (sleep/wake), чужие cleanup'ы или DNS-ротация могут
+        # удалить часть host routes между initial setup и keepalive reconnect.
+        # Если хотя бы один resolved IP уходит через другой туннель (trojan etc.) —
+        # TLS handshake обрывается, openconnect не поднимет utun.
+        try:
+            gw = self.net.default_gateway()
+            if gw:
+                self._setup_vpn_server_routes(gw, quiet=True)
+        except Exception as e:
+            self.log.log("WARN", f"refresh vpn_server_routes: {e}")
+
         # Reconnect
         plugin_cls = get_plugin(tcfg.type)
         # Re-resolve dynamic params (e.g. SPKI/cert pin для cert_mode=auto):
