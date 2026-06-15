@@ -37,7 +37,9 @@ def _write_toml(path, tunnels: dict) -> None:
                 t_table[k] = v
         t_section[name] = t_table
     doc["tunnels"] = t_section
-    (path / cfg.paths.defaults_file).write_text(tomlkit.dumps(doc))
+    target = path / cfg.paths.defaults_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(tomlkit.dumps(doc))
 
 
 # =========================================================================
@@ -47,7 +49,8 @@ def _write_toml(path, tunnels: dict) -> None:
 
 class TestDefaultsSetupFlow:
     def test_setup_creates_defaults_from_example(self, tmp_path):
-        """--setup with no config.toml copies from example, parses result."""
+        """--setup with no config copies from root example into .infra path."""
+        # Пример лежит в корне репо, целевой конфиг — в .infra/access/client/.
         example = tmp_path / "config.toml.example"
         example.write_text(
             "[tunnels.openvpn]\n"
@@ -64,8 +67,8 @@ class TestDefaultsSetupFlow:
 
         data = defaults_mod.load(tmp_path, setup=True)
 
-        # File was created
-        created = tmp_path / "config.toml"
+        # File was created at the resolved (.infra) path
+        created = tmp_path / cfg.paths.defaults_file
         assert created.exists()
         assert created.read_text() == example.read_text()
 
@@ -75,8 +78,9 @@ class TestDefaultsSetupFlow:
         assert data["tunnels"]["singbox"]["interface"] == "utun99"
 
     def test_setup_loads_existing_file_unchanged(self, tmp_path):
-        """--setup with existing config.toml loads it, doesn't overwrite."""
-        toml = tmp_path / "config.toml"
+        """--setup with existing config loads it, doesn't overwrite."""
+        toml = tmp_path / cfg.paths.defaults_file
+        toml.parent.mkdir(parents=True, exist_ok=True)
         content = '[tunnels.forti]\ntype = "fortivpn"\norder = 1\n'
         toml.write_text(content)
 

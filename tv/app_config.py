@@ -60,7 +60,11 @@ def _default_temp_dir() -> str:
 class Paths:
     log_dir: str = "logs"
     temp_dir: str = ""
-    defaults_file: str = "config.toml"
+    # Главный конфиг живёт в .infra (канонический источник всех client-конфигов).
+    # Резолвится как script_dir / defaults_file (script_dir = корень репо), поэтому
+    # config_file-пути внутри toml (например .infra/access/client/exit-de.json)
+    # по-прежнему относительны корня репо, а не директории самого toml.
+    defaults_file: str = ".infra/access/client/tunnelvault-config.toml"
     main_log: str = "tunnelvault.log"
     pid_file: str = "tunnelvault.pid"
     socket_file: str = "tunnelvault.sock"

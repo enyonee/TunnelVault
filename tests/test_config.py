@@ -47,7 +47,9 @@ def _write_toml(path: Path, tunnels: dict) -> None:
                 t_table[k] = v
         t_section[name] = t_table
     doc["tunnels"] = t_section
-    (path / cfg.paths.defaults_file).write_text(tomlkit.dumps(doc))
+    target = path / cfg.paths.defaults_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(tomlkit.dumps(doc))
 
 
 # =========================================================================

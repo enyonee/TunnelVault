@@ -33,10 +33,16 @@ def load(script_dir: Path, *, setup: bool = False) -> dict:
     path = script_dir / defaults_file
     if not path.exists():
         if setup:
+            # Источник примера: сосед "<defaults_file>.example" либо, если его нет,
+            # корневой config.toml.example (канонический пример живёт в корне репо,
+            # а целевой конфиг — в .infra/access/client/).
             example = script_dir / f"{defaults_file}.example"
+            if not example.exists():
+                example = script_dir / "config.toml.example"
             if example.exists():
                 import shutil
 
+                path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(example), str(path))
                 print(
                     f"  {ui.GREEN}📋{ui.NC} {t('defaults.created_from_example', file=defaults_file)}"

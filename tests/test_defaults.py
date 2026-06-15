@@ -7,6 +7,7 @@ import pytest
 
 from unittest.mock import patch
 
+from tv.app_config import cfg
 from tv.defaults import (
     load,
     parse_tunnels,
@@ -14,6 +15,19 @@ from tv.defaults import (
     _migrate_fortivpn_to_openconnect,
 )
 from tv.vpn.base import TunnelConfig
+
+
+def _config_path(script_dir):
+    """Path главного конфига, резолвнутый так же, как делает loader."""
+    return script_dir / cfg.paths.defaults_file
+
+
+def _write_config(script_dir, text: str):
+    """Запись главного конфига по дефолтному пути (с созданием parent-каталогов)."""
+    path = _config_path(script_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
 
 
 # =========================================================================
@@ -24,12 +38,12 @@ from tv.vpn.base import TunnelConfig
 class TestLoadDefaults:
     def test_loads_valid_toml(self, tmp_path):
         """Loads valid config.toml with [tunnels.*] section."""
-        toml = tmp_path / "config.toml"
-        toml.write_text(
+        _write_config(
+            tmp_path,
             "[tunnels.openvpn]\n"
             'type = "openvpn"\n'
             "order = 1\n"
-            'config_file = "client.ovpn"\n'
+            'config_file = "client.ovpn"\n',
         )
         data = load(tmp_path)
         assert data["tunnels"]["openvpn"]["type"] == "openvpn"
@@ -37,14 +51,14 @@ class TestLoadDefaults:
 
     def test_loads_with_global_section(self, tmp_path):
         """Loads tunnels + global section."""
-        toml = tmp_path / "config.toml"
-        toml.write_text(
+        _write_config(
+            tmp_path,
             "[tunnels.openvpn]\n"
             'type = "openvpn"\n'
             "\n"
             "[global.vpn_server_routes]\n"
             'hosts = ["1.2.3.4"]\n'
-            'resolve = ["vpn.test.com"]\n'
+            'resolve = ["vpn.test.com"]\n',
         )
         data = load(tmp_path)
         assert data["tunnels"]["openvpn"]["type"] == "openvpn"
@@ -52,17 +66,40 @@ class TestLoadDefaults:
 
     def test_preserves_arrays_of_tables(self, tmp_path):
         """Inline table arrays are parsed."""
-        toml = tmp_path / "config.toml"
-        toml.write_text(
+        _write_config(
+            tmp_path,
             "[tunnels.vpn1]\n"
             'type = "fortivpn"\n'
             "\n"
             "[tunnels.vpn1.checks]\n"
-            'ports = [{host = "1.2.3.4", port = 80}]\n'
+            'ports = [{host = "1.2.3.4", port = 80}]\n',
         )
         data = load(tmp_path)
         assert data["tunnels"]["vpn1"]["checks"]["ports"][0]["host"] == "1.2.3.4"
         assert data["tunnels"]["vpn1"]["checks"]["ports"][0]["port"] == 80
+
+    def test_default_path_points_to_infra(self):
+        """Дефолтный путь главного конфига указывает в .infra/access/client/."""
+        assert cfg.paths.defaults_file == ".infra/access/client/tunnelvault-config.toml"
+
+    def test_config_file_paths_resolve_relative_to_repo_root(self, tmp_path):
+        """config_file внутри toml резолвится от script_dir, не от папки toml.
+
+        Сам toml лежит в .infra/access/client/, но config_file вида
+        .infra/access/client/exit-de.json должен указывать на
+        script_dir/.infra/access/client/exit-de.json (корень репо), а не на
+        вложенный .infra/access/client/.infra/...
+        """
+        _write_config(
+            tmp_path,
+            "[tunnels.singbox]\n"
+            'type = "singbox"\n'
+            'config_file = ".infra/access/client/exit-de.json"\n',
+        )
+        data = load(tmp_path)
+        cf = data["tunnels"]["singbox"]["config_file"]
+        # Плагины резолвят как script_dir / config_file
+        assert (tmp_path / cf) == tmp_path / ".infra/access/client/exit-de.json"
 
 
 # =========================================================================
@@ -78,22 +115,19 @@ class TestLoadDefaultsInverse:
 
     def test_invalid_toml_exits(self, tmp_path):
         """Invalid TOML -> sys.exit(1)."""
-        toml = tmp_path / "config.toml"
-        toml.write_text("this is not [valid toml !!!!")
+        _write_config(tmp_path, "this is not [valid toml !!!!")
         with pytest.raises(SystemExit):
             load(tmp_path)
 
     def test_missing_tunnels_section_exits(self, tmp_path):
         """No [tunnels] section -> sys.exit(1)."""
-        toml = tmp_path / "config.toml"
-        toml.write_text('[global]\nsome_key = "value"\n')
+        _write_config(tmp_path, '[global]\nsome_key = "value"\n')
         with pytest.raises(SystemExit):
             load(tmp_path)
 
     def test_empty_toml_exits(self, tmp_path):
         """Empty file -> no tunnels section -> sys.exit(1)."""
-        toml = tmp_path / "config.toml"
-        toml.write_text("")
+        _write_config(tmp_path, "")
         with pytest.raises(SystemExit):
             load(tmp_path)
 
@@ -105,29 +139,43 @@ class TestLoadDefaultsInverse:
 
 class TestLoadSetup:
     def test_setup_copies_example_when_missing(self, tmp_path):
-        """setup=True + no config.toml + example exists -> copies example."""
-        example = tmp_path / "config.toml.example"
+        """setup=True + no config + sibling example exists -> copies example."""
+        example = tmp_path / f"{cfg.paths.defaults_file}.example"
+        example.parent.mkdir(parents=True, exist_ok=True)
         example.write_text(
             '[tunnels.openvpn]\ntype = "openvpn"\nconfig_file = "client.ovpn"\n'
         )
         data = load(tmp_path, setup=True)
-        assert (tmp_path / "config.toml").exists()
+        assert _config_path(tmp_path).exists()
+        assert data["tunnels"]["openvpn"]["type"] == "openvpn"
+
+    def test_setup_copies_root_example_when_no_sibling(self, tmp_path):
+        """setup=True + no config + root config.toml.example -> copies root example.
+
+        Реальный layout: пример лежит в корне репо (config.toml.example), а
+        целевой конфиг — в .infra/access/client/. Parent-каталог создаётся.
+        """
+        (tmp_path / "config.toml.example").write_text(
+            '[tunnels.openvpn]\ntype = "openvpn"\nconfig_file = "client.ovpn"\n'
+        )
+        data = load(tmp_path, setup=True)
+        created = _config_path(tmp_path)
+        assert created.exists()
         assert data["tunnels"]["openvpn"]["type"] == "openvpn"
 
     def test_setup_exits_when_no_example(self, tmp_path):
-        """setup=True + no config.toml + no example -> sys.exit(1)."""
+        """setup=True + no config + no example -> sys.exit(1)."""
         with pytest.raises(SystemExit):
             load(tmp_path, setup=True)
 
     def test_setup_loads_existing_file(self, tmp_path):
-        """setup=True + config.toml exists -> loads normally."""
-        toml = tmp_path / "config.toml"
-        toml.write_text('[tunnels.openvpn]\ntype = "openvpn"\n')
+        """setup=True + config exists -> loads normally."""
+        _write_config(tmp_path, '[tunnels.openvpn]\ntype = "openvpn"\n')
         data = load(tmp_path, setup=True)
         assert data["tunnels"]["openvpn"]["type"] == "openvpn"
 
     def test_no_setup_still_exits_on_missing(self, tmp_path):
-        """setup=False + no config.toml -> sys.exit(1) (unchanged behavior)."""
+        """setup=False + no config -> sys.exit(1) (unchanged behavior)."""
         (tmp_path / "config.toml.example").write_text('[tunnels.x]\ntype="openvpn"\n')
         with pytest.raises(SystemExit):
             load(tmp_path, setup=False)

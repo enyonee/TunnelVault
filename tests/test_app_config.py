@@ -38,7 +38,7 @@ class TestDefaults:
             # paths
             ("paths", "log_dir", "logs"),
             ("paths", "temp_dir", "/tmp"),
-            ("paths", "defaults_file", "config.toml"),
+            ("paths", "defaults_file", ".infra/access/client/tunnelvault-config.toml"),
             ("paths", "main_log", "tunnelvault.log"),
             ("paths", "resolver_dir", "/etc/resolver"),
             # defaults

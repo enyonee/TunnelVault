@@ -957,4 +957,8 @@ def _write_toml(tmp_dir, defs):
                     t_table[k] = v
             t_section[name] = t_table
         doc["tunnels"] = t_section
-    (tmp_dir / "config.toml").write_text(tomlkit.dumps(doc))
+    from tv.app_config import cfg
+
+    target = tmp_dir / cfg.paths.defaults_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(tomlkit.dumps(doc))

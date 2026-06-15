@@ -29,7 +29,11 @@ def _write_toml_for_defs(tmp_dir, defs):
                 t_table[k] = v
         t_section[name] = t_table
     doc["tunnels"] = t_section
-    (tmp_dir / "config.toml").write_text(tomlkit.dumps(doc))
+    from tv.app_config import cfg
+
+    target = tmp_dir / cfg.paths.defaults_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(tomlkit.dumps(doc))
 
 
 # =========================================================================
@@ -164,8 +168,10 @@ class TestPrepare:
         assert engine.tunnels[1].config_file == "singbox.json"
 
     def test_saves_settings(self, engine, tmp_dir):
+        from tv.app_config import cfg
+
         engine.prepare()
-        config_file = tmp_dir / "config.toml"
+        config_file = tmp_dir / cfg.paths.defaults_file
         assert config_file.exists()
 
     def test_prepare_is_idempotent(self, engine):
