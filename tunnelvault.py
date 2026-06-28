@@ -671,7 +671,6 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     ui.info(f"🔄 {t('main.keepalive_started', interval=interval)}")
     engine.log.log("INFO", f"Keepalive mode: checking every {interval}s")
 
-    last_tick = time.monotonic()
     last_reconnect = 0.0
     reconnect_count = 0
     reconnect_cooldown = 5.0  # seconds between reconnect attempts (debounce)
@@ -703,12 +702,17 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     }
 
     while True:
+        sleep_start = time.time()
         time.sleep(interval)
         now = time.monotonic()
-        elapsed = now - last_tick
-        last_tick = now
 
-        # Detect sleep: elapsed >> interval means system was suspended
+        # Детект сна по настенным часам ВОКРУГ sleep, без времени работы прошлого
+        # цикла. Раньше elapsed = now - last_tick включал длительность прошлого
+        # reconnect (openconnect 20с + openvpn 30с) → вылетал за interval*2 и
+        # ложно детектил "сон" → reconnect_all всех туннелей → снова медленно →
+        # самоподдерживающаяся петля. time.time() прыгает при реальном suspend,
+        # но не растёт от обработки.
+        elapsed = time.time() - sleep_start
         slept = elapsed > interval * 2
 
         # Check for scheduled reconnect
