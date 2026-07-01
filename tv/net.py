@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from typing import Optional
 
 from tv.app_config import cfg
@@ -47,6 +48,33 @@ _CATCHALL_SPLIT: dict[str, list[str]] = {
 def _split_catchall(network: str) -> list[str] | None:
     """Split 0.0.0.0/1 into specific subnets. Returns None if no split needed."""
     return _CATCHALL_SPLIT.get(network)
+
+
+# Публичный DNS как последний резерв для carve-out шлюза, если ни системный
+# резолвер (scutil), ни физический шлюз определить не удалось.
+_PUBLIC_DNS_FALLBACK: tuple[str, ...] = ("1.1.1.1", "8.8.8.8")
+
+
+def _gateway_covering_domain(gateway_host: str, domains: list[str]) -> str | None:
+    """Домен из ``domains``, который увёл бы резолв ``gateway_host`` внутрь туннеля.
+
+    Возвращает домен ТОЛЬКО если gateway_host — строгий поддомен (например
+    ``vpn.new-mmc.com`` под ``new-mmc.com``): тогда более специфичный
+    ``/etc/resolver/<gateway_host>`` перебьёт его по длине суффикса. Если
+    gateway_host совпадает с доменом ровно (без поддомена) — вернём None,
+    т.к. более специфичного резолвера не написать. При нескольких совпадениях
+    берём самый длинный (самый специфичный) домен."""
+    host = gateway_host.strip().lower().rstrip(".")
+    if not host:
+        return None
+    best: str | None = None
+    for d in domains:
+        dom = d.strip().lower().rstrip(".")
+        if not dom or host == dom:
+            continue
+        if host.endswith("." + dom) and (best is None or len(dom) > len(best)):
+            best = dom
+    return best
 
 
 class NetManager(ABC):
@@ -106,16 +134,26 @@ class NetManager(ABC):
         domains: list[str],
         nameservers: list[str],
         interface: str = "",
+        gateway_host: str = "",
     ) -> dict[str, bool]: ...
 
     @abstractmethod
-    def cleanup_dns_resolver(self, domains: list[str], interface: str = "") -> None: ...
+    def cleanup_dns_resolver(
+        self,
+        domains: list[str],
+        interface: str = "",
+        gateway_host: str = "",
+    ) -> None: ...
 
-    def cleanup_local_dns_resolvers(self) -> list[str]:
-        """Scan and remove resolver files pointing to localhost (safety net).
+    def cleanup_local_dns_resolvers(
+        self, keep: Iterable[str] | None = None
+    ) -> list[str]:
+        """Scan and remove resolver files created by tunnelvault (safety net).
 
-        Returns list of cleaned zone names. Default: no-op (Linux).
-        """
+        ``keep`` — имена зон/резолверов, которые нельзя удалять (принадлежат
+        живому туннелю, который переиспользуется без переподъёма). Возвращает
+        список удалённых зон. Default: no-op (Linux — per-link конфиг systemd
+        эфемерный, отдельных файлов нет)."""
         return []
 
     @abstractmethod
@@ -345,38 +383,135 @@ class DarwinNet(NetManager):
         r = _run(["sudo", "route", "add", flag, target, "-interface", iface])
         return r.returncode == 0
 
+    def system_dns_servers(self) -> list[str]:
+        """Nameservers глобального (не-scoped) резолвера из ``scutil --dns``.
+
+        Это провайдерский/физический DNS, который система использует до того как
+        VPN навешивает scoped-резолверы (/etc/resolver/<domain>). Нужен для
+        carve-out: чтобы резолв самого шлюза шёл мимо внутреннего DNS туннеля.
+        Игнорирует блоки со строкой ``domain :`` (scoped-резолверы туннелей) и
+        всю секцию ``for scoped queries``. Возвращает [] если ничего не нашли."""
+        r = _run(["scutil", "--dns"])
+        if r.returncode != 0:
+            return []
+
+        servers: list[str] = []
+        in_scoped = False
+        block_ns: list[str] = []
+        block_has_domain = False
+
+        def _flush() -> None:
+            nonlocal block_ns, block_has_domain
+            if block_ns and not block_has_domain and not in_scoped:
+                for ns in block_ns:
+                    if ns not in servers:
+                        servers.append(ns)
+            block_ns = []
+            block_has_domain = False
+
+        for line in r.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("DNS configuration (for scoped"):
+                _flush()
+                in_scoped = True
+                continue
+            if stripped.startswith("resolver #"):
+                _flush()
+                continue
+            if stripped.startswith("nameserver["):
+                _, _, val = stripped.partition(":")
+                val = val.strip()
+                if val:
+                    block_ns.append(val)
+            elif re.match(r"domain\s*:", stripped):
+                # routing-домен scoped-резолвера; 'search domain[...]' не считается
+                block_has_domain = True
+        _flush()
+        return servers
+
+    def _carveout_nameservers(self, internal_nameservers: list[str]) -> list[str]:
+        """DNS, на который направляем резолв шлюза (не внутрь туннеля).
+
+        Приоритет: системный резолвер (scutil) → физический default gateway →
+        публичный DNS. Исключаем внутренние nameserver'ы туннеля, чтобы не
+        замкнуть круг обратно."""
+        internal = set(internal_nameservers)
+        sys_ns = [ns for ns in self.system_dns_servers() if ns not in internal]
+        if sys_ns:
+            return sys_ns
+        gw = self.default_gateway()
+        if gw and gw not in internal:
+            return [gw]
+        return list(_PUBLIC_DNS_FALLBACK)
+
+    def _write_resolver_file(
+        self, name: str, header: str, nameservers: list[str]
+    ) -> bool:
+        """Записать /etc/resolver/<name> с маркером tunnelvault. True при успехе."""
+        resolver_dir = cfg.paths.resolver_dir
+        content = (
+            "# tunnelvault\n"
+            + (f"# {header}\n" if header else "")
+            + "\n".join(f"nameserver {ns}" for ns in nameservers)
+            + "\n"
+        )
+        r = _run(["sudo", "tee", f"{resolver_dir}/{name}"], input=content)
+        return r.returncode == 0
+
     def setup_dns_resolver(
         self,
         domains: list[str],
         nameservers: list[str],
         interface: str = "",
+        gateway_host: str = "",
     ) -> dict[str, bool]:
         # macOS uses /etc/resolver/ files - interface is not needed
         resolver_dir = cfg.paths.resolver_dir
         _run(["sudo", "mkdir", "-p", resolver_dir])
-        content = (
-            "# tunnelvault\n"
-            + "\n".join(f"nameserver {ns}" for ns in nameservers)
-            + "\n"
-        )
         results: dict[str, bool] = {}
         for domain in domains:
-            r = _run(
-                ["sudo", "tee", f"{resolver_dir}/{domain}"],
-                input=content,
+            results[domain] = self._write_resolver_file(domain, "", nameservers)
+
+        # Слой 1 — carve-out шлюза. Если FQDN шлюза попадает под один из доменов
+        # туннеля (напр. vpn.new-mmc.com под new-mmc.com), внутренний DNS туннеля
+        # (10.11.1.101, доступен только через сам туннель) перехватил бы резолв
+        # шлюза → замкнутый круг на холодном старте. Пишем более специфичный
+        # /etc/resolver/<gateway_host> на системный DNS: macOS матчит резолверы
+        # по самому длинному суффиксу, поэтому он перебьёт домен туннеля.
+        covering = _gateway_covering_domain(gateway_host, domains)
+        if covering:
+            carveout_ns = self._carveout_nameservers(nameservers)
+            self._write_resolver_file(
+                gateway_host.strip().lower().rstrip("."),
+                f"gateway carve-out (bypass tunnel DNS for {covering})",
+                carveout_ns,
             )
-            results[domain] = r.returncode == 0
         return results
 
-    def cleanup_dns_resolver(self, domains: list[str], interface: str = "") -> None:
+    def cleanup_dns_resolver(
+        self,
+        domains: list[str],
+        interface: str = "",
+        gateway_host: str = "",
+    ) -> None:
         resolver_dir = cfg.paths.resolver_dir
         files = [f"{resolver_dir}/{d}" for d in domains]
+        # Симметрично setup: убираем и файл carve-out шлюза, если он писался.
+        if _gateway_covering_domain(gateway_host, domains):
+            files.append(f"{resolver_dir}/{gateway_host.strip().lower().rstrip('.')}")
         _run(["sudo", "rm", "-f"] + files)
 
-    def cleanup_local_dns_resolvers(self) -> list[str]:
-        """Remove /etc/resolver/ files created by tunnelvault (identified by marker)."""
+    def cleanup_local_dns_resolvers(
+        self, keep: Iterable[str] | None = None
+    ) -> list[str]:
+        """Remove /etc/resolver/ files created by tunnelvault (identified by marker).
+
+        ``keep`` — имена резолверов, которые нельзя трогать (принадлежат живому
+        переиспользуемому туннелю). Матчим по маркеру первой строки ``# tunnelvault``,
+        чужие файлы не трогаем."""
         import os
 
+        keep_set = {k.strip().lower().rstrip(".") for k in (keep or [])}
         resolver_dir = cfg.paths.resolver_dir
         if not os.path.isdir(resolver_dir):
             return []
@@ -388,6 +523,8 @@ class DarwinNet(NetManager):
             return []
 
         for name in entries:
+            if name.lower() in keep_set:
+                continue
             path = os.path.join(resolver_dir, name)
             try:
                 with open(path) as f:
@@ -621,7 +758,14 @@ class LinuxNet(NetManager):
         domains: list[str],
         nameservers: list[str],
         interface: str = "",
+        gateway_host: str = "",
     ) -> dict[str, bool]:
+        # gateway_host (carve-out шлюза) на Linux не нужен: конфиг DNS привязан
+        # к tunnel-интерфейсу через 'resolvectl domain <iface>' и живёт ровно
+        # столько, сколько существует интерфейс. На холодном старте tunnel-iface
+        # ещё не поднят, поэтому getaddrinfo(<gateway>) уходит в глобальный
+        # резолвер и резолвится штатно — осиротевшего scoped-конфига (как файлы
+        # /etc/resolver на macOS) на Linux не остаётся.
         results: dict[str, bool] = {}
         iface = interface
         if not iface:
@@ -640,7 +784,12 @@ class LinuxNet(NetManager):
             results[domain] = False
         return results
 
-    def cleanup_dns_resolver(self, domains: list[str], interface: str = "") -> None:
+    def cleanup_dns_resolver(
+        self,
+        domains: list[str],
+        interface: str = "",
+        gateway_host: str = "",
+    ) -> None:
         iface = interface
         if not iface:
             return
@@ -946,7 +1095,10 @@ class WindowsNet(NetManager):
         domains: list[str],
         nameservers: list[str],
         interface: str = "",
+        gateway_host: str = "",
     ) -> dict[str, bool]:
+        # gateway_host: carve-out на Windows не требуется — NRPT-правила снимаются
+        # при cleanup, между сессиями не переживают падение туннеля.
         results: dict[str, bool] = {}
         ns_list = ",".join(f"'{ns}'" for ns in nameservers)
         for domain in domains:
@@ -959,7 +1111,12 @@ class WindowsNet(NetManager):
             results[domain] = r.returncode == 0
         return results
 
-    def cleanup_dns_resolver(self, domains: list[str], interface: str = "") -> None:
+    def cleanup_dns_resolver(
+        self,
+        domains: list[str],
+        interface: str = "",
+        gateway_host: str = "",
+    ) -> None:
         # Remove NRPT rules created by tunnelvault
         for domain in domains:
             ps_cmd = (
@@ -969,8 +1126,11 @@ class WindowsNet(NetManager):
             )
             _run(["powershell", "-Command", ps_cmd])
 
-    def cleanup_local_dns_resolvers(self) -> list[str]:
-        """Remove all NRPT rules created by tunnelvault."""
+    def cleanup_local_dns_resolvers(
+        self, keep: Iterable[str] | None = None
+    ) -> list[str]:
+        """Remove all NRPT rules created by tunnelvault (except zones in ``keep``)."""
+        keep_set = {k.strip().lower().rstrip(".") for k in (keep or [])}
         r = _run(
             [
                 "powershell",
@@ -982,12 +1142,14 @@ class WindowsNet(NetManager):
         if r.returncode != 0 or not r.stdout.strip():
             return []
         zones = [z.lstrip(".") for z in r.stdout.strip().splitlines() if z.strip()]
-        if zones:
+        zones = [z for z in zones if z.lower() not in keep_set]
+        for zone in zones:
             _run(
                 [
                     "powershell",
                     "-Command",
-                    "Get-DnsClientNrptRule | Where-Object { $_.Comment -eq 'tunnelvault' } | "
+                    "Get-DnsClientNrptRule | Where-Object "
+                    f"{{ $_.Comment -eq 'tunnelvault' -and $_.Namespace -eq '.{zone}' }} | "
                     "Remove-DnsClientNrptRule -Force",
                 ]
             )

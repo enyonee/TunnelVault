@@ -8,7 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
-from tv.net import DarwinNet, LinuxNet, create, _run
+from tv.net import (
+    DarwinNet,
+    LinuxNet,
+    create,
+    _run,
+    _gateway_covering_domain,
+    _PUBLIC_DNS_FALLBACK,
+)
 
 
 @pytest.fixture
@@ -858,3 +865,255 @@ class TestIPv6Defaults:
         assert n.delete_host_route6("2001:db8::1") is False
         assert n.delete_net_route6("2001:db8::/32") is False
         assert n.set_dns6(["test.local"], ["2001:db8::1"]) == {"test.local": False}
+
+
+# =========================================================================
+# Layer 1: gateway DNS carve-out (openconnect/fortivpn cold-start fix)
+# =========================================================================
+
+
+class TestGatewayCoveringDomain:
+    """Pure helper: определяет попадает ли шлюз под собственный DNS-домен туннеля."""
+
+    def test_strict_subdomain_matches(self):
+        assert (
+            _gateway_covering_domain("vpn.new-mmc.com", ["new-mmc.com"])
+            == "new-mmc.com"
+        )
+
+    def test_picks_from_multiple_domains(self):
+        assert (
+            _gateway_covering_domain(
+                "vpn.new-mmc.com", ["asup.local", "nmmc.local", "new-mmc.com"]
+            )
+            == "new-mmc.com"
+        )
+
+    def test_picks_longest_most_specific(self):
+        # host под обоими доменами — берём более специфичный
+        assert (
+            _gateway_covering_domain(
+                "vpn.a.new-mmc.com", ["new-mmc.com", "a.new-mmc.com"]
+            )
+            == "a.new-mmc.com"
+        )
+
+    def test_exact_match_returns_none(self):
+        # шлюз == сам домен: более специфичный резолвер не написать
+        assert _gateway_covering_domain("new-mmc.com", ["new-mmc.com"]) is None
+
+    def test_not_covered_returns_none(self):
+        assert _gateway_covering_domain("vpn.example.org", ["new-mmc.com"]) is None
+
+    def test_empty_gateway_returns_none(self):
+        assert _gateway_covering_domain("", ["new-mmc.com"]) is None
+
+    def test_case_and_trailing_dot_insensitive(self):
+        assert (
+            _gateway_covering_domain("VPN.New-MMC.com.", ["NEW-MMC.COM"])
+            == "new-mmc.com"
+        )
+
+    def test_partial_suffix_not_matched(self):
+        # 'evil-new-mmc.com' НЕ поддомен 'new-mmc.com' (нет точки-границы)
+        assert _gateway_covering_domain("evilnew-mmc.com", ["new-mmc.com"]) is None
+
+
+class TestSystemDnsServers:
+    """Парсер scutil --dns: глобальный резолвер, минуя scoped-блоки туннелей."""
+
+    SCUTIL = """DNS configuration
+
+resolver #1
+  search domain[0] : lan
+  nameserver[0] : 192.168.0.1
+  nameserver[1] : 192.168.0.2
+  if_index : 14 (en0)
+  flags    : Request A records, Request AAAA records
+  reach    : 0x00020002 (Reachable,Directly Reachable Address)
+
+resolver #2
+  domain   : local
+  options  : mdns
+  timeout  : 5
+  flags    : Request A records, Request AAAA records
+  reach    : 0x00000000 (Not Reachable)
+  order    : 300000
+
+resolver #3
+  domain   : new-mmc.com
+  nameserver[0] : 10.11.1.101
+  flags    : Request A records
+  reach    : 0x00000002 (Reachable)
+
+DNS configuration (for scoped queries)
+
+resolver #1
+  nameserver[0] : 10.99.99.99
+  if_index : 14 (en0)
+  flags    : Scoped, Request A records
+  reach    : 0x00020002 (Reachable,Directly Reachable Address)
+"""
+
+    @patch("subprocess.run")
+    def test_returns_global_resolver_only(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, self.SCUTIL, "")
+        # только глобальный resolver #1; scoped (domain: / new-mmc.com / scoped-секция) выкинуты
+        assert darwin_net.system_dns_servers() == ["192.168.0.1", "192.168.0.2"]
+
+    @patch("subprocess.run")
+    def test_scutil_failure_returns_empty(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 1, "", "err")
+        assert darwin_net.system_dns_servers() == []
+
+
+class TestCarveoutNameservers:
+    """Выбор DNS для резолва шлюза: система → шлюз → публичный, минус внутренние."""
+
+    def test_prefers_system_dns_excluding_internal(self, darwin_net):
+        with patch.object(
+            darwin_net,
+            "system_dns_servers",
+            return_value=["192.168.0.1", "10.11.1.101"],
+        ):
+            # внутренний 10.11.1.101 исключён, чтобы не замкнуть круг
+            assert darwin_net._carveout_nameservers(["10.11.1.101"]) == ["192.168.0.1"]
+
+    def test_falls_back_to_gateway(self, darwin_net):
+        with (
+            patch.object(darwin_net, "system_dns_servers", return_value=[]),
+            patch.object(darwin_net, "default_gateway", return_value="192.168.1.1"),
+        ):
+            assert darwin_net._carveout_nameservers(["10.11.1.101"]) == ["192.168.1.1"]
+
+    def test_falls_back_to_public(self, darwin_net):
+        with (
+            patch.object(darwin_net, "system_dns_servers", return_value=[]),
+            patch.object(darwin_net, "default_gateway", return_value=None),
+        ):
+            assert darwin_net._carveout_nameservers(["10.11.1.101"]) == list(
+                _PUBLIC_DNS_FALLBACK
+            )
+
+
+def _tee_input_for(mock_run, path: str) -> str | None:
+    """Найти input= для вызова `sudo tee <path>` среди зафиксированных вызовов."""
+    for call in mock_run.call_args_list:
+        cmd = call.args[0] if call.args else call.kwargs.get("args")
+        if cmd and cmd[:2] == ["sudo", "tee"] and cmd[-1] == path:
+            return call.kwargs.get("input")
+    return None
+
+
+class TestSetupDnsResolverCarveout:
+    @patch("subprocess.run")
+    def test_writes_gateway_carveout_file(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        with patch.object(
+            darwin_net, "_carveout_nameservers", return_value=["192.168.0.1"]
+        ):
+            darwin_net.setup_dns_resolver(
+                ["new-mmc.com"],
+                ["10.11.1.101", "10.0.0.12"],
+                gateway_host="vpn.new-mmc.com",
+            )
+        # домен туннеля -> внутренний DNS
+        dom = _tee_input_for(mock_run, "/etc/resolver/new-mmc.com")
+        assert dom is not None and "10.11.1.101" in dom
+        # более специфичный резолвер шлюза -> системный DNS, БЕЗ внутреннего
+        gw = _tee_input_for(mock_run, "/etc/resolver/vpn.new-mmc.com")
+        assert gw is not None
+        assert "192.168.0.1" in gw
+        assert "10.11.1.101" not in gw
+        assert "# tunnelvault" in gw
+
+    @patch("subprocess.run")
+    def test_no_carveout_when_gateway_not_covered(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        with patch.object(
+            darwin_net, "_carveout_nameservers", return_value=["192.168.0.1"]
+        ) as carve:
+            darwin_net.setup_dns_resolver(
+                ["new-mmc.com"],
+                ["10.11.1.101"],
+                gateway_host="vpn.example.org",
+            )
+        # шлюз вне домена туннеля — carve-out не пишется
+        assert _tee_input_for(mock_run, "/etc/resolver/vpn.example.org") is None
+        carve.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_no_carveout_without_gateway_host(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        darwin_net.setup_dns_resolver(["new-mmc.com"], ["10.11.1.101"])
+        # обычный вызов без gateway_host: только домен, без лишних файлов
+        assert _tee_input_for(mock_run, "/etc/resolver/new-mmc.com") is not None
+
+
+class TestCleanupDnsResolverCarveout:
+    @patch("subprocess.run")
+    def test_removes_gateway_carveout_file(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        darwin_net.cleanup_dns_resolver(["new-mmc.com"], gateway_host="vpn.new-mmc.com")
+        rm_cmd = mock_run.call_args_list[-1].args[0]
+        assert rm_cmd[:3] == ["sudo", "rm", "-f"]
+        assert "/etc/resolver/new-mmc.com" in rm_cmd
+        assert "/etc/resolver/vpn.new-mmc.com" in rm_cmd
+
+    @patch("subprocess.run")
+    def test_no_gateway_file_when_not_covered(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        darwin_net.cleanup_dns_resolver(["new-mmc.com"], gateway_host="vpn.example.org")
+        rm_cmd = mock_run.call_args_list[-1].args[0]
+        assert "/etc/resolver/vpn.example.org" not in rm_cmd
+
+
+# =========================================================================
+# Layer 2: cold-start cleanup of orphaned tunnelvault resolvers
+# =========================================================================
+
+
+class TestCleanupLocalDnsResolvers:
+    def _seed(self, tmp_path):
+        (tmp_path / "new-mmc.com").write_text("# tunnelvault\nnameserver 10.11.1.101\n")
+        (tmp_path / "vpn.new-mmc.com").write_text(
+            "# tunnelvault\n# gateway carve-out\nnameserver 192.168.0.1\n"
+        )
+        (tmp_path / "corp.example").write_text(
+            "# some other tool\nnameserver 9.9.9.9\n"
+        )
+
+    @patch("subprocess.run")
+    def test_removes_only_marked(self, mock_run, darwin_net, tmp_path, monkeypatch):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        self._seed(tmp_path)
+        monkeypatch.setattr(
+            "tv.net.cfg.paths.resolver_dir", str(tmp_path), raising=False
+        )
+        cleaned = darwin_net.cleanup_local_dns_resolvers()
+        assert set(cleaned) == {"new-mmc.com", "vpn.new-mmc.com"}
+        assert "corp.example" not in cleaned  # чужой файл не тронут
+
+    @patch("subprocess.run")
+    def test_keep_protects_alive_tunnel(
+        self, mock_run, darwin_net, tmp_path, monkeypatch
+    ):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        self._seed(tmp_path)
+        monkeypatch.setattr(
+            "tv.net.cfg.paths.resolver_dir", str(tmp_path), raising=False
+        )
+        cleaned = darwin_net.cleanup_local_dns_resolvers(
+            keep={"new-mmc.com", "vpn.new-mmc.com"}
+        )
+        assert cleaned == []  # оба защищены keep
+
+    @patch("subprocess.run")
+    def test_missing_resolver_dir_returns_empty(
+        self, mock_run, darwin_net, tmp_path, monkeypatch
+    ):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        monkeypatch.setattr(
+            "tv.net.cfg.paths.resolver_dir", str(tmp_path / "nope"), raising=False
+        )
+        assert darwin_net.cleanup_local_dns_resolvers() == []

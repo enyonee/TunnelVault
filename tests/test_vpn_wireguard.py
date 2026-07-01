@@ -127,6 +127,7 @@ class TestConnectSuccess:
             ["wg.local"],
             ["10.0.1.1"],
             "utun97",
+            gateway_host="",
         )
 
     def test_no_dns_when_not_configured(self, plugin):

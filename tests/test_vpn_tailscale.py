@@ -136,6 +136,7 @@ class TestConnectSuccess:
             ["ts.local"],
             ["10.0.1.1"],
             "tailscale0",
+            gateway_host="",
         )
 
     def test_no_dns_when_not_configured(self, plugin):

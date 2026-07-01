@@ -161,6 +161,7 @@ class TestConnectSuccess:
             ["alpha.local"],
             ["10.0.1.1"],
             "tun0",
+            gateway_host="",
         )
 
     def test_no_routes_when_not_configured(self, plugin):

@@ -150,6 +150,7 @@ class TestTunnelPluginABC:
             ["alpha.local"],
             ["10.0.1.1"],
             "",
+            gateway_host="",
         )
 
     def test_setup_dns_passes_interface(self, make_dummy, mock_net):
@@ -165,6 +166,24 @@ class TestTunnelPluginABC:
             ["alpha.local"],
             ["10.0.1.1"],
             "tun0",
+            gateway_host="",
+        )
+
+    def test_setup_dns_passes_gateway_host(self, make_dummy, mock_net):
+        """auth.host пробрасывается как gateway_host для carve-out."""
+        p = make_dummy(
+            name="forti",
+            type="dummy",
+            interface="utun4",
+            dns={"nameservers": ["10.11.1.101"], "domains": ["new-mmc.com"]},
+            auth={"host": "vpn.new-mmc.com"},
+        )
+        p.setup_dns()
+        mock_net.setup_dns_resolver.assert_called_once_with(
+            ["new-mmc.com"],
+            ["10.11.1.101"],
+            "utun4",
+            gateway_host="vpn.new-mmc.com",
         )
 
     def test_setup_dns_empty(self, make_dummy, mock_net):
@@ -175,7 +194,7 @@ class TestTunnelPluginABC:
     def test_cleanup_dns(self, dummy_plugin):
         dummy_plugin.cleanup_dns()
         dummy_plugin.net.cleanup_dns_resolver.assert_called_once_with(
-            ["alpha.local"], ""
+            ["alpha.local"], "", gateway_host=""
         )
 
     def test_cleanup_dns_passes_interface(self, make_dummy, mock_net):
@@ -187,7 +206,17 @@ class TestTunnelPluginABC:
             dns={"nameservers": ["10.0.1.1"], "domains": ["alpha.local"]},
         )
         p.cleanup_dns()
-        mock_net.cleanup_dns_resolver.assert_called_once_with(["alpha.local"], "tun0")
+        mock_net.cleanup_dns_resolver.assert_called_once_with(
+            ["alpha.local"], "tun0", gateway_host=""
+        )
+
+    def test_gateway_host_from_auth(self, make_dummy):
+        """gateway_host() по умолчанию берёт auth.host (openconnect/fortivpn/openvpn)."""
+        p = make_dummy(name="x", type="dummy", auth={"host": " vpn.new-mmc.com "})
+        assert p.gateway_host() == "vpn.new-mmc.com"
+
+    def test_gateway_host_empty_without_auth(self, make_dummy):
+        assert make_dummy(name="x", type="dummy").gateway_host() == ""
 
     def test_delete_routes(self, dummy_plugin):
         dummy_plugin.delete_routes()

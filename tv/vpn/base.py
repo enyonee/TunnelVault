@@ -192,6 +192,15 @@ class TunnelPlugin(ABC):
         """Human-readable name for UI. Override for custom display."""
         return self.cfg.name or self.cfg.type
 
+    def gateway_host(self) -> str:
+        """FQDN шлюза самого туннеля (для DNS carve-out).
+
+        Общий дефолт: параметр ``host`` из auth (openconnect/fortivpn/openvpn
+        держат FQDN сервера там). Нужен чтобы резолв самого шлюза не уходил во
+        внутренний DNS туннеля, когда шлюз попадает под его же DNS-домен.
+        Переопределить, если плагин хранит адрес шлюза иначе."""
+        return (self.cfg.auth or {}).get("host", "").strip()
+
     def _default_log_path(self) -> Path:
         """Per-instance log path (uses cfg.log or generates from name)."""
         if self.cfg.log:
@@ -290,6 +299,7 @@ class TunnelPlugin(ABC):
                 domains,
                 nameservers,
                 self.cfg.interface,
+                gateway_host=self.gateway_host(),
             )
             for domain, ok in results.items():
                 self.log.log(
@@ -301,7 +311,11 @@ class TunnelPlugin(ABC):
         """Remove DNS resolver entries."""
         domains = self.cfg.dns.get("domains", [])
         if domains:
-            self.net.cleanup_dns_resolver(domains, self.cfg.interface)
+            self.net.cleanup_dns_resolver(
+                domains,
+                self.cfg.interface,
+                gateway_host=self.gateway_host(),
+            )
 
     def delete_routes(self) -> None:
         """Remove routes added by add_routes().

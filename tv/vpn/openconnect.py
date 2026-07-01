@@ -407,7 +407,12 @@ class OpenConnectPlugin(TunnelPlugin):
         dns_domains = self.cfg.dns.get("domains", [])
         if dns_domains and dns_servers:
             dns_iface = self.cfg.interface or tun_iface
-            results = self.net.setup_dns_resolver(dns_domains, dns_servers, dns_iface)
+            results = self.net.setup_dns_resolver(
+                dns_domains,
+                dns_servers,
+                dns_iface,
+                gateway_host=self.gateway_host(),
+            )
             for domain, ok in results.items():
                 self.log.log(
                     "INFO" if ok else "WARN",

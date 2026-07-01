@@ -420,6 +420,68 @@ class TestSetup:
 
 
 # =========================================================================
+# Layer 2: cold-start orphan resolver cleanup wired into setup()
+# =========================================================================
+
+
+class TestOrphanResolverCleanup:
+    def test_setup_calls_cleanup_no_tunnels(self, engine, _skip_setup_io):
+        """Холодный старт всегда дёргает чистку осиротевших резолверов."""
+        engine.tunnels = []
+        engine.setup()
+        engine.net.cleanup_local_dns_resolvers.assert_called_once()
+        keep = engine.net.cleanup_local_dns_resolvers.call_args.kwargs["keep"]
+        assert keep == set()
+
+    def test_alive_tunnel_protected_via_keep(self, engine, tmp_dir, _skip_setup_io):
+        """Живой (переиспользуемый) туннель: его домены+шлюз попадают в keep."""
+        tc = TunnelConfig(
+            name="forti",
+            type="openconnect",
+            dns={"domains": ["new-mmc.com", "asup.local"]},
+            auth={"host": "vpn.new-mmc.com"},
+            log=str(tmp_dir / "logs" / "forti.log"),
+        )
+        engine.tunnels = [tc]
+        fake_cls = MagicMock()
+        fake_cls.discover_pid.return_value = 4242
+        with (
+            patch("tv.engine.get_plugin", return_value=fake_cls),
+            patch("tv.engine.proc.is_alive", return_value=True),
+        ):
+            engine.setup()
+        keep = engine.net.cleanup_local_dns_resolvers.call_args.kwargs["keep"]
+        assert "new-mmc.com" in keep
+        assert "asup.local" in keep
+        assert "vpn.new-mmc.com" in keep
+
+    def test_dead_tunnel_not_protected(self, engine, tmp_dir, _skip_setup_io):
+        """Мёртвый туннель: его резолверы НЕ в keep — будут сняты как осиротевшие."""
+        tc = TunnelConfig(
+            name="forti",
+            type="openconnect",
+            dns={"domains": ["new-mmc.com"]},
+            auth={"host": "vpn.new-mmc.com"},
+            log=str(tmp_dir / "logs" / "forti.log"),
+        )
+        engine.tunnels = [tc]
+        fake_cls = MagicMock()
+        fake_cls.discover_pid.return_value = None
+        with patch("tv.engine.get_plugin", return_value=fake_cls):
+            engine.setup()
+        keep = engine.net.cleanup_local_dns_resolvers.call_args.kwargs["keep"]
+        assert keep == set()
+
+    def test_unknown_type_does_not_crash(self, engine, tmp_dir, _skip_setup_io):
+        """Туннель с пустым/неизвестным типом не роняет cold start."""
+        engine.tunnels = [
+            TunnelConfig(name="x", type="", log=str(tmp_dir / "logs" / "x.log"))
+        ]
+        engine.setup()  # без исключений
+        engine.net.cleanup_local_dns_resolvers.assert_called_once()
+
+
+# =========================================================================
 # IPv6 opt-in (GH-5 PR#1 Foundation)
 # =========================================================================
 

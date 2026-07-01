@@ -99,6 +99,7 @@ class TestConnectSuccess:
             ["alpha.local"],
             ["10.0.1.1"],
             "utun99",
+            gateway_host="",
         )
 
     def test_no_dns_when_not_configured(self, plugin):

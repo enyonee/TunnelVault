@@ -192,6 +192,7 @@ class TestConnectTun:
             ["beta.local"],
             ["10.0.2.1"],
             "utun98",
+            gateway_host="",
         )
 
     def test_wait_for_uses_iface(self, plugin):

@@ -204,6 +204,39 @@ class Engine:
             config.save_tunnel_settings(self.tunnels, self.script_dir)
             print()
 
+    def _cleanup_orphan_resolvers(self) -> None:
+        """Слой 2 — снять осиротевшие /etc/resolver файлы перед подъёмом туннелей.
+
+        Холодный старт не чистит резолверы прошлой сессии (в отличие от reconnect,
+        где disconnect_all удаляет их per-tunnel). Осиротевший
+        /etc/resolver/<domain> с внутренним DNS туннеля перехватил бы резолв
+        собственного шлюза туннеля → openconnect не может отрезолвить gateway на
+        холодном старте. Удаляем только свои (# tunnelvault) файлы; резолверы
+        живых туннелей, которые connect_all переиспользует без переподъёма
+        (а значит не пересоздаст их резолвер), защищаем через ``keep``."""
+        keep: set[str] = set()
+        for tcfg in self.tunnels:
+            if not tcfg.type:
+                continue
+            try:
+                plugin_cls = get_plugin(tcfg.type)
+                pid = plugin_cls.discover_pid(tcfg, self.script_dir)
+            except Exception as e:
+                # best-effort: неизвестный тип / сбой discover не должен ронять
+                # cold start. Не сумели проверить — не защищаем (безопасно: файл
+                # с маркером снимется, connect_all пересоздаст при подъёме).
+                self.log.log("WARN", f"orphan-resolver keep check {tcfg.name}: {e}")
+                continue
+            if pid and proc.is_alive(pid):
+                for d in tcfg.dns.get("domains", []):
+                    keep.add(d)
+                host = (tcfg.auth or {}).get("host", "").strip()
+                if host:
+                    keep.add(host)
+        cleaned = self.net.cleanup_local_dns_resolvers(keep=keep)
+        if cleaned:
+            self.log.log("INFO", f"Cold start: removed orphan resolvers: {cleaned}")
+
     def setup(self, *, clear: bool = False, quiet: bool = False) -> None:
         """Pre-connection setup: optional cleanup, IPv6, VPN server routes, clean logs."""
         if clear:
@@ -212,6 +245,10 @@ class Engine:
             self.log.log("INFO", "--- Clearing previous connections ---")
             disconnect.run(self.net, self.log, self.defs, script_dir=self.script_dir)
             time.sleep(cfg.timeouts.cleanup_sleep)
+
+        # После clear (процессы уже убиты) discover_pid корректно отдаст мёртвые
+        # туннели — их осиротевшие резолверы снимаем, живые/переиспользуемые нет.
+        self._cleanup_orphan_resolvers()
 
         if cfg.mode == "proxy-only":
             self.log.log("INFO", "--- Proxy-only mode: skipping TUN setup ---")

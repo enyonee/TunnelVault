@@ -151,6 +151,7 @@ class TestConnectSuccess:
             ["corp.local"],
             ["10.0.1.1"],
             "ipsec0",
+            gateway_host="",
         )
 
     def test_no_dns_when_not_configured(self, plugin):
