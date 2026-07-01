@@ -79,6 +79,11 @@ class Engine:
         self.tunnels: list[TunnelConfig] = []
         self.plugins: list[TunnelPlugin] = []
         self.results: list[VPNResult] = []
+        # Физический шлюз, с которым поднимался общий слой (server routes/bypass).
+        # keepalive сравнивает его с текущим при выходе из сна: если совпал — сеть
+        # та же, здоровые туннели трогать не надо (точечный reconnect только
+        # мёртвых). Сменился/неизвестен — полный reconnect_all (переезд в др. сеть).
+        self.setup_gateway: str | None = None
         self.skipped_binaries: dict[str, str] = {}  # {tunnel_name: binary}
         self.quiet: bool = False  # set by prepare()
         self._hooks: dict[str, list[Callable]] = defaultdict(list)
@@ -288,6 +293,8 @@ class Engine:
 
         self.log.log("INFO", "--- Getting default gateway ---")
         gw = self.net.default_gateway()
+        # Запоминаем шлюз общего слоя — keepalive сверяет его при выходе из сна.
+        self.setup_gateway = gw
         self.log.log("INFO", f"Gateway: {gw}")
         self.log.log("INFO", "--- VPN server routes ---")
         self._setup_vpn_server_routes(gw, quiet=quiet)

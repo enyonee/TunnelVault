@@ -665,6 +665,31 @@ def _next_schedule_time(schedule_str: str, *, _now=None) -> float:
     return (target - now).total_seconds()
 
 
+def _wake_reconnect_reason(
+    has_dead: bool, gw_now: str | None, setup_gateway: str | None
+) -> str | None:
+    """Решает объём реконнекта после детекта сна.
+
+    Раньше любой выход из сна звал reconnect_all и сносил ВЕСЬ флот, даже когда
+    сеть не менялась и все процессы живы (ноут часто спит на той же WiFi → всё
+    падало на ровном месте). Теперь:
+
+    - шлюз сменился (переезд в другую сеть) или неизвестен → "wake" (полный
+      reconnect_all: общий слой server-routes/DNS надо переприбить к новому шлюзу);
+    - шлюз тот же, но есть мёртвые процессы → "dead" (точечно поднять только их,
+      здоровые не трогать);
+    - шлюз тот же и все живы → None (ничего не делать).
+    """
+    # Полный reconnect во ВСЕХ неуверенных случаях (сохраняет старое безопасное
+    # поведение): шлюз не определить, базы для сравнения нет, или он сменился.
+    # Точечный/пропуск — только когда уверены: оба шлюза известны и совпали.
+    if not gw_now or not setup_gateway or gw_now != setup_gateway:
+        return "wake"
+    if has_dead:
+        return "dead"
+    return None
+
+
 def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     """Monitor VPN processes, reconnect when dead (e.g. after macOS sleep)."""
     interval = cfg.timeouts.keepalive_interval
@@ -741,19 +766,33 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
         if scheduled and not slept and not dead:
             reason = "scheduled"
             engine.log.log("INFO", "Scheduled reconnect triggered")
-        elif slept and dead:
-            reason = "wake"
-            dead_names = ", ".join(tc.name for tc, _ in dead)
-            engine.log.log(
-                "INFO",
-                f"Sleep detected (elapsed={elapsed:.0f}s), dead: {dead_names}",
-            )
         elif slept:
-            reason = "wake"
-            engine.log.log(
-                "INFO",
-                f"Sleep detected (elapsed={elapsed:.0f}s), proactive reconnect",
+            gw_now = engine.net.default_gateway()
+            wake_reason = _wake_reconnect_reason(
+                bool(dead), gw_now, engine.setup_gateway
             )
+            if wake_reason is None:
+                # Сеть та же, все туннели живы — не трогаем здоровый флот.
+                engine.log.log(
+                    "INFO",
+                    f"Sleep detected (elapsed={elapsed:.0f}s), gateway "
+                    f"{gw_now} unchanged, all alive — no reconnect",
+                )
+                continue
+            reason = wake_reason
+            if reason == "wake":
+                engine.log.log(
+                    "INFO",
+                    f"Sleep detected (elapsed={elapsed:.0f}s), gateway "
+                    f"{engine.setup_gateway}->{gw_now} — full reconnect",
+                )
+            else:
+                dead_names = ", ".join(tc.name for tc, _ in dead)
+                engine.log.log(
+                    "INFO",
+                    f"Sleep detected (elapsed={elapsed:.0f}s), gateway unchanged, "
+                    f"reviving dead only: {dead_names}",
+                )
         else:
             reason = "dead"
             dead_names = ", ".join(tc.name for tc, pid in dead)

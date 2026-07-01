@@ -269,16 +269,22 @@ class TestKeepaliveLoop:
             if call_count > 1:
                 raise KeyboardInterrupt  # exit loop after one iteration
 
+        # Мёртвый процесс (не сон) → точечный reconnect_one, НЕ reconnect_all.
+        # time.time даёт малый gap (не сон); monotonic > cooldown.
         with (
             patch("tunnelvault.time.sleep", side_effect=fake_sleep),
             patch("tv.engine.proc.is_alive", return_value=False),
-            patch("tunnelvault.time.monotonic", side_effect=[0.0, 30.0, 30.0]),
-            patch.object(engine, "reconnect_all", return_value=([], "")) as mock_recon,
+            patch("tunnelvault.time.time", side_effect=[0.0, 1.0, 2.0]),
+            patch("tunnelvault.time.monotonic", side_effect=[30.0, 30.0, 30.0]),
+            patch.object(engine, "reconnect_one", return_value=True) as mock_one,
+            patch.object(engine, "reconnect_all", return_value=([], "")) as mock_all,
+            patch.object(engine, "check_all", return_value=([], "")),
             pytest.raises(KeyboardInterrupt),
         ):
             _keepalive_loop(engine)
 
-        mock_recon.assert_called_once()
+        mock_one.assert_called_once_with("vpn1", quiet=True)
+        mock_all.assert_not_called()
 
     def test_no_reconnect_when_all_alive(self, tmp_dir, mock_net, logger):
         """All alive - no reconnect."""
@@ -333,17 +339,59 @@ class TestKeepaliveLoop:
             if call_count > 1:
                 raise KeyboardInterrupt
 
-        # monotonic: 0, then 300 (5 min gap = system slept)
+        # Сон детектится по настенным часам time.time (не monotonic): gap 300s.
+        # setup_gateway не задан (нет базы) → полный reconnect_all (безопасный
+        # фолбэк), туннели живы.
         with (
             patch("tunnelvault.time.sleep", side_effect=fake_sleep),
             patch("tv.engine.proc.is_alive", return_value=True),
-            patch("tunnelvault.time.monotonic", side_effect=[0.0, 300.0, 300.0]),
+            patch("tunnelvault.time.time", side_effect=[0.0, 300.0, 300.0]),
+            patch("tunnelvault.time.monotonic", side_effect=[30.0, 30.0, 30.0]),
             patch.object(engine, "reconnect_all", return_value=([], "")) as mock_recon,
             pytest.raises(KeyboardInterrupt),
         ):
             _keepalive_loop(engine)
 
         mock_recon.assert_called_once()
+
+    def test_wake_same_network_leaves_healthy_fleet(self, tmp_dir, mock_net, logger):
+        """Сон + та же сеть + все живы → НЕ сносить флот (главный фикс)."""
+        from tunnelvault import _keepalive_loop
+
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        plugin = MagicMock(spec=TunnelPlugin)
+        plugin._pid = 100
+        tcfg = TunnelConfig(name="vpn1", type="openvpn")
+
+        engine.plugins = [plugin]
+        engine.tunnels = [tcfg]
+        engine.results = [VPNResult(ok=True, pid=100)]
+        # Общий слой поднимался на этом же шлюзе — сеть не менялась.
+        engine.setup_gateway = "192.168.1.1"
+        mock_net.default_gateway.return_value = "192.168.1.1"
+
+        call_count = 0
+
+        def fake_sleep(interval):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise KeyboardInterrupt
+
+        with (
+            patch("tunnelvault.time.sleep", side_effect=fake_sleep),
+            patch("tv.engine.proc.is_alive", return_value=True),
+            patch("tunnelvault.time.time", side_effect=[0.0, 300.0, 300.0]),
+            patch("tunnelvault.time.monotonic", side_effect=[30.0, 30.0, 30.0]),
+            patch.object(engine, "reconnect_all", return_value=([], "")) as mock_all,
+            patch.object(engine, "reconnect_one", return_value=True) as mock_one,
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _keepalive_loop(engine)
+
+        # Сон был, но здоровый флот на той же сети не трогаем.
+        mock_all.assert_not_called()
+        mock_one.assert_not_called()
 
     def test_reconnect_failure_continues_loop(self, tmp_dir, mock_net, logger):
         """Reconnect failure logs error, updates cooldown, and continues loop."""
@@ -366,18 +414,18 @@ class TestKeepaliveLoop:
             if sleep_count > 2:
                 raise KeyboardInterrupt
 
-        # monotonic: dead detected → reconnect fails → continue loop (cooldown active) → exit
-        # First iteration: 0→30 (dead, reconnect fail)
-        # Second iteration: 30→32 (dead, but cooldown: 5s - 2s = 3s remaining)
-        # Third sleep → exit
-        mono_values = [0.0, 30.0, 30.0, 32.0, 32.0]
+        # Мёртвый процесс → reconnect_one падает → cooldown блокирует повтор.
+        # time.time малый gap (не сон); monotonic: iter1 now=30 (>cooldown),
+        # после провала last_reconnect=30; iter2 now=32 (32-30=2s < 5s → skip).
         with (
             patch("tunnelvault.time.sleep", side_effect=fake_sleep),
             patch("tv.engine.proc.is_alive", return_value=False),
-            patch("tunnelvault.time.monotonic", side_effect=mono_values),
+            patch("tunnelvault.time.time", side_effect=[0.0, 1.0, 2.0, 3.0, 4.0]),
+            patch("tunnelvault.time.monotonic", side_effect=[30.0, 30.0, 32.0, 32.0]),
             patch.object(
-                engine, "reconnect_all", side_effect=RuntimeError("network down")
+                engine, "reconnect_one", side_effect=RuntimeError("network down")
             ) as mock_recon,
+            patch.object(engine, "check_all", return_value=([], "")),
             pytest.raises(KeyboardInterrupt),
         ):
             _keepalive_loop(engine)
@@ -403,24 +451,20 @@ class TestKeepaliveLoop:
         def fake_sleep(interval):
             nonlocal sleep_count
             sleep_count += 1
-            if sleep_count > 3:
+            if sleep_count > 2:
                 raise KeyboardInterrupt
 
-        # First sleep gap → reconnect
-        # Second sleep gap 2s later (within 5s cooldown) → skip
-        # Third iteration → exit
-        mono_values = [
-            0.0,
-            300.0,  # first wake (elapsed=300s)
-            300.0,  # after reconnect
-            302.0,  # second wake (elapsed=2s, but gap detected)
-            302.0,  # cooldown skip
-            362.0,  # normal tick
-        ]
+        # Два подряд выхода из сна (time.time gap 300s каждый). setup_gateway не
+        # задан → оба идут в reconnect_all, но второй режется cooldown.
+        # monotonic: iter1 now=30 (>cooldown) reconnect, last_reconnect=31;
+        # iter2 now=33 (33-31=2s < 5s → skip).
         with (
             patch("tunnelvault.time.sleep", side_effect=fake_sleep),
             patch("tv.engine.proc.is_alive", return_value=True),
-            patch("tunnelvault.time.monotonic", side_effect=mono_values),
+            patch(
+                "tunnelvault.time.time", side_effect=[0.0, 300.0, 300.0, 600.0, 900.0]
+            ),
+            patch("tunnelvault.time.monotonic", side_effect=[30.0, 31.0, 33.0, 33.0]),
             patch.object(engine, "reconnect_all", return_value=([], "")) as mock_recon,
             pytest.raises(KeyboardInterrupt),
         ):
@@ -428,3 +472,40 @@ class TestKeepaliveLoop:
 
         # Only first reconnect executed, second skipped due to cooldown
         assert mock_recon.call_count == 1
+
+
+class TestWakeReconnectReason:
+    """Выход из сна не должен сносить здоровый флот, если сеть не менялась."""
+
+    def test_gateway_unchanged_all_alive_no_action(self):
+        from tunnelvault import _wake_reconnect_reason
+
+        # Та же сеть, все живы → ничего не делаем (не трогаем здоровые туннели).
+        assert _wake_reconnect_reason(False, "192.168.1.1", "192.168.1.1") is None
+
+    def test_gateway_unchanged_with_dead_surgical(self):
+        from tunnelvault import _wake_reconnect_reason
+
+        # Та же сеть, но кто-то умер → точечно поднять только мёртвых.
+        assert _wake_reconnect_reason(True, "192.168.1.1", "192.168.1.1") == "dead"
+
+    def test_gateway_changed_full_reconnect(self):
+        from tunnelvault import _wake_reconnect_reason
+
+        # Переезд в другую сеть → полный reconnect_all (переприбить общий слой),
+        # даже если процессы формально живы.
+        assert _wake_reconnect_reason(False, "10.0.0.1", "192.168.1.1") == "wake"
+        assert _wake_reconnect_reason(True, "10.0.0.1", "192.168.1.1") == "wake"
+
+    def test_gateway_unknown_falls_back_to_full(self):
+        from tunnelvault import _wake_reconnect_reason
+
+        # Шлюз не определяется (сеть ещё не встала) → безопасный полный resync.
+        assert _wake_reconnect_reason(False, None, "192.168.1.1") == "wake"
+
+    def test_no_prior_gateway_falls_back_to_full(self):
+        from tunnelvault import _wake_reconnect_reason
+
+        # Базы для сравнения нет (setup_gateway=None) → не уверены что сеть та же
+        # → безопасный полный reconnect (сохраняем старое поведение).
+        assert _wake_reconnect_reason(False, "192.168.1.1", None) == "wake"
