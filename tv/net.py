@@ -156,6 +156,26 @@ class NetManager(ABC):
         эфемерный, отдельных файлов нет)."""
         return []
 
+    def write_gateway_carveout(
+        self,
+        gateway_host: str,
+        internal_domains: list[str],
+        internal_nameservers: list[str],
+    ) -> bool:
+        """Записать carve-out резолвер для шлюза туннеля (см. Engine.
+        _setup_gateway_carveouts). True если файл записан. Default: no-op —
+        нужно только там, где DNS шлюза может перехватываться доменом туннеля
+        (macOS /etc/resolver). Linux/Windows: per-link DNS, ловушки нет."""
+        return False
+
+    def flush_dns(self) -> None:
+        """Сбросить DNS-кэш ОС и заставить резолвер перечитать конфиг.
+
+        На macOS изменения /etc/resolver инертны без reload mDNSResponder —
+        удалённый/добавленный резолвер продолжает действовать из памяти. Default:
+        no-op."""
+        return None
+
     @abstractmethod
     def disable_ipv6(self) -> bool: ...
 
@@ -457,6 +477,29 @@ class DarwinNet(NetManager):
         )
         r = _run(["sudo", "tee", f"{resolver_dir}/{name}"], input=content)
         return r.returncode == 0
+
+    def write_gateway_carveout(
+        self,
+        gateway_host: str,
+        internal_domains: list[str],
+        internal_nameservers: list[str],
+    ) -> bool:
+        covering = _gateway_covering_domain(gateway_host, internal_domains)
+        if not covering:
+            return False
+        name = gateway_host.strip().lower().rstrip(".")
+        carveout_ns = self._carveout_nameservers(internal_nameservers)
+        cfg_dir = cfg.paths.resolver_dir
+        _run(["sudo", "mkdir", "-p", cfg_dir])
+        return self._write_resolver_file(
+            name,
+            f"gateway carve-out (bootstrap): bypass tunnel DNS for {covering}",
+            carveout_ns,
+        )
+
+    def flush_dns(self) -> None:
+        _run(["sudo", "dscacheutil", "-flushcache"])
+        _run(["sudo", "killall", "-HUP", "mDNSResponder"])
 
     def setup_dns_resolver(
         self,

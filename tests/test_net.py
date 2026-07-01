@@ -1042,6 +1042,58 @@ class TestSetupDnsResolverCarveout:
         assert _tee_input_for(mock_run, "/etc/resolver/vpn.example.org") is None
         carve.assert_not_called()
 
+
+class TestWriteGatewayCarveout:
+    """Standalone carve-out для бутстрапа (до connect), engine._setup_gateway_carveouts."""
+
+    @patch("subprocess.run")
+    def test_writes_only_gateway_not_internal_domain(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        with patch.object(
+            darwin_net, "_carveout_nameservers", return_value=["192.168.1.1"]
+        ):
+            ok = darwin_net.write_gateway_carveout(
+                "vpn.new-mmc.com", ["new-mmc.com"], ["10.11.1.101", "10.0.0.12"]
+            )
+        assert ok is True
+        # пишется ТОЛЬКО carve-out шлюза на системный DNS...
+        gw = _tee_input_for(mock_run, "/etc/resolver/vpn.new-mmc.com")
+        assert gw is not None and "192.168.1.1" in gw and "10.11.1.101" not in gw
+        assert "# tunnelvault" in gw
+        # ...и НЕ пишется резолвер внутреннего домена туннеля (это делает connect).
+        assert _tee_input_for(mock_run, "/etc/resolver/new-mmc.com") is None
+
+    @patch("subprocess.run")
+    def test_noop_when_gateway_not_under_tunnel_domain(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        ok = darwin_net.write_gateway_carveout(
+            "vpn.example.org", ["new-mmc.com"], ["10.11.1.101"]
+        )
+        assert ok is False
+        assert _tee_input_for(mock_run, "/etc/resolver/vpn.example.org") is None
+
+    def test_base_default_is_noop(self):
+        # Linux/Windows: ловушки нет, carve-out не нужен.
+        from tv.net import LinuxNet
+
+        assert (
+            LinuxNet().write_gateway_carveout(
+                "vpn.new-mmc.com", ["new-mmc.com"], ["10.11.1.101"]
+            )
+            is False
+        )
+
+    @patch("subprocess.run")
+    def test_flush_dns_reloads_mdnsresponder(self, mock_run, darwin_net):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        darwin_net.flush_dns()
+        cmds = [
+            c.args[0] if c.args else c.kwargs.get("args")
+            for c in mock_run.call_args_list
+        ]
+        assert ["sudo", "dscacheutil", "-flushcache"] in cmds
+        assert ["sudo", "killall", "-HUP", "mDNSResponder"] in cmds
+
     @patch("subprocess.run")
     def test_no_carveout_without_gateway_host(self, mock_run, darwin_net):
         mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")

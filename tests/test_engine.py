@@ -455,8 +455,12 @@ class TestOrphanResolverCleanup:
         assert "asup.local" in keep
         assert "vpn.new-mmc.com" in keep
 
-    def test_dead_tunnel_not_protected(self, engine, tmp_dir, _skip_setup_io):
-        """Мёртвый туннель: его резолверы НЕ в keep — будут сняты как осиротевшие."""
+    def test_dead_tunnel_domains_not_protected_but_gateway_is(
+        self, engine, tmp_dir, _skip_setup_io
+    ):
+        """Мёртвый туннель: внутренние домены (отрава) снимаются, но carve-out
+        шлюза защищён всегда — иначе следующий cold start снова упрётся в
+        замкнутый круг (openconnect не отрезолвит шлюз)."""
         tc = TunnelConfig(
             name="forti",
             type="openconnect",
@@ -470,7 +474,8 @@ class TestOrphanResolverCleanup:
         with patch("tv.engine.get_plugin", return_value=fake_cls):
             engine.setup()
         keep = engine.net.cleanup_local_dns_resolvers.call_args.kwargs["keep"]
-        assert keep == set()
+        assert "vpn.new-mmc.com" in keep  # carve-out шлюза — защищён
+        assert "new-mmc.com" not in keep  # отрава мёртвого туннеля — снимется
 
     def test_unknown_type_does_not_crash(self, engine, tmp_dir, _skip_setup_io):
         """Туннель с пустым/неизвестным типом не роняет cold start."""
@@ -479,6 +484,28 @@ class TestOrphanResolverCleanup:
         ]
         engine.setup()  # без исключений
         engine.net.cleanup_local_dns_resolvers.assert_called_once()
+
+    def test_setup_writes_gateway_carveout_before_connect(
+        self, engine, tmp_dir, _skip_setup_io
+    ):
+        """setup() пишет carve-out шлюза ДО connect (бутстрап) + флашит DNS."""
+        tc = TunnelConfig(
+            name="forti",
+            type="openconnect",
+            dns={"domains": ["new-mmc.com"], "nameservers": ["10.11.1.101"]},
+            auth={"host": "vpn.new-mmc.com"},
+            log=str(tmp_dir / "logs" / "forti.log"),
+        )
+        engine.tunnels = [tc]
+        engine.net.write_gateway_carveout.return_value = True
+        fake_cls = MagicMock()
+        fake_cls.discover_pid.return_value = None
+        with patch("tv.engine.get_plugin", return_value=fake_cls):
+            engine.setup()
+        engine.net.write_gateway_carveout.assert_called_once_with(
+            "vpn.new-mmc.com", ["new-mmc.com"], ["10.11.1.101"]
+        )
+        engine.net.flush_dns.assert_called()
 
 
 # =========================================================================

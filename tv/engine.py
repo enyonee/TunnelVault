@@ -223,24 +223,56 @@ class Engine:
         for tcfg in self.tunnels:
             if not tcfg.type:
                 continue
+            # Carve-out шлюза (/etc/resolver/<host>) защищаем ВСЕГДА, даже пока
+            # туннель лежит: он нужен для бутстрапа СЛЕДУЮЩЕГО connect (чтобы
+            # openconnect отрезолвил шлюз наружу туннеля). Снесём — и cold start
+            # снова упрётся в замкнутый круг. Внутренние домены (new-mmc.com →
+            # 10.11.1.101) при этом чистятся, если туннель мёртв (это и есть
+            # «отрава», её убирать надо).
+            host = (tcfg.auth or {}).get("host", "").strip()
+            if host:
+                keep.add(host)
             try:
                 plugin_cls = get_plugin(tcfg.type)
                 pid = plugin_cls.discover_pid(tcfg, self.script_dir)
             except Exception as e:
                 # best-effort: неизвестный тип / сбой discover не должен ронять
-                # cold start. Не сумели проверить — не защищаем (безопасно: файл
-                # с маркером снимется, connect_all пересоздаст при подъёме).
+                # cold start. Не сумели проверить — не защищаем домены (безопасно:
+                # файл с маркером снимется, connect_all пересоздаст при подъёме).
                 self.log.log("WARN", f"orphan-resolver keep check {tcfg.name}: {e}")
                 continue
             if pid and proc.is_alive(pid):
                 for d in tcfg.dns.get("domains", []):
                     keep.add(d)
-                host = (tcfg.auth or {}).get("host", "").strip()
-                if host:
-                    keep.add(host)
         cleaned = self.net.cleanup_local_dns_resolvers(keep=keep)
         if cleaned:
             self.log.log("INFO", f"Cold start: removed orphan resolvers: {cleaned}")
+            self.net.flush_dns()
+
+    def _setup_gateway_carveouts(self) -> None:
+        """Слой 1-бутстрап — до connect пишем carve-out шлюза каждого туннеля.
+
+        Шлюз (напр. vpn.new-mmc.com) может попадать под DNS-домен своего же
+        туннеля (new-mmc.com → внутренний DNS 10.11.1.101, доступен только через
+        поднятый туннель). На холодном старте openconnect не отрезолвит шлюз —
+        замкнутый круг. Более специфичный /etc/resolver/<host> на системный DNS
+        (macOS матчит по длиннейшему суффиксу) перебивает домен туннеля, поэтому
+        getaddrinfo(шлюз) идёт наружу. Пишем ДО запуска туннеля, а не в setup_dns
+        (тот вызывается уже после connect — для бутстрапа поздно). После записи
+        дёргаем flush: без reload mDNSResponder изменения /etc/resolver инертны.
+        """
+        wrote = False
+        for tcfg in self.tunnels:
+            host = (tcfg.auth or {}).get("host", "").strip()
+            if not host:
+                continue
+            domains = tcfg.dns.get("domains", []) or []
+            nameservers = tcfg.dns.get("nameservers", []) or []
+            if self.net.write_gateway_carveout(host, domains, nameservers):
+                wrote = True
+                self.log.log("INFO", f"gateway carve-out: {host} -> системный DNS")
+        if wrote:
+            self.net.flush_dns()
 
     def setup(self, *, clear: bool = False, quiet: bool = False) -> None:
         """Pre-connection setup: optional cleanup, IPv6, VPN server routes, clean logs."""
@@ -298,6 +330,8 @@ class Engine:
         self.log.log("INFO", f"Gateway: {gw}")
         self.log.log("INFO", "--- VPN server routes ---")
         self._setup_vpn_server_routes(gw, quiet=quiet)
+        self.log.log("INFO", "--- Gateway DNS carve-outs ---")
+        self._setup_gateway_carveouts()
         self.log.log("INFO", "--- Bypass routes ---")
         self._setup_bypass_routes(gw, quiet=quiet)
         self.log.log("INFO", "--- Kill switch ---")
