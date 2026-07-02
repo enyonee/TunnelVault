@@ -59,6 +59,7 @@ STRINGS: dict[str, str] = {
     "main.proxy_removed": "System proxy отключён",
     "main.backgrounded": "Сервис запущен (PID={pid}), терминал освобождён",
     "main.already_running": "tunnelvault уже запущен (демон активен) — тоннели повторно не поднимаю. --status посмотреть · --reconnect пересобрать · --disconnect остановить",
+    "main.reconnect_daemon_busy": "reconnect запущен демоном (ответ дольше таймаута) — состояние смотри через --status",
     "main.daemon_log_hint": "Лог: tail -f {path}",
     "main.daemon_stopped": "Демон остановлен (PID={pid})",
     "main.no_pidfile": "Запущенный демон не найден (PID-файл отсутствует)",

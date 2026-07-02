@@ -230,6 +230,28 @@ def main() -> None:
         return
 
     if args.reconnect:
+        from tv.ipc_client import IPCClient
+        from tv.ipc_protocol import socket_path as ipc_socket_path
+
+        # Живой демон сам выполняет reconnect (изолированно, под keepalive-lock).
+        # При живом демоне НЕ падаем в локальный disconnect+connect: иначе порвём
+        # его тоннели и упрёмся в синглтон-гард ниже (это был регресс). Локальный
+        # путь (disconnect + подъём заново) — только когда демона нет.
+        _client = IPCClient(ipc_socket_path(script_dir))
+        if _client.is_daemon_running():
+            try:
+                resp = _client.send("reconnect", name=args.only or None)
+            except (OSError, TimeoutError):
+                ui.info(t("main.reconnect_daemon_busy"))
+                return
+            if resp.get("ok"):
+                names = ", ".join(resp.get("data", {}).get("reconnected", []))
+                ui.ok(t("main.reconnect_now", tunnels=f" ({names})" if names else ""))
+                return
+            ui.fail(resp.get("error", "reconnect failed"))
+            sys.exit(1)
+
+        # Демона нет — локальный disconnect + подъём заново (fall through ниже).
         tunnels = defaults_mod.parse_tunnels(defs)
         try:
             if args.only:
@@ -241,7 +263,6 @@ def main() -> None:
             " (" + ", ".join(tc.name for tc in tunnels) + ")" if args.only else ""
         )
         ui.info(f"🔄 {t('main.reconnect_now', tunnels=tunnel_names)}")
-        # Disconnect first
         if tunnels:
             disconnect.run_plugins(tunnels, defs=defs)
         else:
