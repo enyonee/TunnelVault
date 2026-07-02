@@ -52,6 +52,28 @@ def _is_admin() -> bool:
 _log: Logger | None = None  # module-level for crash handler
 
 
+def _refuse_if_daemon_running(script_dir: Path, log: Logger | None = None) -> None:
+    """Синглтон-гард: exit(1) если демон tunnelvault уже поднят.
+
+    Без него второй `sudo ./tvpn` заново гонит connect_all (два openvpn на один
+    конфиг) и плодит второй демон — оба крутят keepalive и дерутся за одни
+    тоннели → бесконечный churn. Проверка через IPC-сокет (фоновый демон держит
+    IPC-сервер). Зовётся ДО setup/connect_all, только на пути подъёма тоннелей.
+    """
+    from tv.ipc_client import IPCClient
+    from tv.ipc_protocol import socket_path
+
+    if IPCClient(socket_path(script_dir)).is_daemon_running():
+        ui.fail(t("main.already_running"))
+        if log:
+            log.log(
+                "WARN",
+                "another tunnelvault daemon is already running — refusing to "
+                "bring tunnels up again (singleton guard)",
+            )
+        sys.exit(1)
+
+
 def main() -> None:
     global _log
     args = parse_args()
@@ -336,6 +358,13 @@ def main() -> None:
         else:
             ui.fail(str(e))
         sys.exit(1)
+
+    # Синглтон-гард (перекрытие инстансов): интерактивный `sudo ./tvpn` при уже
+    # живом демоне НЕ поднимает тоннели второй раз (иначе дубль connect_all +
+    # второй демон → churn). --foreground исключён: там launchd/systemd рестартит
+    # сервис, и политика — kill-and-replace через write_pid, а не refuse.
+    if not args.foreground:
+        _refuse_if_daemon_running(script_dir, engine.log)
 
     engine.setup(clear=args.clear, quiet=engine.quiet)
     engine.connect_all(quiet=engine.quiet)

@@ -58,6 +58,7 @@ STRINGS: dict[str, str] = {
     "main.proxy_env": "export http_proxy=http://{addr} https_proxy=http://{addr} all_proxy=socks5://{addr}",
     "main.proxy_removed": "System proxy отключён",
     "main.backgrounded": "Сервис запущен (PID={pid}), терминал освобождён",
+    "main.already_running": "tunnelvault уже запущен (демон активен) — тоннели повторно не поднимаю. --status посмотреть · --reconnect пересобрать · --disconnect остановить",
     "main.daemon_log_hint": "Лог: tail -f {path}",
     "main.daemon_stopped": "Демон остановлен (PID={pid})",
     "main.no_pidfile": "Запущенный демон не найден (PID-файл отсутствует)",

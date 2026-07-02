@@ -58,6 +58,7 @@ STRINGS: dict[str, str] = {
     "main.proxy_env": "export http_proxy=http://{addr} https_proxy=http://{addr} all_proxy=socks5://{addr}",
     "main.proxy_removed": "System proxy removed",
     "main.backgrounded": "Service started (PID={pid}), terminal released",
+    "main.already_running": "tunnelvault is already running (daemon active) — not bringing tunnels up again. --status to view · --reconnect to rebuild · --disconnect to stop",
     "main.daemon_log_hint": "Log: tail -f {path}",
     "main.daemon_stopped": "Daemon stopped (PID={pid})",
     "main.no_pidfile": "No running daemon found (PID file missing)",

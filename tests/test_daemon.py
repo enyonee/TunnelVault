@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -551,3 +551,30 @@ class TestDisable:
 
         assert not plist_path.exists()
         daemon.remove_pid(tmp_dir)
+
+
+class TestSingletonGuard:
+    """Синглтон-гард: не поднимать тоннели поверх живого демона (перекрытие инстансов)."""
+
+    def test_refuses_when_daemon_running(self, tmp_dir):
+        from tunnelvault import _refuse_if_daemon_running
+
+        client = MagicMock()
+        client.is_daemon_running.return_value = True
+        with (
+            patch("tv.ipc_client.IPCClient", return_value=client),
+            patch("tunnelvault.ui.fail") as mock_fail,
+            pytest.raises(SystemExit) as exc,
+        ):
+            _refuse_if_daemon_running(tmp_dir)
+        assert exc.value.code == 1  # отказ с ненулевым кодом
+        mock_fail.assert_called_once()
+
+    def test_proceeds_when_no_daemon(self, tmp_dir):
+        from tunnelvault import _refuse_if_daemon_running
+
+        client = MagicMock()
+        client.is_daemon_running.return_value = False
+        with patch("tv.ipc_client.IPCClient", return_value=client):
+            # демона нет → не выходим, даём подъёму тоннелей продолжиться
+            assert _refuse_if_daemon_running(tmp_dir) is None
