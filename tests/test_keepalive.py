@@ -286,6 +286,90 @@ class TestKeepaliveLoop:
         mock_one.assert_called_once_with("vpn1", quiet=True)
         mock_all.assert_not_called()
 
+    def test_dead_dns_owner_resets_system_dns(self, tmp_dir, mock_net, logger):
+        """Мёртвый туннель-владелец DNS → освобождаем системный primary DNS.
+
+        Иначе его внутренний резолвер (напр. корп 10.11.1.101, живой только через
+        сам туннель) остаётся системным DNS и убивает ВЕСЬ резолвинг.
+        """
+        from tunnelvault import _keepalive_loop
+
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        plugin = MagicMock(spec=TunnelPlugin)
+        plugin._pid = 100
+        tcfg = TunnelConfig(name="corp", type="openconnect")
+        tcfg.dns["nameservers"] = ["10.11.1.101"]
+
+        engine.plugins = [plugin]
+        engine.tunnels = [tcfg]
+        engine.results = [VPNResult(ok=True, pid=100)]
+
+        call_count = 0
+
+        def fake_sleep(interval):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise KeyboardInterrupt
+
+        # Процесс мёртв и остаётся мёртвым (reconnect_one мок, results не меняет)
+        # → revival провалился → сброс system DNS на DHCP.
+        with (
+            patch("tunnelvault.time.sleep", side_effect=fake_sleep),
+            patch("tv.engine.proc.is_alive", return_value=False),
+            patch("tunnelvault.time.time", return_value=100.0),
+            patch("tunnelvault.time.monotonic", return_value=30.0),
+            patch.object(engine, "reconnect_one", return_value=True),
+            patch.object(engine, "check_all", return_value=([], "")),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _keepalive_loop(engine)
+
+        mock_net.reset_system_dns.assert_called()
+
+    def test_breaker_backs_off_after_threshold(self, tmp_dir, mock_net, logger):
+        """Туннель, который не поднимается, после N провалов уходит в backoff —
+        перестаём реконнектить каждые interval (не долбить флапающий туннель)."""
+        from tunnelvault import _keepalive_loop
+
+        engine = Engine(tmp_dir, {}, net=mock_net, log=logger)
+        plugin = MagicMock(spec=TunnelPlugin)
+        plugin._pid = 100
+        tcfg = TunnelConfig(name="corp", type="openconnect")
+        tcfg.dns["nameservers"] = ["10.11.1.101"]
+
+        engine.plugins = [plugin]
+        engine.tunnels = [tcfg]
+        engine.results = [VPNResult(ok=True, pid=100)]
+
+        call_count = 0
+
+        def fake_sleep(interval):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 4:
+                raise KeyboardInterrupt
+
+        # monotonic растёт на 10/итерацию: обходит cooldown (5с), но меньше
+        # backoff (60с), поэтому next_retry (now+60) держит туннель в backoff
+        # на 4-й итерации — reconnect_one туда не идёт.
+        with (
+            patch("tunnelvault.time.sleep", side_effect=fake_sleep),
+            patch("tv.engine.proc.is_alive", return_value=False),
+            patch("tunnelvault.time.time", return_value=100.0),
+            patch(
+                "tunnelvault.time.monotonic",
+                side_effect=[10.0, 10.0, 20.0, 20.0, 30.0, 30.0, 40.0, 50.0, 50.0],
+            ),
+            patch.object(engine, "reconnect_one", return_value=True) as mock_one,
+            patch.object(engine, "check_all", return_value=([], "")),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _keepalive_loop(engine)
+
+        # 3 попытки revival (streak 1..3), затем backoff — 4-я итерация пропущена.
+        assert mock_one.call_count == 3
+
     def test_no_reconnect_when_all_alive(self, tmp_dir, mock_net, logger):
         """All alive - no reconnect."""
         from tunnelvault import _keepalive_loop

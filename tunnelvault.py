@@ -750,6 +750,20 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
     reconnect_count = 0
     reconnect_cooldown = 5.0  # seconds between reconnect attempts (debounce)
 
+    # Circuit breaker: флапающий туннель (процесс постоянно умирает) не долбим
+    # каждые interval секунд — после breaker_threshold провалов revival подряд
+    # растим паузу (backoff) до breaker_cap. Плюс: если мёртвый туннель владеет
+    # DNS, освобождаем системный primary DNS (reset на DHCP), иначе его
+    # внутренний резолвер (напр. корп 10.11.1.101, живой только через сам
+    # туннель) остаётся системным DNS и убивает ВЕСЬ резолвинг. Инцидент:
+    # openconnect-флап рвал интернет, keepalive реконнектил его 2593 раза
+    # без backoff, каждый раз переставляя дохлый DNS первичным.
+    fail_streak: dict[str, int] = {}
+    next_retry: dict[str, float] = {}
+    breaker_threshold = 3  # провалов revival подряд до включения backoff
+    breaker_base = 60.0  # стартовая пауза backoff, сек
+    breaker_cap = 900.0  # потолок паузы backoff, сек (15 мин)
+
     # Scheduled reconnect timer
     sched_interval = cfg.reconnect.interval_seconds() if cfg.reconnect.enabled else None
     sched_time = (
@@ -848,6 +862,33 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
             dead_names = ", ".join(tc.name for tc, pid in dead)
             engine.log.log("WARN", f"Keepalive: dead processes: {dead_names}")
 
+            # Circuit breaker gate: мёртвые туннели в активном backoff пропускаем,
+            # не поднимая полный цикл реконнекта каждые interval. Если среди них
+            # есть владелец DNS — освобождаем системный primary DNS на DHCP, чтобы
+            # дохлый внутренний резолвер не убивал резолвинг, пока туннель ждёт.
+            eligible = [
+                (tc, pid)
+                for tc, pid in dead
+                if not (
+                    fail_streak.get(tc.name, 0) >= breaker_threshold
+                    and now < next_retry.get(tc.name, 0.0)
+                )
+            ]
+            if not eligible:
+                if any(tc.dns.get("nameservers") for tc, _ in dead):
+                    engine.net.reset_system_dns()
+                    engine.log.log(
+                        "INFO", "System DNS reset to DHCP (dead DNS-owner in backoff)"
+                    )
+                for tc, _ in dead:
+                    wait = next_retry.get(tc.name, 0.0) - now
+                    engine.log.log(
+                        "INFO",
+                        f"Circuit breaker: {tc.name} in backoff {wait:.0f}s — skip",
+                    )
+                continue
+            dead = eligible
+
         reason_display = t(reason_i18n[reason])
         print(
             f"\n  {ui.YELLOW}🔄 {t('main.keepalive_reconnecting', reason=reason_display)}{ui.NC}"
@@ -869,12 +910,47 @@ def _keepalive_loop(engine: Engine, reconnect_lock=None) -> None:
                 else:
                     check_results, ext_ip = engine.reconnect_all(quiet=True)
             else:
-                # Reconnect only dead tunnels, leave healthy ones running
+                # Reconnect only dead tunnels, leave healthy ones running.
                 for tc, pid in dead:
                     engine.log.log(
                         "INFO", f"Reconnecting dead tunnel: {tc.name} (was PID={pid})"
                     )
                     engine.reconnect_one(tc.name, quiet=True)
+
+                # Circuit-breaker учёт: провал revival растит backoff, успех —
+                # сбрасывает счётчик. Дохлый DNS-владелец → освобождаем system DNS,
+                # чтобы его внутренний резолвер не оставался системным primary.
+                still_dead = {t.name for t, _ in engine.check_alive()}
+                dns_owner_failed = False
+                for tc, _pid in dead:
+                    name = tc.name
+                    found = engine._find_tunnel(name)
+                    failed = (name in still_dead) or not (found and found[3].ok)
+                    if failed:
+                        fail_streak[name] = fail_streak.get(name, 0) + 1
+                        # exp капим на 16: при вечно-мёртвом туннеле fail_streak
+                        # растёт бесконечно, 2**N ушёл бы в гигантский bigint до
+                        # min(cap). 2**16 * base уже сильно > breaker_cap.
+                        exp = min(max(0, fail_streak[name] - breaker_threshold), 16)
+                        backoff = min(breaker_base * 2**exp, breaker_cap)
+                        next_retry[name] = now + backoff
+                        if tc.dns.get("nameservers"):
+                            dns_owner_failed = True
+                        engine.log.log(
+                            "WARN",
+                            f"Circuit breaker: {name} revive failed "
+                            f"{fail_streak[name]}x → backoff {backoff:.0f}s",
+                        )
+                    elif fail_streak.pop(name, None) is not None:
+                        next_retry.pop(name, None)
+                        engine.log.log("INFO", f"Circuit breaker: {name} recovered")
+
+                if dns_owner_failed:
+                    engine.net.reset_system_dns()
+                    engine.log.log(
+                        "INFO", "System DNS reset to DHCP (dead DNS-owning tunnel)"
+                    )
+
                 check_results, ext_ip = engine.check_all(quiet=True)
             reconnect_count += 1
             last_reconnect = time.monotonic()
