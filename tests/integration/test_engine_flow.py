@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from tv.app_config import cfg
 from tv.engine import Engine
 from tv.logger import Logger
 from tv.net import NetManager
@@ -42,8 +43,11 @@ def mock_net() -> MagicMock:
 @pytest.fixture
 def project_dir(tmp_path) -> Path:
     """Realistic project dir with config.toml, config files, and settings."""
-    # config.toml
-    (tmp_path / "config.toml").write_text(
+    # Главный конфиг лежит по cfg.paths.defaults_file (по умолчанию
+    # .infra/access/client/tunnelvault-config.toml), а не в корне проекта.
+    config_path = tmp_path / cfg.paths.defaults_file
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
         "[tunnels.openvpn]\n"
         'type = "openvpn"\n'
         "order = 1\n"
@@ -69,6 +73,18 @@ def project_dir(tmp_path) -> Path:
     (tmp_path / "singbox.json").write_text('{"log":{"level":"info"}}')
 
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _no_host_process_lookup():
+    """Подхват «уже запущенного» туннеля не должен смотреть на реальную машину.
+
+    discover_pid() у плагинов делает pgrep по всему хосту. Под `-n auto`
+    в выдачу попадают чужие короткоживущие процессы, движок адоптирует
+    случайный PID и не вызывает connect() — тест падал через раз.
+    """
+    with patch("tv.proc.find_pids", return_value=[]):
+        yield
 
 
 @pytest.fixture
@@ -127,7 +143,7 @@ class TestFullPrepareConnect:
 
         import tomlkit
 
-        config_path = project_dir / "config.toml"
+        config_path = project_dir / cfg.paths.defaults_file
         assert config_path.exists()
         doc = tomlkit.parse(config_path.read_text())
         assert "openvpn" in doc["tunnels"]

@@ -358,6 +358,20 @@ def _can_create_tun() -> bool:
     return os.environ.get("TUN_AVAILABLE", "") == "1"
 
 
+def _destructive_cleanup_allowed() -> bool:
+    """Можно ли гасить VPN-процессы всей машины после теста.
+
+    Уборка пишется под одноразовый контейнер из docker-compose.test.yml.
+    Признаки изоляции: docker-контейнер, CI-раннер или явный опт-ин.
+    На рабочей машине разработчика она убила бы живые туннели.
+    """
+    if Path("/.dockerenv").exists():
+        return True
+    if os.environ.get("CI", "") not in ("", "0", "false"):
+        return True
+    return os.environ.get("TV_TEST_DESTRUCTIVE", "") == "1"
+
+
 _tun_works: bool | None = None
 
 
@@ -391,6 +405,13 @@ def _cleanup_after_test():
 
     yield
 
+    # Разрушительная уборка (pkill -9 по VPN-процессам, tailscale down,
+    # wg-quick down, swanctl terminate) рассчитана на одноразовый контейнер
+    # (docker-compose.test.yml). На рабочей машине она сносит живые туннели
+    # пользователя, поэтому вне изолированного окружения пропускаем.
+    if not _destructive_cleanup_allowed():
+        return
+
     # Tailscale cleanup (before killing daemon) - only if socket exists
     ts_sock = Path("/var/run/tailscale/tailscaled.sock")
     if ts_sock.exists():
@@ -418,11 +439,14 @@ def _cleanup_after_test():
         )
 
     # WireGuard cleanup: wg-quick down any active interfaces
-    wg_result = subprocess.run(
-        ["wg", "show", "interfaces"], capture_output=True, text=True
-    )
-    for iface in wg_result.stdout.split():
-        subprocess.run(["wg-quick", "down", iface], check=False, capture_output=True)
+    if shutil.which("wg"):
+        wg_result = subprocess.run(
+            ["wg", "show", "interfaces"], capture_output=True, text=True
+        )
+        for iface in wg_result.stdout.split():
+            subprocess.run(
+                ["wg-quick", "down", iface], check=False, capture_output=True
+            )
 
     # IPsec cleanup: terminate all SAs
     subprocess.run(

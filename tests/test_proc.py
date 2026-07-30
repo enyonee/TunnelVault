@@ -288,6 +288,16 @@ class TestIsAlive:
         # PID 999999 вряд ли существует
         assert proc.is_alive(999999) is False
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="EPERM from kill(2) is Unix-only")
+    def test_permission_denied_means_alive(self):
+        """EPERM = процесс есть, но чужой (root-туннель при запуске без sudo)."""
+
+        def _eperm(pid, sig):
+            raise PermissionError(1, "Operation not permitted")
+
+        with patch("os.kill", _eperm):
+            assert proc.is_alive(4242) is True
+
     @pytest.mark.skipif(IS_WINDOWS, reason="PID_MAX_LIMIT is Linux-specific")
     def test_nonexistent_large_pid(self):
         """Несуществующий PID -> не живой."""

@@ -133,8 +133,12 @@ class TestMeta:
         assert SSHTunnelPlugin.type_display_name == "SSH Tunnel"
 
     def test_process_names(self):
-        assert "ssh" in SSHTunnelPlugin.process_names
+        assert "ssh -D" in SSHTunnelPlugin.process_names
         assert "sshuttle" in SSHTunnelPlugin.process_names
+
+    def test_process_names_do_not_match_ssh_agent(self):
+        # Голый "ssh" ловил ssh-agent/sshd подстрокой (фантом в --status)
+        assert "ssh" not in SSHTunnelPlugin.process_names
 
     def test_config_schema(self):
         schema = SSHTunnelPlugin.config_schema()

@@ -828,3 +828,53 @@ class TestPostResolveParams:
         ):
             OpenConnectPlugin.post_resolve_params(tc, quiet=False)
         assert not tc.auth.get("servercert")
+
+
+# =========================================================================
+# discover_pid / _kill_by_pattern: шаблон должен совпадать с реальным argv
+# =========================================================================
+
+
+# Реальная командная строка: хост идёт ДО --protocol
+_REAL_ARGV = (
+    "openconnect vpn.test.local:443 --protocol=fortinet "
+    "-u testuser --passwd-on-stdin --servercert=pin-sha256:AbC123"
+)
+
+
+class TestDiscoverPidPattern:
+    def test_pattern_matches_real_argv(self, oc_cfg, tmp_dir):
+        import re
+
+        captured: dict[str, str] = {}
+
+        def _fake_find_pids(pattern: str) -> list[int]:
+            captured["pattern"] = pattern
+            return [4242]
+
+        with patch("tv.vpn.openconnect.proc.find_pids", _fake_find_pids):
+            pid = OpenConnectPlugin.discover_pid(oc_cfg, tmp_dir)
+
+        assert pid == 4242
+        assert re.search(captured["pattern"], _REAL_ARGV), (
+            f"шаблон {captured['pattern']!r} не матчит реальный argv"
+        )
+
+    def test_no_host_returns_none(self, oc_cfg, tmp_dir):
+        oc_cfg.auth["host"] = ""
+        assert OpenConnectPlugin.discover_pid(oc_cfg, tmp_dir) is None
+
+    def test_kill_pattern_matches_real_argv(self, plugin):
+        import re
+
+        captured: dict[str, str] = {}
+
+        def _fake_kill(pattern: str, sudo: bool = False) -> None:
+            captured["pattern"] = pattern
+
+        with patch("tv.vpn.openconnect.proc.kill_pattern", _fake_kill):
+            plugin._kill_by_pattern()
+
+        assert re.search(captured["pattern"], _REAL_ARGV), (
+            f"шаблон {captured['pattern']!r} не матчит реальный argv"
+        )
