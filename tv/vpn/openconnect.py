@@ -101,7 +101,12 @@ class OpenConnectPlugin(TunnelPlugin):
     @classmethod
     def discover_pid(cls, tcfg, script_dir) -> int | None:
         host = tcfg.auth.get("host", "")
-        pids = proc.find_pids(f"openconnect.*--protocol=fortinet.*{host}")
+        if not host:
+            return None
+        protocol = tcfg.auth.get("protocol", "fortinet")
+        # argv: openconnect <host>:<port> --protocol=<proto> ...
+        # хост идёт ДО --protocol, обратный порядок не матчится никогда
+        pids = proc.find_pids(f"openconnect {host}.*--protocol={protocol}")
         return pids[0] if pids else None
 
     @classmethod
@@ -427,7 +432,8 @@ class OpenConnectPlugin(TunnelPlugin):
     def _kill_by_pattern(self) -> None:
         host = self.cfg.auth.get("host", "")
         protocol = self.cfg.auth.get("protocol", "fortinet")
-        proc.kill_pattern(f"openconnect.*--protocol={protocol}.*{host}", sudo=True)
+        # Порядок как в argv: хост ДО --protocol (см. discover_pid)
+        proc.kill_pattern(f"openconnect {host}.*--protocol={protocol}", sudo=True)
 
     def disconnect(self) -> None:
         """Kill OpenConnect process with graceful SIGINT first."""

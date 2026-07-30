@@ -29,7 +29,9 @@ class SSHTunnelPlugin(TunnelPlugin):
 
     binary = "ssh"
     type_display_name = "SSH Tunnel"
-    process_names = ("ssh", "sshuttle")
+    # Голый "ssh" матчит подстрокой любой ssh-agent/sshd/путь с "ssh" —
+    # в --status это давало фантомный туннель. Сужено до реального SOCKS-режима.
+    process_names = ("ssh -D", "sshuttle")
     version_cmd = ("ssh", "-V")
 
     @classmethod

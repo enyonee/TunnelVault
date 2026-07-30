@@ -51,3 +51,7 @@ tasks/
 .vpn-settings.json
 relay-hysteria2.json
 timeweb-trojan*.json
+
+# инструменты сессии
+.tokensave/
+.session-meta/

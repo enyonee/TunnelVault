@@ -251,5 +251,9 @@ def is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
-    except (OSError, ProcessLookupError):
+    except PermissionError:
+        # EPERM: процесс существует, но принадлежит другому пользователю
+        # (root-туннели при запуске CLI без sudo). Живой, не мёртвый.
+        return True
+    except OSError:
         return False
